@@ -67,6 +67,24 @@ async function startServer() {
             res.json({ success: true, count: docs.length });
         });
 
+        // Editar o texto de um tópico ou a matéria
+        app.put('/api/edital/item/:id', async (req, res) => {
+            const { id } = req.params;
+            const { topico, materia } = req.body;
+            await editalColl.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { topico, materia } }
+            );
+            res.json({ success: true });
+        });
+
+        // Deletar um tópico específico
+        app.delete('/api/edital/item/:id', async (req, res) => {
+            const { id } = req.params;
+            await editalColl.deleteOne({ _id: new ObjectId(id) });
+            res.json({ success: true });
+        });
+
         // Alternar Checkbox
         app.put('/api/edital/:id', async (req, res) => {
             const { id } = req.params;
