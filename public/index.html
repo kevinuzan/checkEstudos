@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checklist Edital</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Meu Edital</h1>
+            <div class="stats">
+                <div class="progress-bar">
+                    <div id="progress-fill"></div>
+                </div>
+                <span id="progress-text">0/0 (0%)</span>
+            </div>
+        </header>
+
+        <section class="add-section">
+            <input type="text" id="materia-input" placeholder="Matéria (ex: Português)">
+            <textarea id="bulk-input" placeholder="Cole os tópicos do edital aqui (um por linha)"></textarea>
+            <button onclick="importarEdital()">Importar Tópicos</button>
+        </section>
+
+        <main id="lista-edital">
+            </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
