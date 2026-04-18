@@ -1,4 +1,4 @@
-// Estado para minimizar matérias com persistência
+// Estado para manter matérias minimizadas
 let estadosMinimizados = JSON.parse(localStorage.getItem('editais_minimizados')) || {};
 
 async function carregarEdital() {
@@ -7,7 +7,7 @@ async function carregarEdital() {
         const dados = await res.json();
         renderizar(dados);
     } catch (err) {
-        console.error("Erro ao carregar:", err);
+        console.error("Erro ao carregar edital:", err);
     }
 }
 
@@ -15,12 +15,14 @@ function renderizar(itens) {
     const lista = document.getElementById('lista-edital');
     lista.innerHTML = '';
 
+    // Agrupar itens por matéria
     const grupos = itens.reduce((acc, item) => {
         acc[item.materia] = acc[item.materia] || [];
         acc[item.materia].push(item);
         return acc;
     }, {});
 
+    // Progresso Geral para o Header do App
     let totalGeral = itens.length;
     let concluidosGeral = itens.filter(i => i.concluido).length;
 
@@ -28,16 +30,19 @@ function renderizar(itens) {
         const estaMinimizado = estadosMinimizados[materia] || false;
         const totalMat = grupos[materia].length;
         const concluidosMat = grupos[materia].filter(i => i.concluido).length;
-        
+
+        // CÁLCULO DA PORCENTAGEM DA MATÉRIA
+        const percMat = totalMat > 0 ? Math.round((concluidosMat / totalMat) * 100) : 0;
+
         const divMateria = document.createElement('div');
         divMateria.className = 'materia-group';
-        
+
         divMateria.innerHTML = `
-            <div class="materia-header">
-                <div class="materia-info" onclick="toggleMateria('${materia}')" style="cursor:pointer; flex: 1;">
+            <div class="materia-header" onclick="toggleMateria('${materia}')" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+                <div class="materia-info">
                     <span class="seta">${estaMinimizado ? '▶' : '▼'}</span>
-                    <strong>${materia}</strong>
-                    <small>(${concluidosMat}/${totalMat})</small>
+                    <strong class="materia-title">${materia}</strong>
+                    <span class="stats-label">(${concluidosMat}/${totalMat}) - ${percMat}%</span>
                 </div>
             </div>
             <div class="materia-content" style="display: ${estaMinimizado ? 'none' : 'block'}">
@@ -45,12 +50,12 @@ function renderizar(itens) {
                     <div class="item-check ${item.concluido ? 'done' : ''}">
                         <input type="checkbox" ${item.concluido ? 'checked' : ''} 
                             onchange="toggleCheck('${item._id}', this.checked)">
-                        
-                        <span class="topico-texto">${item.topico}</span>
-                        
-                        <div class="item-actions">
+                        <span class="topico-texto" onclick="editarTopico('${item._id}', '${item.topico}')">
+                            ${item.topico}
+                        </span>
+                        <div class="actions">
                             <button class="btn-edit" onclick="editarTopico('${item._id}', '${item.topico}')">✎</button>
-                            <button class="btn-delete" onclick="deletarTopico('${item._id}')">✕</button>
+                            <button class="btn-delete" onclick="deletarTopico('${item._id}')">🗑️</button>
                         </div>
                     </div>
                 `).join('')}
@@ -59,13 +64,16 @@ function renderizar(itens) {
         lista.appendChild(divMateria);
     }
 
-    // Atualiza Barra de Progresso
-    const perc = totalGeral > 0 ? (concluidosGeral / totalGeral * 100).toFixed(1) : 0;
-    document.getElementById('progress-fill').style.width = `${perc}%`;
-    document.getElementById('progress-text').innerText = `${concluidosGeral}/${totalGeral} (${perc}%)`;
+    // Atualiza a Barra de Progresso Principal (Geral)
+    const percGeral = totalGeral > 0 ? (concluidosGeral / totalGeral * 100).toFixed(1) : 0;
+    const progressFill = document.getElementById('progress-fill');
+    if (progressFill) progressFill.style.width = `${percGeral}%`;
+
+    const progressText = document.getElementById('progress-text');
+    if (progressText) progressText.innerText = `${concluidosGeral}/${totalGeral} (${percGeral}%)`;
 }
 
-// --- FUNÇÕES DE AÇÃO ---
+// --- FUNÇÕES DE INTERAÇÃO ---
 
 async function toggleCheck(id, concluido) {
     await fetch(`/api/edital/${id}`, {
@@ -78,7 +86,7 @@ async function toggleCheck(id, concluido) {
 
 async function editarTopico(id, textoAtual) {
     const novoTexto = prompt("Editar tópico:", textoAtual);
-    if (novoTexto && novoTexto.trim() !== "") {
+    if (novoTexto && novoTexto !== "") {
         await fetch(`/api/edital/item/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -89,7 +97,7 @@ async function editarTopico(id, textoAtual) {
 }
 
 async function deletarTopico(id) {
-    if (confirm("Excluir este tópico definitivamente?")) {
+    if (confirm("Deseja excluir este tópico?")) {
         await fetch(`/api/edital/item/${id}`, { method: 'DELETE' });
         carregarEdital();
     }
@@ -104,7 +112,8 @@ function toggleMateria(materia) {
 async function importarEdital() {
     const materia = document.getElementById('materia-input').value;
     const textoBruto = document.getElementById('bulk-input').value;
-    if(!materia || !textoBruto) return alert("Preencha tudo!");
+
+    if (!materia || !textoBruto) return alert("Preencha a matéria e os tópicos!");
 
     await fetch('/api/edital/bulk', {
         method: 'POST',
@@ -116,5 +125,6 @@ async function importarEdital() {
     document.getElementById('bulk-input').value = '';
     carregarEdital();
 }
+
 
 document.addEventListener('DOMContentLoaded', carregarEdital);

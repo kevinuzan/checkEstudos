@@ -116,30 +116,56 @@ input[type="checkbox"] {
     font-size: 14px;
 }
 
+/* Botões de Ação nos Itens */
 .item-actions {
     display: flex;
-    gap: 5px;
+    gap: 10px;
 }
 
-.btn-edit,
-.btn-delete {
+.btn-edit {
+    background-color: #2563eb;
+    /* Azul */
+    color: white;
     border: none;
-    background: #f1f5f9;
-    padding: 4px 8px;
-    border-radius: 4px;
+    padding: 5px 10px;
+    border-radius: 5px;
     cursor: pointer;
     font-size: 12px;
-    transition: 0.2s;
+    transition: background 0.2s;
 }
 
 .btn-edit:hover {
-    background: #cbd5e1;
-    color: #2563eb;
+    background-color: #1d4ed8;
+}
+
+.btn-delete {
+    background-color: #ef4444;
+    /* Vermelho */
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.2s;
 }
 
 .btn-delete:hover {
-    background: #fee2e2;
-    color: #ef4444;
+    background-color: #dc2626;
+}
+
+/* Ajuste para o item ficar alinhado */
+.item-check {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.topico-texto {
+    flex: 1;
+    margin-right: 15px;
 }
 
 .materia-header {
