@@ -3,26 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Checklist Edital</title>
+    <title>Meu Edital</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <div class="app-container">
-        <header>
-            <h1>Meu Edital</h1>
-            <div class="stats">
-                <div class="progress-bar">
-                    <div id="progress-fill"></div>
-                </div>
-                <span id="progress-text">0/0 (0%)</span>
-            </div>
-        </header>
 
+    <!-- ===================== BARRA SUPERIOR ===================== -->
+    <header class="app-bar">
+        <div class="app-bar-inner">
+            <div class="app-bar-brand">
+                <span class="app-bar-logo">📘</span>
+                <span class="app-bar-title">Meu Edital</span>
+            </div>
+            <div class="streak-badge" id="streak-badge" title="Dias seguidos estudando">
+                <span class="streak-icone">🔥</span>
+                <span class="streak-numero" id="streak-numero">0</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="app-container">
+
+        <!-- --- Seletor de plano --- -->
         <nav class="planos-tabs" id="planos-tabs">
             <!-- abas dos planos (ex: TRT, ENAM) inseridas via JS -->
         </nav>
 
-        <!-- --- CRONÔMETRO DE ESTUDO --- -->
+        <!-- --- CRONÔMETRO DE ESTUDO (sempre visível) --- -->
         <section class="timer-card" id="timer-card">
             <div class="timer-display-wrap">
                 <span class="timer-label" id="timer-status-label">Pronto para começar</span>
@@ -36,14 +46,64 @@
             </div>
         </section>
 
+        <!-- --- Navegação entre seções (painel de toggle) --- -->
         <nav class="view-tabs" id="view-tabs">
-            <button class="view-tab ativo" id="tab-edital" onclick="trocarView('edital')">📋 Edital</button>
-            <button class="view-tab" id="tab-estudos" onclick="trocarView('estudos')">📊 Painel de Estudos</button>
+            <button class="view-tab ativo" id="tab-resumo" onclick="trocarView('resumo')">
+                <span class="view-tab-icone">🏠</span> Resumo
+            </button>
+            <button class="view-tab" id="tab-edital" onclick="trocarView('edital')">
+                <span class="view-tab-icone">📋</span> Edital
+            </button>
+            <button class="view-tab" id="tab-estudos" onclick="trocarView('estudos')">
+                <span class="view-tab-icone">🕒</span> Estudos
+            </button>
         </nav>
 
+        <!-- ===================== VIEW: RESUMO ===================== -->
+        <div id="view-resumo">
+
+            <section class="dashboard-grid" id="dashboard-grid">
+                <!-- cards de estatísticas gerais inseridos via JS -->
+            </section>
+
+            <section class="painel-bloco">
+                <div class="painel-bloco-header">
+                    <h2>Últimos 30 dias</h2>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-bars" id="chart-30-dias">
+                        <!-- barras do gráfico diário inseridas via JS -->
+                    </div>
+                </div>
+            </section>
+
+            <section class="painel-bloco">
+                <div class="painel-bloco-header">
+                    <h2>Tempo por matéria</h2>
+                    <span class="painel-bloco-sub">Clique na bolinha colorida para trocar a cor</span>
+                </div>
+                <div class="materias-indicadores" id="materias-indicadores">
+                    <!-- indicadores de matéria inseridos via JS -->
+                </div>
+            </section>
+
+        </div>
+
         <!-- ===================== VIEW: EDITAL ===================== -->
-        <div id="view-edital">
+        <div id="view-edital" style="display:none;">
+
+            <section class="progress-card">
+                <div class="progress-card-header">
+                    <span>Progresso do plano</span>
+                    <span id="progress-text">0/0 (0%)</span>
+                </div>
+                <div class="progress-bar">
+                    <div id="progress-fill"></div>
+                </div>
+            </section>
+
             <section class="add-section">
+                <h3 class="secao-titulo">Importar tópicos</h3>
                 <input type="text" id="materia-input" placeholder="Matéria (ex: Português)">
                 <textarea id="bulk-input" placeholder="Cole os tópicos do edital aqui (um por linha)"></textarea>
                 <div class="planos-check-label">Vincular aos planos:</div>
@@ -57,12 +117,8 @@
                 </main>
         </div>
 
-        <!-- ===================== VIEW: PAINEL DE ESTUDOS ===================== -->
+        <!-- ===================== VIEW: ESTUDOS (revisões e histórico) ===================== -->
         <div id="view-estudos" style="display:none;">
-
-            <section class="dashboard-grid" id="dashboard-grid">
-                <!-- cards de estatísticas inseridos via JS -->
-            </section>
 
             <section class="painel-bloco">
                 <div class="painel-bloco-header">
@@ -104,15 +160,21 @@
         </div>
     </div>
 
-    <!-- Modal de finalização de sessão de estudo -->
+    <!-- Modal de finalização/edição de sessão de estudo -->
     <div id="modal-sessao-overlay" class="modal-overlay" style="display:none;">
         <div class="modal modal-sessao">
-            <h3>Finalizar sessão de estudo</h3>
+            <h3 id="modal-sessao-titulo">Finalizar sessão de estudo</h3>
 
             <div class="sessao-duracao-box">
                 <span class="sessao-duracao-label">Tempo estudado</span>
-                <span class="sessao-duracao-valor" id="sessao-duracao-valor">00:00:00</span>
+                <div class="sessao-duracao-inputs">
+                    <input type="number" id="sessao-duracao-horas" min="0" placeholder="0" oninput="atualizarRitmoLeitura()"><span>h</span>
+                    <input type="number" id="sessao-duracao-minutos" min="0" max="59" placeholder="0" oninput="atualizarRitmoLeitura()"><span>min</span>
+                </div>
             </div>
+
+            <label class="modal-label">Data da sessão</label>
+            <input type="date" id="sessao-data">
 
             <label class="modal-label">Tipo de estudo</label>
             <div class="tipos-estudo-chips" id="tipos-estudo-chips">
@@ -143,7 +205,8 @@
 
             <div id="campo-extra-paginas" class="campo-extra" style="display:none;">
                 <label class="modal-label">Páginas lidas</label>
-                <input type="number" id="sessao-paginas" min="0" placeholder="Ex: 15">
+                <input type="number" id="sessao-paginas" min="0" placeholder="Ex: 15" oninput="atualizarRitmoLeitura()">
+                <div class="ritmo-leitura" id="ritmo-leitura"></div>
             </div>
 
             <label class="modal-label">Observações (opcional)</label>
@@ -164,7 +227,7 @@
 
             <div class="modal-actions">
                 <button class="btn-cancelar" onclick="fecharModalSessao()">Cancelar</button>
-                <button onclick="salvarSessao()">Salvar sessão</button>
+                <button id="btn-salvar-sessao" onclick="salvarSessao()">Salvar sessão</button>
             </div>
         </div>
     </div>
@@ -192,6 +255,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Input de cor invisível, usado para trocar a cor de uma matéria -->
+    <input type="color" id="color-picker-oculto" style="position:fixed; top:-100px; left:-100px; opacity:0;">
 
     <script src="/src/app.js"></script>
 </body>

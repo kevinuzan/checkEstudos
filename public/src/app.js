@@ -5,19 +5,21 @@ let estadosMinimizados = JSON.parse(localStorage.getItem('editais_minimizados'))
 let planosDisponiveis = [];
 // Plano atualmente selecionado (aba ativa)
 let planoAtual = localStorage.getItem('edital_plano_atual') || null;
-// Itens do plano atual (cache usado para abrir o modal de edição)
+// Itens do plano atual (cache usado para abrir os modais de edição)
 let itensAtuais = [];
 // Id do tópico em edição no modal
 let idEmEdicao = null;
 
-// View ativa: "edital" ou "estudos"
-let viewAtual = 'edital';
+// View ativa: "resumo", "edital" ou "estudos"
+let viewAtual = 'resumo';
 
 async function iniciar() {
+    configurarSeletorCorMateria();
     await carregarPlanos();
     await carregarEdital();
     await carregarTiposEstudo();
     restaurarCronometro();
+    await carregarResumo(); // a view inicial é o Resumo
 }
 
 // --- PLANOS ---
@@ -82,6 +84,7 @@ async function trocarPlano(nome) {
     renderPlanosCheckboxes('planos-checkboxes-import', [planoAtual]);
     await carregarEdital();
     if (viewAtual === 'estudos') await carregarPainelEstudos();
+    if (viewAtual === 'resumo') await carregarResumo();
 }
 
 async function criarPlano() {
@@ -277,17 +280,54 @@ async function importarEdital() {
 }
 
 // ==================================================================
-// NAVEGAÇÃO ENTRE VIEWS (Edital / Painel de Estudos)
+// NAVEGAÇÃO ENTRE SEÇÕES (Resumo / Edital / Estudos)
 // ==================================================================
 
 async function trocarView(nome) {
     viewAtual = nome;
+    document.getElementById('view-resumo').style.display = nome === 'resumo' ? 'block' : 'none';
     document.getElementById('view-edital').style.display = nome === 'edital' ? 'block' : 'none';
     document.getElementById('view-estudos').style.display = nome === 'estudos' ? 'block' : 'none';
+    document.getElementById('tab-resumo').classList.toggle('ativo', nome === 'resumo');
     document.getElementById('tab-edital').classList.toggle('ativo', nome === 'edital');
     document.getElementById('tab-estudos').classList.toggle('ativo', nome === 'estudos');
 
+    if (nome === 'resumo') await carregarResumo();
     if (nome === 'estudos') await carregarPainelEstudos();
+}
+
+// ==================================================================
+// FORMATAÇÃO / UTILIDADES DE DATA E TEMPO
+// ==================================================================
+
+function formatarHMS(totalMs) {
+    const totalSeg = Math.floor(totalMs / 1000);
+    const h = String(Math.floor(totalSeg / 3600)).padStart(2, '0');
+    const m = String(Math.floor((totalSeg % 3600) / 60)).padStart(2, '0');
+    const s = String(totalSeg % 60).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+}
+
+function formatarDuracaoCurta(segundos) {
+    segundos = Math.round(segundos || 0);
+    const h = Math.floor(segundos / 3600);
+    const m = Math.round((segundos % 3600) / 60);
+    if (h === 0) return `${m}min`;
+    return `${h}h${String(m).padStart(2, '0')}min`;
+}
+
+// Segundos por página → texto legível ("1.2 min/página" ou "40s/página")
+function formatarRitmo(segPorPagina) {
+    if (segPorPagina >= 60) return `${(segPorPagina / 60).toFixed(1)} min/página`;
+    return `${Math.round(segPorPagina)}s/página`;
+}
+
+// Data local no formato yyyy-mm-dd (evita problemas de fuso horário do toISOString)
+function formatarDataISO(data) {
+    const y = data.getFullYear();
+    const m = String(data.getMonth() + 1).padStart(2, '0');
+    const d = String(data.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 }
 
 // ==================================================================
@@ -297,10 +337,9 @@ async function trocarView(nome) {
 //   status: "parado" | "rodando" | "pausado"
 //   inicioSegmentoAtual: epoch ms de quando o trecho atual começou a rodar (null se não estiver rodando)
 //   acumuladoMs: soma dos trechos já rodados antes do segmento atual
-//   inicioSessao: epoch ms do primeiro "Iniciar" da sessão (usado para salvar o campo "inicio")
 
 const CRONOMETRO_KEY = 'cronometro_estado';
-let cronometroEstado = { status: 'parado', inicioSegmentoAtual: null, acumuladoMs: 0, inicioSessao: null };
+let cronometroEstado = { status: 'parado', inicioSegmentoAtual: null, acumuladoMs: 0 };
 let cronometroIntervalId = null;
 
 function salvarCronometroEstado() {
@@ -327,14 +366,6 @@ function calcularElapsedMs() {
         total += Date.now() - cronometroEstado.inicioSegmentoAtual;
     }
     return total;
-}
-
-function formatarHMS(totalMs) {
-    const totalSeg = Math.floor(totalMs / 1000);
-    const h = String(Math.floor(totalSeg / 3600)).padStart(2, '0');
-    const m = String(Math.floor((totalSeg % 3600) / 60)).padStart(2, '0');
-    const s = String(totalSeg % 60).padStart(2, '0');
-    return `${h}:${m}:${s}`;
 }
 
 function atualizarDisplayCronometro() {
@@ -377,12 +408,7 @@ function pararIntervaloCronometro() {
 }
 
 function iniciarCronometro() {
-    cronometroEstado = {
-        status: 'rodando',
-        inicioSegmentoAtual: Date.now(),
-        acumuladoMs: 0,
-        inicioSessao: Date.now()
-    };
+    cronometroEstado = { status: 'rodando', inicioSegmentoAtual: Date.now(), acumuladoMs: 0 };
     salvarCronometroEstado();
     atualizarBotoesCronometro();
     atualizarDisplayCronometro();
@@ -410,7 +436,7 @@ function retomarCronometro() {
 }
 
 function resetarCronometro() {
-    cronometroEstado = { status: 'parado', inicioSegmentoAtual: null, acumuladoMs: 0, inicioSessao: null };
+    cronometroEstado = { status: 'parado', inicioSegmentoAtual: null, acumuladoMs: 0 };
     salvarCronometroEstado();
     pararIntervaloCronometro();
     atualizarBotoesCronometro();
@@ -459,6 +485,7 @@ function atualizarCampoExtra() {
     const campoPaginas = document.getElementById('campo-extra-paginas');
     campoQuestoes.style.display = tipo && tipo.campoExtra === 'questoes' ? 'block' : 'none';
     campoPaginas.style.display = tipo && tipo.campoExtra === 'paginas' ? 'block' : 'none';
+    if (tipo && tipo.campoExtra === 'paginas') atualizarRitmoLeitura();
 }
 
 function atualizarResultadoQuestoes() {
@@ -468,6 +495,20 @@ function atualizarResultadoQuestoes() {
     const resultado = document.getElementById('questoes-resultado');
     if (!resultado) return;
     resultado.textContent = total > 0 ? `${total} questões · ${Math.round((acertos / total) * 100)}% de acerto` : '—';
+}
+
+// Mostra o ritmo de leitura (tempo médio por página) em tempo real, enquanto o
+// usuário preenche a duração e a quantidade de páginas lidas na sessão.
+function atualizarRitmoLeitura() {
+    const el = document.getElementById('ritmo-leitura');
+    if (!el) return;
+    const duracaoSegundos = obterDuracaoSegundosInputs();
+    const paginas = parseInt(document.getElementById('sessao-paginas').value) || 0;
+    if (duracaoSegundos <= 0 || paginas <= 0) {
+        el.textContent = '';
+        return;
+    }
+    el.textContent = `⏱ Ritmo desta sessão: ${formatarRitmo(duracaoSegundos / paginas)}`;
 }
 
 // --- Modal de gerenciamento de tipos de estudo ---
@@ -545,16 +586,43 @@ async function excluirTipoEstudo(id) {
 }
 
 // ==================================================================
-// MODAL: FINALIZAR SESSÃO DE ESTUDO
+// MODAL: CRIAR / EDITAR SESSÃO DE ESTUDO
 // ==================================================================
 
 let topicosSelecionadosSessao = new Set();
+// Id da sessão em edição (null quando o modal está criando uma sessão nova)
+let idSessaoEmEdicao = null;
+// Tópicos da sessão em edição que não existem mais no edital do plano atual
+// (matéria/tópico apagados ou desvinculados) — preservados ao salvar.
+let topicosExtrasSessaoEmEdicao = [];
+
+function obterDuracaoSegundosInputs() {
+    const h = parseInt(document.getElementById('sessao-duracao-horas').value) || 0;
+    const m = parseInt(document.getElementById('sessao-duracao-minutos').value) || 0;
+    return h * 3600 + m * 60;
+}
+
+function construirFimAPartirDoInput() {
+    const dataStr = document.getElementById('sessao-data').value; // yyyy-mm-dd
+    const agora = new Date();
+    if (!dataStr) return agora;
+    const [y, m, d] = dataStr.split('-').map(Number);
+    return new Date(y, m - 1, d, agora.getHours(), agora.getMinutes(), agora.getSeconds());
+}
 
 function abrirModalSessao() {
     // Congela o cronômetro enquanto o usuário preenche os detalhes da sessão
     if (cronometroEstado.status === 'rodando') pausarCronometro();
 
-    document.getElementById('sessao-duracao-valor').textContent = formatarHMS(calcularElapsedMs());
+    idSessaoEmEdicao = null;
+    topicosExtrasSessaoEmEdicao = [];
+    document.getElementById('modal-sessao-titulo').textContent = 'Finalizar sessão de estudo';
+    document.getElementById('btn-salvar-sessao').textContent = 'Salvar sessão';
+
+    const elapsedMs = calcularElapsedMs();
+    document.getElementById('sessao-duracao-horas').value = Math.floor(elapsedMs / 3600000);
+    document.getElementById('sessao-duracao-minutos').value = Math.round((elapsedMs % 3600000) / 60000);
+    document.getElementById('sessao-data').value = formatarDataISO(new Date());
 
     topicosSelecionadosSessao = new Set();
     tipoEstudoSelecionadoId = null;
@@ -570,6 +638,49 @@ function abrirModalSessao() {
     document.getElementById('sessao-revisao-dias').value = 7;
     document.getElementById('revisao-dias-row').style.display = 'none';
     atualizarResultadoQuestoes();
+    atualizarRitmoLeitura();
+    atualizarPreviewRevisao();
+
+    renderizarTopicosSessao();
+
+    document.getElementById('modal-sessao-overlay').style.display = 'flex';
+}
+
+// Abre o mesmo modal, mas pré-preenchido para editar uma sessão já registrada
+// (usada pelo botão de editar no histórico de sessões).
+function abrirModalEdicaoSessao(id) {
+    const sessao = sessoesCache.find(s => s._id === id);
+    if (!sessao) return;
+
+    idSessaoEmEdicao = id;
+    document.getElementById('modal-sessao-titulo').textContent = 'Editar sessão de estudo';
+    document.getElementById('btn-salvar-sessao').textContent = 'Salvar alterações';
+
+    const h = Math.floor(sessao.duracaoSegundos / 3600);
+    const m = Math.round((sessao.duracaoSegundos % 3600) / 60);
+    document.getElementById('sessao-duracao-horas').value = h;
+    document.getElementById('sessao-duracao-minutos').value = m;
+    document.getElementById('sessao-data').value = formatarDataISO(new Date(sessao.fim));
+
+    const topicosDaSessao = sessao.topicos || [];
+    topicosSelecionadosSessao = new Set(topicosDaSessao.map(t => t.topicoId));
+    // Preserva tópicos que já não existem mais no edital atual, para não perdê-los ao salvar
+    topicosExtrasSessaoEmEdicao = topicosDaSessao.filter(t => !itensAtuais.find(i => i._id === t.topicoId));
+
+    tipoEstudoSelecionadoId = sessao.tipoEstudoId;
+    renderizarChipsTipos();
+    atualizarCampoExtra();
+
+    document.getElementById('sessao-acertos').value = sessao.acertos ?? '';
+    document.getElementById('sessao-erros').value = sessao.erros ?? '';
+    document.getElementById('sessao-paginas').value = sessao.paginasLidas ?? '';
+    document.getElementById('sessao-observacoes').value = sessao.observacoes || '';
+    document.getElementById('sessao-busca-topicos').value = '';
+    document.getElementById('sessao-revisao-check').checked = !!(sessao.revisao && sessao.revisao.agendada);
+    document.getElementById('sessao-revisao-dias').value = (sessao.revisao && sessao.revisao.dias) || 7;
+
+    atualizarResultadoQuestoes();
+    atualizarRitmoLeitura();
     atualizarPreviewRevisao();
 
     renderizarTopicosSessao();
@@ -595,23 +706,40 @@ function renderizarTopicosSessao(filtro) {
     }, {});
 
     const materias = Object.keys(grupos);
-    if (materias.length === 0) {
-        container.innerHTML = `<div class="sessao-topicos-vazio">Nenhum tópico encontrado. Cadastre tópicos na aba Edital.</div>`;
-        return;
+    let html = '';
+
+    if (materias.length === 0 && topicosExtrasSessaoEmEdicao.length === 0) {
+        html = `<div class="sessao-topicos-vazio">Nenhum tópico encontrado. Cadastre tópicos na aba Edital.</div>`;
+    } else {
+        html = materias.map(materia => `
+            <div class="sessao-materia-grupo">
+                <div class="sessao-materia-titulo">${materia}</div>
+                ${grupos[materia].map(item => `
+                    <label class="sessao-topico-item">
+                        <input type="checkbox" value="${item._id}" ${topicosSelecionadosSessao.has(item._id) ? 'checked' : ''}
+                            onchange="toggleTopicoSessao('${item._id}')">
+                        ${item.topico}
+                    </label>
+                `).join('')}
+            </div>
+        `).join('');
+
+        if (topicosExtrasSessaoEmEdicao.length > 0) {
+            html += `
+                <div class="sessao-materia-grupo">
+                    <div class="sessao-materia-titulo">Outros (fora do edital atual)</div>
+                    ${topicosExtrasSessaoEmEdicao.map(t => `
+                        <label class="sessao-topico-item sessao-topico-item-fixo">
+                            <input type="checkbox" checked disabled>
+                            ${t.topico} <span class="sessao-topico-materia-extra">(${t.materia})</span>
+                        </label>
+                    `).join('')}
+                </div>
+            `;
+        }
     }
 
-    container.innerHTML = materias.map(materia => `
-        <div class="sessao-materia-grupo">
-            <div class="sessao-materia-titulo">${materia}</div>
-            ${grupos[materia].map(item => `
-                <label class="sessao-topico-item">
-                    <input type="checkbox" value="${item._id}" ${topicosSelecionadosSessao.has(item._id) ? 'checked' : ''}
-                        onchange="toggleTopicoSessao('${item._id}')">
-                    ${item.topico}
-                </label>
-            `).join('')}
-        </div>
-    `).join('');
+    container.innerHTML = html;
 }
 
 function filtrarTopicosSessao() {
@@ -635,15 +763,21 @@ function atualizarPreviewRevisao() {
 
 async function salvarSessao() {
     if (!tipoEstudoSelecionadoId) return alert("Selecione o tipo de estudo!");
-
     const tipo = tipoEstudoAtual();
-    const duracaoMs = calcularElapsedMs();
-    const fim = new Date();
-    const inicio = new Date(fim.getTime() - duracaoMs);
+    if (!tipo) return alert("Tipo de estudo inválido — selecione novamente.");
+
+    const duracaoSegundos = obterDuracaoSegundosInputs();
+    if (duracaoSegundos <= 0) return alert("Informe a duração da sessão (horas e/ou minutos)!");
+
+    const fim = construirFimAPartirDoInput();
+    const inicio = new Date(fim.getTime() - duracaoSegundos * 1000);
 
     const topicos = itensAtuais
         .filter(i => topicosSelecionadosSessao.has(i._id))
         .map(i => ({ topicoId: i._id, materia: i.materia, topico: i.topico }));
+    topicosExtrasSessaoEmEdicao.forEach(t => {
+        if (!topicos.find(x => x.topicoId === t.topicoId)) topicos.push(t);
+    });
 
     const revisaoMarcada = document.getElementById('sessao-revisao-check').checked;
     const revisaoDias = parseInt(document.getElementById('sessao-revisao-dias').value) || 7;
@@ -651,7 +785,7 @@ async function salvarSessao() {
     const corpo = {
         inicio: inicio.toISOString(),
         fim: fim.toISOString(),
-        duracaoSegundos: Math.floor(duracaoMs / 1000),
+        duracaoSegundos,
         plano: planoAtual,
         tipoEstudoId: tipo._id,
         tipoEstudoNome: tipo.nome,
@@ -663,90 +797,50 @@ async function salvarSessao() {
         revisao: { agendada: revisaoMarcada, dias: revisaoDias }
     };
 
-    await fetch('/api/sessoes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(corpo)
-    });
+    if (idSessaoEmEdicao) {
+        await fetch(`/api/sessoes/${idSessaoEmEdicao}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo)
+        });
+    } else {
+        await fetch('/api/sessoes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo)
+        });
+    }
 
+    const eraNova = !idSessaoEmEdicao;
     fecharModalSessao();
-    resetarCronometro();
+    idSessaoEmEdicao = null;
+    if (eraNova) resetarCronometro();
 
+    await atualizarStreak();
     if (viewAtual === 'estudos') await carregarPainelEstudos();
+    if (viewAtual === 'resumo') await carregarResumo();
 }
 
 // ==================================================================
-// PAINEL DE ESTUDOS: ESTATÍSTICAS, REVISÕES E HISTÓRICO
+// PAINEL "ESTUDOS": REVISÕES E HISTÓRICO
 // ==================================================================
 
-let sessoesCache = [];
+let sessoesCache = []; // sessões do plano atualmente selecionado
 
-function formatarDuracaoCurta(segundos) {
-    const h = Math.floor(segundos / 3600);
-    const m = Math.round((segundos % 3600) / 60);
-    if (h === 0) return `${m}min`;
-    return `${h}h${String(m).padStart(2, '0')}min`;
-}
-
-async function carregarPainelEstudos() {
-    await Promise.all([carregarEstatisticas(), carregarRevisoes()]);
-}
-
-async function carregarEstatisticas() {
+async function carregarSessoesPlanoAtual() {
     try {
-        const res = await fetch(`/api/sessoes?plano=${encodeURIComponent(planoAtual)}&limite=500`);
+        const res = await fetch(`/api/sessoes?plano=${encodeURIComponent(planoAtual)}&limite=1000`);
         sessoesCache = await res.json();
     } catch (err) {
         console.error("Erro ao carregar sessões:", err);
         sessoesCache = [];
     }
+}
 
-    const agora = new Date();
-    const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-    const inicioSemana = new Date(inicioHoje.getTime() - agora.getDay() * 24 * 60 * 60 * 1000);
-
-    let segundosHoje = 0, segundosSemana = 0, segundosTotal = 0;
-    const porTipo = {};
-
-    sessoesCache.forEach(s => {
-        const dataFim = new Date(s.fim);
-        segundosTotal += s.duracaoSegundos;
-        if (dataFim >= inicioHoje) segundosHoje += s.duracaoSegundos;
-        if (dataFim >= inicioSemana) segundosSemana += s.duracaoSegundos;
-
-        const nomeTipo = s.tipoEstudoNome || 'Outro';
-        porTipo[nomeTipo] = (porTipo[nomeTipo] || 0) + s.duracaoSegundos;
-    });
-
-    const tipoMaisEstudado = Object.entries(porTipo).sort((a, b) => b[1] - a[1])[0];
-
-    const grid = document.getElementById('dashboard-grid');
-    if (grid) {
-        grid.innerHTML = `
-            <div class="stat-card">
-                <span class="stat-card-label">Hoje</span>
-                <span class="stat-card-valor">${formatarDuracaoCurta(segundosHoje)}</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-card-label">Esta semana</span>
-                <span class="stat-card-valor">${formatarDuracaoCurta(segundosSemana)}</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-card-label">Total no plano</span>
-                <span class="stat-card-valor">${formatarDuracaoCurta(segundosTotal)}</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-card-label">Sessões registradas</span>
-                <span class="stat-card-valor">${sessoesCache.length}</span>
-            </div>
-            <div class="stat-card stat-card-destaque">
-                <span class="stat-card-label">Tipo mais estudado</span>
-                <span class="stat-card-valor stat-card-valor-texto">${tipoMaisEstudado ? tipoMaisEstudado[0] : '—'}</span>
-            </div>
-        `;
-    }
-
+async function carregarPainelEstudos() {
+    await carregarSessoesPlanoAtual();
     renderizarHistorico();
+    await carregarRevisoes();
 }
 
 function renderizarHistorico() {
@@ -758,7 +852,7 @@ function renderizarHistorico() {
         return;
     }
 
-    lista.innerHTML = sessoesCache.slice(0, 30).map(s => {
+    lista.innerHTML = sessoesCache.slice(0, 40).map(s => {
         const data = new Date(s.fim);
         const topicosTexto = s.topicos && s.topicos.length > 0
             ? s.topicos.map(t => t.topico).join(', ')
@@ -767,7 +861,10 @@ function renderizarHistorico() {
         if (s.acertos !== null && s.acertos !== undefined) {
             desempenho = `<span class="historico-badge">✔️ ${s.acertos} / ❌ ${s.erros || 0}</span>`;
         } else if (s.paginasLidas !== null && s.paginasLidas !== undefined) {
-            desempenho = `<span class="historico-badge">📖 ${s.paginasLidas} pág.</span>`;
+            const ritmoTxt = (s.duracaoSegundos > 0 && s.paginasLidas > 0)
+                ? ` · ${formatarRitmo(s.duracaoSegundos / s.paginasLidas)}`
+                : '';
+            desempenho = `<span class="historico-badge">📖 ${s.paginasLidas} pág.${ritmoTxt}</span>`;
         }
 
         return `
@@ -776,7 +873,10 @@ function renderizarHistorico() {
                     <span class="historico-tipo">${s.tipoEstudoNome || 'Outro'}</span>
                     <span class="historico-duracao">${formatarDuracaoCurta(s.duracaoSegundos)}</span>
                     <span class="historico-data">${data.toLocaleDateString('pt-BR')}</span>
-                    <button class="btn-delete historico-excluir" onclick="excluirSessao('${s._id}')">🗑️</button>
+                    <div class="historico-item-acoes">
+                        <button class="btn-edit historico-editar" onclick="abrirModalEdicaoSessao('${s._id}')">✎</button>
+                        <button class="btn-delete historico-excluir" onclick="excluirSessao('${s._id}')">🗑️</button>
+                    </div>
                 </div>
                 <div class="historico-topicos" title="${topicosTexto}">${topicosTexto}</div>
                 ${desempenho}
@@ -789,7 +889,9 @@ function renderizarHistorico() {
 async function excluirSessao(id) {
     if (!confirm("Excluir esta sessão do histórico?")) return;
     await fetch(`/api/sessoes/${id}`, { method: 'DELETE' });
+    await atualizarStreak();
     await carregarPainelEstudos();
+    if (viewAtual === 'resumo') await carregarResumo();
 }
 
 async function carregarRevisoes() {
@@ -833,6 +935,244 @@ async function carregarRevisoes() {
 async function concluirRevisao(id) {
     await fetch(`/api/revisoes/${id}/concluir`, { method: 'PUT' });
     await carregarRevisoes();
+}
+
+// ==================================================================
+// RESUMO: DASHBOARD, GRÁFICO DE 30 DIAS, MATÉRIAS E OFENSIVA
+// ==================================================================
+
+let materiasCores = {};    // { "Português": "#2563eb", ... }
+let materiaCorEmEdicao = null;
+let sessoesTodasCache = []; // todas as sessões, de todos os planos (só para a ofensiva)
+
+const PALETA_PADRAO_MATERIAS = [
+    '#2563eb', '#7c3aed', '#22c55e', '#f59e0b', '#ef4444',
+    '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#f97316'
+];
+
+function corDaMateria(materia, indice) {
+    return materiasCores[materia] || PALETA_PADRAO_MATERIAS[indice % PALETA_PADRAO_MATERIAS.length];
+}
+
+async function carregarMateriasCores() {
+    try {
+        const res = await fetch('/api/materias-cor');
+        const lista = await res.json();
+        materiasCores = {};
+        lista.forEach(m => { materiasCores[m.materia] = m.cor; });
+    } catch (err) {
+        console.error("Erro ao carregar cores das matérias:", err);
+    }
+}
+
+function configurarSeletorCorMateria() {
+    const input = document.getElementById('color-picker-oculto');
+    if (!input) return;
+    input.addEventListener('change', async (e) => {
+        if (!materiaCorEmEdicao) return;
+        const cor = e.target.value;
+        materiasCores[materiaCorEmEdicao] = cor;
+        renderizarIndicadoresMaterias();
+        await fetch('/api/materias-cor', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ materia: materiaCorEmEdicao, cor })
+        });
+    });
+}
+
+function abrirSeletorCorMateria(materia) {
+    materiaCorEmEdicao = materia;
+    const input = document.getElementById('color-picker-oculto');
+    input.value = materiasCores[materia] || '#2563eb';
+    input.click();
+}
+
+async function carregarResumo() {
+    await Promise.all([carregarSessoesPlanoAtual(), carregarMateriasCores(), atualizarStreak()]);
+    renderizarDashboardResumo();
+    renderizarGraficoTrintaDias();
+    renderizarIndicadoresMaterias();
+}
+
+function renderizarDashboardResumo() {
+    const grid = document.getElementById('dashboard-grid');
+    if (!grid) return;
+
+    let totalSegundos = 0;
+    let totalPaginas = 0;
+    let totalSegundosLeitura = 0;
+    let totalPaginasLeitura = 0;
+    let totalQuestoes = 0;
+    let totalAcertos = 0;
+    const diasComEstudo = new Set();
+
+    sessoesCache.forEach(s => {
+        totalSegundos += s.duracaoSegundos;
+        if (s.duracaoSegundos > 0) diasComEstudo.add(formatarDataISO(new Date(s.fim)));
+
+        if (s.paginasLidas !== null && s.paginasLidas !== undefined) {
+            totalPaginas += s.paginasLidas;
+            totalSegundosLeitura += s.duracaoSegundos;
+            totalPaginasLeitura += s.paginasLidas;
+        }
+        if (s.acertos !== null && s.acertos !== undefined) {
+            totalQuestoes += s.acertos + (s.erros || 0);
+            totalAcertos += s.acertos;
+        }
+    });
+
+    const mediaSegundosPorDia = diasComEstudo.size > 0 ? totalSegundos / diasComEstudo.size : 0;
+    const ritmoLeitura = totalPaginasLeitura > 0 ? totalSegundosLeitura / totalPaginasLeitura : null;
+    const percAcerto = totalQuestoes > 0 ? Math.round((totalAcertos / totalQuestoes) * 100) : null;
+
+    grid.innerHTML = `
+        <div class="stat-card">
+            <span class="stat-card-label">Horas estudadas</span>
+            <span class="stat-card-valor">${formatarDuracaoCurta(totalSegundos)}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-card-label">Média por dia</span>
+            <span class="stat-card-valor">${formatarDuracaoCurta(mediaSegundosPorDia)}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-card-label">Páginas lidas</span>
+            <span class="stat-card-valor">${totalPaginas}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-card-label">Questões resolvidas</span>
+            <span class="stat-card-valor">${totalQuestoes}</span>
+            ${percAcerto !== null ? `<span class="stat-card-extra">${percAcerto}% de acerto</span>` : ''}
+        </div>
+        ${ritmoLeitura !== null ? `
+        <div class="stat-card stat-card-destaque">
+            <span class="stat-card-label">Ritmo médio de leitura</span>
+            <span class="stat-card-valor stat-card-valor-texto">${formatarRitmo(ritmoLeitura)}</span>
+        </div>` : ''}
+    `;
+}
+
+function renderizarGraficoTrintaDias() {
+    const container = document.getElementById('chart-30-dias');
+    if (!container) return;
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const dias = [];
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date(hoje.getTime() - i * 24 * 60 * 60 * 1000);
+        dias.push({ data: d, iso: formatarDataISO(d), segundos: 0 });
+    }
+
+    const porDia = {};
+    sessoesCache.forEach(s => {
+        const iso = formatarDataISO(new Date(s.fim));
+        porDia[iso] = (porDia[iso] || 0) + s.duracaoSegundos;
+    });
+    dias.forEach(dia => { dia.segundos = porDia[dia.iso] || 0; });
+
+    const maxSegundos = Math.max(...dias.map(d => d.segundos), 1);
+    const hojeIso = formatarDataISO(hoje);
+
+    container.innerHTML = dias.map(dia => {
+        const alturaPerc = dia.segundos > 0 ? Math.max(6, Math.round((dia.segundos / maxSegundos) * 100)) : 2;
+        const label = dia.data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const horasTexto = dia.segundos > 0 ? formatarDuracaoCurta(dia.segundos) : 'sem estudo';
+        return `
+            <div class="chart-bar-wrap" title="${label} — ${horasTexto}">
+                <div class="chart-bar ${dia.iso === hojeIso ? 'chart-bar-hoje' : ''}" style="height:${alturaPerc}%"></div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderizarIndicadoresMaterias() {
+    const container = document.getElementById('materias-indicadores');
+    if (!container) return;
+
+    const segundosPorMateria = {};
+    sessoesCache.forEach(s => {
+        const materiasSessao = new Set((s.topicos || []).map(t => t.materia));
+        materiasSessao.forEach(m => {
+            segundosPorMateria[m] = (segundosPorMateria[m] || 0) + s.duracaoSegundos;
+        });
+    });
+
+    // Garante que matérias do edital sem tempo registrado ainda apareçam na lista
+    const materiasEdital = new Set(itensAtuais.map(i => i.materia));
+    materiasEdital.forEach(m => { if (!(m in segundosPorMateria)) segundosPorMateria[m] = 0; });
+
+    const materiasOrdenadas = Object.entries(segundosPorMateria).sort((a, b) => b[1] - a[1]);
+
+    if (materiasOrdenadas.length === 0) {
+        container.innerHTML = `<div class="lista-vazia">Cadastre matérias no Edital para ver os indicadores aqui.</div>`;
+        return;
+    }
+
+    const maxSegundos = Math.max(...materiasOrdenadas.map(([, s]) => s), 1);
+
+    container.innerHTML = materiasOrdenadas.map(([materia, segundos], indice) => {
+        const cor = corDaMateria(materia, indice);
+        const perc = Math.round((segundos / maxSegundos) * 100);
+        const materiaEscapada = materia.replace(/'/g, "\\'");
+        return `
+            <div class="materia-indicador">
+                <button type="button" class="materia-cor-swatch" style="background:${cor}"
+                    onclick="abrirSeletorCorMateria('${materiaEscapada}')" title="Trocar cor de ${materia}"></button>
+                <div class="materia-indicador-corpo">
+                    <div class="materia-indicador-topo">
+                        <span class="materia-indicador-nome">${materia}</span>
+                        <span class="materia-indicador-tempo">${segundos > 0 ? formatarDuracaoCurta(segundos) : '—'}</span>
+                    </div>
+                    <div class="materia-indicador-barra-fundo">
+                        <div class="materia-indicador-barra" style="width:${perc}%; background:${cor}"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// --- Ofensiva (dias seguidos estudando, estilo Duolingo) ---
+// Considera sessões de TODOS os planos: o hábito de estudar vale independente
+// de qual meta (TRT, ENAM...) está sendo trabalhada no dia.
+
+async function atualizarStreak() {
+    try {
+        const res = await fetch('/api/sessoes?limite=3000');
+        sessoesTodasCache = await res.json();
+    } catch (err) {
+        console.error("Erro ao carregar sessões para a ofensiva:", err);
+        sessoesTodasCache = [];
+    }
+
+    const datasEstudadas = new Set(
+        sessoesTodasCache.filter(s => s.duracaoSegundos > 0).map(s => formatarDataISO(new Date(s.fim)))
+    );
+    const streak = calcularStreakAtual(datasEstudadas);
+
+    const numeroEl = document.getElementById('streak-numero');
+    const badgeEl = document.getElementById('streak-badge');
+    if (numeroEl) numeroEl.textContent = streak;
+    if (badgeEl) badgeEl.classList.toggle('streak-ativa', streak > 0);
+}
+
+function calcularStreakAtual(datasEstudadas) {
+    let streak = 0;
+    const cursor = new Date();
+    cursor.setHours(0, 0, 0, 0);
+
+    // Se ainda não estudou hoje, a ofensiva continua valendo pelo que foi
+    // feito até ontem (só "quebra" se um dia inteiro passar sem estudo).
+    if (!datasEstudadas.has(formatarDataISO(cursor))) {
+        cursor.setDate(cursor.getDate() - 1);
+    }
+    while (datasEstudadas.has(formatarDataISO(cursor))) {
+        streak++;
+        cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
 }
 
 document.addEventListener('DOMContentLoaded', iniciar);

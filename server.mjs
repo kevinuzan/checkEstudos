@@ -38,6 +38,7 @@ const EDITAL_COLLECTION = "edital_topicos";
 const PLANOS_COLLECTION = "edital_planos";
 const TIPOS_ESTUDO_COLLECTION = "tipos_estudo";
 const SESSOES_COLLECTION = "sessoes_estudo";
+const MATERIAS_COR_COLLECTION = "materias_cor";
 const PLANO_PADRAO = "TRT";
 
 // Tipos de estudo padrão, criados automaticamente na primeira execução.
@@ -66,6 +67,7 @@ async function startServer() {
         const planosColl = db.collection(PLANOS_COLLECTION);
         const tiposEstudoColl = db.collection(TIPOS_ESTUDO_COLLECTION);
         const sessoesColl = db.collection(SESSOES_COLLECTION);
+        const materiasCorColl = db.collection(MATERIAS_COR_COLLECTION);
 
         // --- MIGRAÇÃO: garante que todo item tenha um array "planos" ---
         // Itens antigos (de antes de existir o conceito de "plano") são
@@ -319,6 +321,39 @@ async function startServer() {
             res.json({ success: true, sessao: { ...doc, _id: resultado.insertedId } });
         });
 
+        // Editar uma sessão de estudo já registrada (tipo, tópicos, duração, desempenho, revisão...)
+        app.put('/api/sessoes/:id', async (req, res) => {
+            const { id } = req.params;
+            const {
+                inicio, fim, duracaoSegundos, tipoEstudoId, tipoEstudoNome,
+                topicos, acertos, erros, paginasLidas, observacoes, revisao
+            } = req.body;
+
+            const set = {
+                fim: fim ? new Date(fim) : new Date(),
+                duracaoSegundos: Number(duracaoSegundos) || 0,
+                tipoEstudoId: tipoEstudoId || null,
+                tipoEstudoNome: tipoEstudoNome || null,
+                topicos: Array.isArray(topicos) ? topicos : [],
+                acertos: acertos !== undefined && acertos !== null && acertos !== '' ? Number(acertos) : null,
+                erros: erros !== undefined && erros !== null && erros !== '' ? Number(erros) : null,
+                paginasLidas: paginasLidas !== undefined && paginasLidas !== null && paginasLidas !== '' ? Number(paginasLidas) : null,
+                observacoes: observacoes || ''
+            };
+            set.inicio = inicio ? new Date(inicio) : new Date(set.fim.getTime() - set.duracaoSegundos * 1000);
+
+            if (revisao && revisao.agendada) {
+                const dias = Number(revisao.dias) || 7;
+                const dataRevisao = new Date(set.fim.getTime() + dias * 24 * 60 * 60 * 1000);
+                set.revisao = { agendada: true, dias, dataRevisao, concluida: false, concluidaEm: null };
+            } else {
+                set.revisao = { agendada: false, dias: null, dataRevisao: null, concluida: false, concluidaEm: null };
+            }
+
+            await sessoesColl.updateOne({ _id: new ObjectId(id) }, { $set: set });
+            res.json({ success: true });
+        });
+
         // Excluir uma sessão registrada
         app.delete('/api/sessoes/:id', async (req, res) => {
             const { id } = req.params;
@@ -343,6 +378,28 @@ async function startServer() {
             await sessoesColl.updateOne(
                 { _id: new ObjectId(id) },
                 { $set: { "revisao.concluida": true, "revisao.concluidaEm": new Date() } }
+            );
+            res.json({ success: true });
+        });
+
+        // --- CORES DAS MATÉRIAS (usadas nos indicadores do Resumo) ---
+
+        // Listar as cores já configuradas
+        app.get('/api/materias-cor', async (req, res) => {
+            const cores = await materiasCorColl.find({}).toArray();
+            res.json(cores);
+        });
+
+        // Definir/atualizar a cor de uma matéria
+        app.put('/api/materias-cor', async (req, res) => {
+            const materia = (req.body.materia || '').trim();
+            const cor = (req.body.cor || '').trim();
+            if (!materia || !cor) return res.status(400).json({ success: false, error: 'Matéria e cor são obrigatórias' });
+
+            await materiasCorColl.updateOne(
+                { materia },
+                { $set: { materia, cor } },
+                { upsert: true }
             );
             res.json({ success: true });
         });
