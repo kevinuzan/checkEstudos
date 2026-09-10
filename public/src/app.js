@@ -950,8 +950,40 @@ const PALETA_PADRAO_MATERIAS = [
     '#06b6d4', '#ec4899', '#84cc16', '#6366f1', '#f97316'
 ];
 
-function corDaMateria(materia, indice) {
-    return materiasCores[materia] || PALETA_PADRAO_MATERIAS[indice % PALETA_PADRAO_MATERIAS.length];
+const PALETA_PADRAO_TIPOS = [
+    '#0891b2', '#db2777', '#65a30d', '#9333ea', '#ea580c',
+    '#0d9488', '#4f46e5', '#ca8a04', '#dc2626', '#059669'
+];
+
+// Hash simples e estável (mesma string → sempre o mesmo índice), usado para
+// dar uma cor padrão consistente a matérias/tipos que o usuário não personalizou.
+function hashStringParaIndice(str, tamanhoPaleta) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    }
+    return hash % tamanhoPaleta;
+}
+
+function corDaMateria(materia) {
+    if (materiasCores[materia]) return materiasCores[materia];
+    return PALETA_PADRAO_MATERIAS[hashStringParaIndice(materia, PALETA_PADRAO_MATERIAS.length)];
+}
+
+function corDoTipo(tipoNome) {
+    return PALETA_PADRAO_TIPOS[hashStringParaIndice(tipoNome || 'Outro', PALETA_PADRAO_TIPOS.length)];
+}
+
+// Divide a duração de uma sessão igualmente entre as matérias dos tópicos que
+// ela tocou, para que a soma por matéria nunca ultrapasse o tempo realmente
+// estudado (evita "inflar" o total ao empilhar várias matérias no gráfico).
+function distribuirSegundosPorMateria(sessao) {
+    const materias = Array.from(new Set((sessao.topicos || []).map(t => t.materia)));
+    if (materias.length === 0) return {};
+    const partes = sessao.duracaoSegundos / materias.length;
+    const resultado = {};
+    materias.forEach(m => { resultado[m] = partes; });
+    return resultado;
 }
 
 async function carregarMateriasCores() {
@@ -992,6 +1024,8 @@ async function carregarResumo() {
     await Promise.all([carregarSessoesPlanoAtual(), carregarMateriasCores(), atualizarStreak()]);
     renderizarDashboardResumo();
     renderizarGraficoTrintaDias();
+    renderizarGraficoMateriasEmpilhado();
+    renderizarGraficoTiposEmpilhado();
     renderizarIndicadoresMaterias();
 }
 
@@ -1052,10 +1086,9 @@ function renderizarDashboardResumo() {
     `;
 }
 
-function renderizarGraficoTrintaDias() {
-    const container = document.getElementById('chart-30-dias');
-    if (!container) return;
-
+// Constrói os últimos 30 dias (do mais antigo ao mais recente) e o total de
+// segundos estudados em cada um, a partir das sessões do plano atual.
+function construirUltimosTrintaDias() {
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
@@ -1072,8 +1105,17 @@ function renderizarGraficoTrintaDias() {
     });
     dias.forEach(dia => { dia.segundos = porDia[dia.iso] || 0; });
 
+    return dias;
+}
+
+function renderizarGraficoTrintaDias() {
+    const container = document.getElementById('chart-30-dias');
+    const containerFoguinhos = document.getElementById('chart-30-dias-flames');
+    if (!container) return;
+
+    const dias = construirUltimosTrintaDias();
     const maxSegundos = Math.max(...dias.map(d => d.segundos), 1);
-    const hojeIso = formatarDataISO(hoje);
+    const hojeIso = formatarDataISO(new Date());
 
     container.innerHTML = dias.map(dia => {
         const alturaPerc = dia.segundos > 0 ? Math.max(6, Math.round((dia.segundos / maxSegundos) * 100)) : 2;
@@ -1085,6 +1127,168 @@ function renderizarGraficoTrintaDias() {
             </div>
         `;
     }).join('');
+
+    // Foguinhos de ofensiva alinhados no "eixo x", um por dia: aceso nos dias
+    // estudados, apagado nos dias sem sessão registrada.
+    if (containerFoguinhos) {
+        containerFoguinhos.innerHTML = dias.map(dia => {
+            const label = dia.data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            return `
+                <div class="chart-flame-wrap" title="${label}${dia.segundos > 0 ? ' — estudado' : ''}">
+                    <span class="chart-flame ${dia.segundos > 0 ? 'chart-flame-ativo' : ''}">🔥</span>
+                </div>
+            `;
+        }).join('');
+    }
+}
+
+// Gráfico de barras empilhadas: tempo estudado por dia, dividido por matéria
+// (mesmas cores usadas nos indicadores "Tempo por matéria" abaixo).
+function renderizarGraficoMateriasEmpilhado() {
+    const container = document.getElementById('chart-materias-30-dias');
+    if (!container) return;
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const dias = [];
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date(hoje.getTime() - i * 24 * 60 * 60 * 1000);
+        dias.push({ data: d, iso: formatarDataISO(d), porMateria: {}, total: 0 });
+    }
+    const porDiaIndex = {};
+    dias.forEach(d => { porDiaIndex[d.iso] = d; });
+
+    const materiasVistas = new Set();
+    let temSemMateria = false;
+
+    sessoesCache.forEach(s => {
+        const iso = formatarDataISO(new Date(s.fim));
+        const dia = porDiaIndex[iso];
+        if (!dia) return;
+
+        const partes = distribuirSegundosPorMateria(s);
+        const materias = Object.keys(partes);
+        if (materias.length === 0) {
+            dia.porMateria['__sem_materia__'] = (dia.porMateria['__sem_materia__'] || 0) + s.duracaoSegundos;
+            temSemMateria = true;
+        } else {
+            materias.forEach(m => {
+                dia.porMateria[m] = (dia.porMateria[m] || 0) + partes[m];
+                materiasVistas.add(m);
+            });
+        }
+        dia.total += s.duracaoSegundos;
+    });
+
+    const maxTotal = Math.max(...dias.map(d => d.total), 1);
+    const hojeIso = formatarDataISO(hoje);
+    const ordemMaterias = Array.from(materiasVistas).sort();
+
+    container.innerHTML = dias.map(dia => {
+        const alturaBarraPerc = dia.total > 0 ? Math.max(6, Math.round((dia.total / maxTotal) * 100)) : 2;
+        const label = dia.data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const totalTexto = dia.total > 0 ? formatarDuracaoCurta(dia.total) : 'sem estudo';
+
+        let segmentos = '';
+        if (dia.total > 0) {
+            const entradas = [...ordemMaterias, '__sem_materia__'].filter(m => dia.porMateria[m] > 0);
+            segmentos = entradas.map(materia => {
+                const seg = dia.porMateria[materia];
+                const percSegmento = Math.round((seg / dia.total) * 1000) / 10;
+                const cor = materia === '__sem_materia__' ? '#cbd5e1' : corDaMateria(materia);
+                const nomeLabel = materia === '__sem_materia__' ? 'Sem matéria vinculada' : materia;
+                return `<div class="chart-stack-seg" style="height:${percSegmento}%; background:${cor}" title="${nomeLabel}: ${formatarDuracaoCurta(seg)}"></div>`;
+            }).join('');
+        }
+
+        return `
+            <div class="chart-bar-wrap" title="${label} — ${totalTexto}">
+                <div class="chart-stack ${dia.iso === hojeIso ? 'chart-stack-hoje' : ''}" style="height:${alturaBarraPerc}%">${segmentos}</div>
+            </div>
+        `;
+    }).join('');
+
+    const legenda = document.getElementById('legenda-materias-dia');
+    if (legenda) {
+        const itensLegenda = ordemMaterias.map(m => ({ nome: m, cor: corDaMateria(m) }));
+        if (temSemMateria) itensLegenda.push({ nome: 'Sem matéria vinculada', cor: '#cbd5e1' });
+        legenda.innerHTML = itensLegenda.length === 0
+            ? `<span class="chart-legenda-vazia">Sem sessões com matéria nos últimos 30 dias.</span>`
+            : itensLegenda.map(it => `
+                <span class="chart-legenda-item">
+                    <span class="chart-legenda-cor" style="background:${it.cor}"></span>${it.nome}
+                </span>
+            `).join('');
+    }
+}
+
+// Gráfico de barras empilhadas: tempo estudado por dia, dividido por tipo de
+// estudo (Simulado, Leitura, Exercício...). Cada tipo tem uma cor estável.
+function renderizarGraficoTiposEmpilhado() {
+    const container = document.getElementById('chart-tipos-30-dias');
+    if (!container) return;
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const dias = [];
+    for (let i = 29; i >= 0; i--) {
+        const d = new Date(hoje.getTime() - i * 24 * 60 * 60 * 1000);
+        dias.push({ data: d, iso: formatarDataISO(d), porTipo: {}, total: 0 });
+    }
+    const porDiaIndex = {};
+    dias.forEach(d => { porDiaIndex[d.iso] = d; });
+
+    const tiposVistos = new Set();
+
+    sessoesCache.forEach(s => {
+        const iso = formatarDataISO(new Date(s.fim));
+        const dia = porDiaIndex[iso];
+        if (!dia) return;
+
+        const nomeTipo = s.tipoEstudoNome || 'Outro';
+        dia.porTipo[nomeTipo] = (dia.porTipo[nomeTipo] || 0) + s.duracaoSegundos;
+        dia.total += s.duracaoSegundos;
+        tiposVistos.add(nomeTipo);
+    });
+
+    const maxTotal = Math.max(...dias.map(d => d.total), 1);
+    const hojeIso = formatarDataISO(hoje);
+    const ordemTipos = Array.from(tiposVistos).sort();
+
+    container.innerHTML = dias.map(dia => {
+        const alturaBarraPerc = dia.total > 0 ? Math.max(6, Math.round((dia.total / maxTotal) * 100)) : 2;
+        const label = dia.data.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const totalTexto = dia.total > 0 ? formatarDuracaoCurta(dia.total) : 'sem estudo';
+
+        let segmentos = '';
+        if (dia.total > 0) {
+            segmentos = ordemTipos.filter(t => dia.porTipo[t] > 0).map(tipo => {
+                const seg = dia.porTipo[tipo];
+                const percSegmento = Math.round((seg / dia.total) * 1000) / 10;
+                const cor = corDoTipo(tipo);
+                return `<div class="chart-stack-seg" style="height:${percSegmento}%; background:${cor}" title="${tipo}: ${formatarDuracaoCurta(seg)}"></div>`;
+            }).join('');
+        }
+
+        return `
+            <div class="chart-bar-wrap" title="${label} — ${totalTexto}">
+                <div class="chart-stack ${dia.iso === hojeIso ? 'chart-stack-hoje' : ''}" style="height:${alturaBarraPerc}%">${segmentos}</div>
+            </div>
+        `;
+    }).join('');
+
+    const legenda = document.getElementById('legenda-tipos-dia');
+    if (legenda) {
+        legenda.innerHTML = ordemTipos.length === 0
+            ? `<span class="chart-legenda-vazia">Sem sessões nos últimos 30 dias.</span>`
+            : ordemTipos.map(t => `
+                <span class="chart-legenda-item">
+                    <span class="chart-legenda-cor" style="background:${corDoTipo(t)}"></span>${t}
+                </span>
+            `).join('');
+    }
 }
 
 function renderizarIndicadoresMaterias() {
@@ -1093,9 +1297,9 @@ function renderizarIndicadoresMaterias() {
 
     const segundosPorMateria = {};
     sessoesCache.forEach(s => {
-        const materiasSessao = new Set((s.topicos || []).map(t => t.materia));
-        materiasSessao.forEach(m => {
-            segundosPorMateria[m] = (segundosPorMateria[m] || 0) + s.duracaoSegundos;
+        const partes = distribuirSegundosPorMateria(s);
+        Object.entries(partes).forEach(([m, seg]) => {
+            segundosPorMateria[m] = (segundosPorMateria[m] || 0) + seg;
         });
     });
 
@@ -1112,8 +1316,8 @@ function renderizarIndicadoresMaterias() {
 
     const maxSegundos = Math.max(...materiasOrdenadas.map(([, s]) => s), 1);
 
-    container.innerHTML = materiasOrdenadas.map(([materia, segundos], indice) => {
-        const cor = corDaMateria(materia, indice);
+    container.innerHTML = materiasOrdenadas.map(([materia, segundos]) => {
+        const cor = corDaMateria(materia);
         const perc = Math.round((segundos / maxSegundos) * 100);
         const materiaEscapada = materia.replace(/'/g, "\\'");
         return `

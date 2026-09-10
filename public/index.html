@@ -11,134 +11,172 @@
 </head>
 <body>
 
-    <!-- ===================== BARRA SUPERIOR ===================== -->
-    <header class="app-bar">
-        <div class="app-bar-inner">
-            <div class="app-bar-brand">
-                <span class="app-bar-logo">📘</span>
-                <span class="app-bar-title">Meu Edital</span>
+    <div class="layout">
+
+        <!-- ===================== BARRA LATERAL (menu/desktop) / TOPO (mobile) ===================== -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="app-bar-brand">
+                    <span class="app-bar-logo">📘</span>
+                    <span class="app-bar-title">Meu Edital</span>
+                </div>
+                <div class="streak-badge" id="streak-badge" title="Dias seguidos estudando">
+                    <span class="streak-icone">🔥</span>
+                    <span class="streak-numero" id="streak-numero">0</span>
+                </div>
             </div>
-            <div class="streak-badge" id="streak-badge" title="Dias seguidos estudando">
-                <span class="streak-icone">🔥</span>
-                <span class="streak-numero" id="streak-numero">0</span>
-            </div>
-        </div>
-    </header>
 
-    <div class="app-container">
+            <!-- --- Navegação entre seções (painel de toggle) --- -->
+            <nav class="view-tabs" id="view-tabs">
+                <button class="view-tab ativo" id="tab-resumo" onclick="trocarView('resumo')">
+                    <span class="view-tab-icone">🏠</span> Resumo
+                </button>
+                <button class="view-tab" id="tab-edital" onclick="trocarView('edital')">
+                    <span class="view-tab-icone">📋</span> Edital
+                </button>
+                <button class="view-tab" id="tab-estudos" onclick="trocarView('estudos')">
+                    <span class="view-tab-icone">🕒</span> Estudos
+                </button>
+            </nav>
 
-        <!-- --- Seletor de plano --- -->
-        <nav class="planos-tabs" id="planos-tabs">
-            <!-- abas dos planos (ex: TRT, ENAM) inseridas via JS -->
-        </nav>
+            <div class="sidebar-planos-label">Plano de estudos</div>
+            <nav class="planos-tabs" id="planos-tabs">
+                <!-- abas dos planos (ex: TRT, ENAM) inseridas via JS -->
+            </nav>
+        </aside>
 
-        <!-- --- CRONÔMETRO DE ESTUDO (sempre visível) --- -->
-        <section class="timer-card" id="timer-card">
-            <div class="timer-display-wrap">
-                <span class="timer-label" id="timer-status-label">Pronto para começar</span>
-                <div class="timer-display" id="timer-display">00:00:00</div>
-            </div>
-            <div class="timer-actions">
-                <button class="timer-btn timer-btn-start" id="btn-timer-iniciar" onclick="iniciarCronometro()">▶ Iniciar</button>
-                <button class="timer-btn timer-btn-pause" id="btn-timer-pausar" onclick="pausarCronometro()" style="display:none;">⏸ Pausar</button>
-                <button class="timer-btn timer-btn-resume" id="btn-timer-retomar" onclick="retomarCronometro()" style="display:none;">▶ Retomar</button>
-                <button class="timer-btn timer-btn-stop" id="btn-timer-finalizar" onclick="abrirModalSessao()" style="display:none;">⏹ Finalizar</button>
-            </div>
-        </section>
+        <!-- ===================== CONTEÚDO PRINCIPAL ===================== -->
+        <main class="content">
 
-        <!-- --- Navegação entre seções (painel de toggle) --- -->
-        <nav class="view-tabs" id="view-tabs">
-            <button class="view-tab ativo" id="tab-resumo" onclick="trocarView('resumo')">
-                <span class="view-tab-icone">🏠</span> Resumo
-            </button>
-            <button class="view-tab" id="tab-edital" onclick="trocarView('edital')">
-                <span class="view-tab-icone">📋</span> Edital
-            </button>
-            <button class="view-tab" id="tab-estudos" onclick="trocarView('estudos')">
-                <span class="view-tab-icone">🕒</span> Estudos
-            </button>
-        </nav>
-
-        <!-- ===================== VIEW: RESUMO ===================== -->
-        <div id="view-resumo">
-
-            <section class="dashboard-grid" id="dashboard-grid">
-                <!-- cards de estatísticas gerais inseridos via JS -->
+            <!-- --- CRONÔMETRO DE ESTUDO (sempre visível) --- -->
+            <section class="timer-card" id="timer-card">
+                <div class="timer-display-wrap">
+                    <span class="timer-label" id="timer-status-label">Pronto para começar</span>
+                    <div class="timer-display" id="timer-display">00:00:00</div>
+                </div>
+                <div class="timer-actions">
+                    <button class="timer-btn timer-btn-start" id="btn-timer-iniciar" onclick="iniciarCronometro()">▶ Iniciar</button>
+                    <button class="timer-btn timer-btn-pause" id="btn-timer-pausar" onclick="pausarCronometro()" style="display:none;">⏸ Pausar</button>
+                    <button class="timer-btn timer-btn-resume" id="btn-timer-retomar" onclick="retomarCronometro()" style="display:none;">▶ Retomar</button>
+                    <button class="timer-btn timer-btn-stop" id="btn-timer-finalizar" onclick="abrirModalSessao()" style="display:none;">⏹ Finalizar</button>
+                </div>
             </section>
 
-            <section class="painel-bloco">
-                <div class="painel-bloco-header">
-                    <h2>Últimos 30 dias</h2>
-                </div>
-                <div class="chart-card">
-                    <div class="chart-bars" id="chart-30-dias">
-                        <!-- barras do gráfico diário inseridas via JS -->
+            <!-- ===================== VIEW: RESUMO ===================== -->
+            <div id="view-resumo">
+
+                <section class="dashboard-grid" id="dashboard-grid">
+                    <!-- cards de estatísticas gerais inseridos via JS -->
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Últimos 30 dias</h2>
+                        <span class="painel-bloco-sub">🔥 = dia estudado, mantendo sua ofensiva</span>
                     </div>
-                </div>
-            </section>
+                    <div class="chart-card">
+                        <div class="chart-bars" id="chart-30-dias">
+                            <!-- barras do gráfico diário inseridas via JS -->
+                        </div>
+                        <div class="chart-flames" id="chart-30-dias-flames">
+                            <!-- foguinhos de ofensiva, alinhados com as barras, inseridos via JS -->
+                        </div>
+                    </div>
+                </section>
 
-            <section class="painel-bloco">
-                <div class="painel-bloco-header">
-                    <h2>Tempo por matéria</h2>
-                    <span class="painel-bloco-sub">Clique na bolinha colorida para trocar a cor</span>
-                </div>
-                <div class="materias-indicadores" id="materias-indicadores">
-                    <!-- indicadores de matéria inseridos via JS -->
-                </div>
-            </section>
+                <section class="painel-bloco painel-bloco-duas-colunas">
+                    <div class="painel-bloco-coluna">
+                        <div class="painel-bloco-header">
+                            <h2>Por matéria (30 dias)</h2>
+                        </div>
+                        <div class="chart-card">
+                            <div class="chart-bars" id="chart-materias-30-dias">
+                                <!-- barras empilhadas por matéria inseridas via JS -->
+                            </div>
+                            <div class="chart-legenda" id="legenda-materias-dia">
+                                <!-- legenda de cores das matérias inserida via JS -->
+                            </div>
+                        </div>
+                    </div>
 
-        </div>
+                    <div class="painel-bloco-coluna">
+                        <div class="painel-bloco-header">
+                            <h2>Por tipo de estudo (30 dias)</h2>
+                        </div>
+                        <div class="chart-card">
+                            <div class="chart-bars" id="chart-tipos-30-dias">
+                                <!-- barras empilhadas por tipo de estudo inseridas via JS -->
+                            </div>
+                            <div class="chart-legenda" id="legenda-tipos-dia">
+                                <!-- legenda de cores dos tipos de estudo inserida via JS -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
-        <!-- ===================== VIEW: EDITAL ===================== -->
-        <div id="view-edital" style="display:none;">
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Tempo por matéria</h2>
+                        <span class="painel-bloco-sub">Clique na bolinha colorida para trocar a cor</span>
+                    </div>
+                    <div class="materias-indicadores" id="materias-indicadores">
+                        <!-- indicadores de matéria inseridos via JS -->
+                    </div>
+                </section>
 
-            <section class="progress-card">
-                <div class="progress-card-header">
-                    <span>Progresso do plano</span>
-                    <span id="progress-text">0/0 (0%)</span>
-                </div>
-                <div class="progress-bar">
-                    <div id="progress-fill"></div>
-                </div>
-            </section>
+            </div>
 
-            <section class="add-section">
-                <h3 class="secao-titulo">Importar tópicos</h3>
-                <input type="text" id="materia-input" placeholder="Matéria (ex: Português)">
-                <textarea id="bulk-input" placeholder="Cole os tópicos do edital aqui (um por linha)"></textarea>
-                <div class="planos-check-label">Vincular aos planos:</div>
-                <div class="planos-checkboxes" id="planos-checkboxes-import">
-                    <!-- checkboxes dos planos inseridos via JS -->
-                </div>
-                <button onclick="importarEdital()">Importar Tópicos</button>
-            </section>
+            <!-- ===================== VIEW: EDITAL ===================== -->
+            <div id="view-edital" style="display:none;">
 
-            <main id="lista-edital">
-                </main>
-        </div>
+                <section class="progress-card">
+                    <div class="progress-card-header">
+                        <span>Progresso do plano</span>
+                        <span id="progress-text">0/0 (0%)</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progress-fill"></div>
+                    </div>
+                </section>
 
-        <!-- ===================== VIEW: ESTUDOS (revisões e histórico) ===================== -->
-        <div id="view-estudos" style="display:none;">
+                <section class="add-section">
+                    <h3 class="secao-titulo">Importar tópicos</h3>
+                    <input type="text" id="materia-input" placeholder="Matéria (ex: Português)">
+                    <textarea id="bulk-input" placeholder="Cole os tópicos do edital aqui (um por linha)"></textarea>
+                    <div class="planos-check-label">Vincular aos planos:</div>
+                    <div class="planos-checkboxes" id="planos-checkboxes-import">
+                        <!-- checkboxes dos planos inseridos via JS -->
+                    </div>
+                    <button onclick="importarEdital()">Importar Tópicos</button>
+                </section>
 
-            <section class="painel-bloco">
-                <div class="painel-bloco-header">
-                    <h2>🔔 Revisões pendentes</h2>
-                </div>
-                <div id="lista-revisoes" class="lista-revisoes">
-                    <!-- cards de revisão inseridos via JS -->
-                </div>
-            </section>
+                <div id="lista-edital" class="lista-edital-grid">
+                    </div>
+            </div>
 
-            <section class="painel-bloco">
-                <div class="painel-bloco-header">
-                    <h2>🕒 Histórico de sessões</h2>
-                </div>
-                <div id="lista-historico" class="lista-historico">
-                    <!-- itens de histórico inseridos via JS -->
-                </div>
-            </section>
+            <!-- ===================== VIEW: ESTUDOS (revisões e histórico) ===================== -->
+            <div id="view-estudos" style="display:none;">
 
-        </div>
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>🔔 Revisões pendentes</h2>
+                    </div>
+                    <div id="lista-revisoes" class="lista-revisoes">
+                        <!-- cards de revisão inseridos via JS -->
+                    </div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>🕒 Histórico de sessões</h2>
+                    </div>
+                    <div id="lista-historico" class="lista-historico">
+                        <!-- itens de histórico inseridos via JS -->
+                    </div>
+                </section>
+
+            </div>
+        </main>
     </div>
 
     <!-- Modal de edição de tópico (texto, matéria e planos) -->
