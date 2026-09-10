@@ -36,7 +36,26 @@ if (publicVapidKey && privateVapidKey) {
 }
 const EDITAL_COLLECTION = "edital_topicos";
 const PLANOS_COLLECTION = "edital_planos";
+const TIPOS_ESTUDO_COLLECTION = "tipos_estudo";
+const SESSOES_COLLECTION = "sessoes_estudo";
 const PLANO_PADRAO = "TRT";
+
+// Tipos de estudo padrão, criados automaticamente na primeira execução.
+// campoExtra define qual campo adicional aparece ao finalizar uma sessão:
+// "questoes" (acertos/erros), "paginas" (páginas lidas) ou "nenhum".
+const TIPOS_ESTUDO_PADRAO = [
+    { nome: "Simulado", campoExtra: "questoes" },
+    { nome: "Exercício", campoExtra: "questoes" },
+    { nome: "Revisão", campoExtra: "questoes" },
+    { nome: "Flash Cards", campoExtra: "questoes" },
+    { nome: "Leitura", campoExtra: "paginas" },
+    { nome: "Resumo", campoExtra: "nenhum" },
+    { nome: "Mapa Mental", campoExtra: "nenhum" },
+    { nome: "Lei Seca", campoExtra: "nenhum" },
+    { nome: "Jurisprudência", campoExtra: "nenhum" },
+    { nome: "Doutrina", campoExtra: "nenhum" },
+    { nome: "Áudio", campoExtra: "nenhum" }
+];
 
 async function startServer() {
     const client = new MongoClient(MONGO_URI);
@@ -45,6 +64,8 @@ async function startServer() {
         const db = client.db(DB_NAME);
         const editalColl = db.collection(EDITAL_COLLECTION);
         const planosColl = db.collection(PLANOS_COLLECTION);
+        const tiposEstudoColl = db.collection(TIPOS_ESTUDO_COLLECTION);
+        const sessoesColl = db.collection(SESSOES_COLLECTION);
 
         // --- MIGRAÇÃO: garante que todo item tenha um array "planos" ---
         // Itens antigos (de antes de existir o conceito de "plano") são
@@ -61,6 +82,12 @@ async function startServer() {
         const totalPlanos = await planosColl.countDocuments({});
         if (totalPlanos === 0) {
             await planosColl.insertOne({ nome: PLANO_PADRAO, ordem: 0 });
+        }
+        const totalTiposEstudo = await tiposEstudoColl.countDocuments({});
+        if (totalTiposEstudo === 0) {
+            await tiposEstudoColl.insertMany(
+                TIPOS_ESTUDO_PADRAO.map((tipo, i) => ({ ...tipo, ordem: i }))
+            );
         }
 
         // --- PLANOS (metas de estudo, ex: TRT, ENAM) ---
@@ -204,6 +231,119 @@ async function startServer() {
             } else {
                 await editalColl.deleteMany({});
             }
+            res.json({ success: true });
+        });
+
+        // --- TIPOS DE ESTUDO (simulado, resumo, leitura, etc. — editáveis) ---
+
+        // Listar tipos de estudo
+        app.get('/api/tipos-estudo', async (req, res) => {
+            const tipos = await tiposEstudoColl.find({}).sort({ ordem: 1, nome: 1 }).toArray();
+            res.json(tipos);
+        });
+
+        // Criar um novo tipo de estudo
+        app.post('/api/tipos-estudo', async (req, res) => {
+            const nome = (req.body.nome || '').trim();
+            const campoExtra = ['questoes', 'paginas', 'nenhum'].includes(req.body.campoExtra) ? req.body.campoExtra : 'nenhum';
+            if (!nome) return res.status(400).json({ success: false, error: 'Nome obrigatório' });
+
+            const ultimaOrdem = await tiposEstudoColl.countDocuments({});
+            const tipo = { nome, campoExtra, ordem: ultimaOrdem };
+            const resultado = await tiposEstudoColl.insertOne(tipo);
+            res.json({ success: true, tipo: { ...tipo, _id: resultado.insertedId } });
+        });
+
+        // Editar nome e/ou campo extra de um tipo de estudo
+        app.put('/api/tipos-estudo/:id', async (req, res) => {
+            const { id } = req.params;
+            const set = {};
+            if (req.body.nome !== undefined) set.nome = req.body.nome.trim();
+            if (req.body.campoExtra !== undefined && ['questoes', 'paginas', 'nenhum'].includes(req.body.campoExtra)) {
+                set.campoExtra = req.body.campoExtra;
+            }
+            await tiposEstudoColl.updateOne({ _id: new ObjectId(id) }, { $set: set });
+            res.json({ success: true });
+        });
+
+        // Remover um tipo de estudo (sessões já registradas com ele são mantidas)
+        app.delete('/api/tipos-estudo/:id', async (req, res) => {
+            const { id } = req.params;
+            await tiposEstudoColl.deleteOne({ _id: new ObjectId(id) });
+            res.json({ success: true });
+        });
+
+        // --- SESSÕES DE ESTUDO (cronômetro) ---
+
+        // Listar sessões (mais recentes primeiro), opcionalmente filtradas por plano
+        app.get('/api/sessoes', async (req, res) => {
+            const { plano, limite } = req.query;
+            const filtro = plano ? { plano } : {};
+            const sessoes = await sessoesColl.find(filtro)
+                .sort({ fim: -1 })
+                .limit(parseInt(limite) || 200)
+                .toArray();
+            res.json(sessoes);
+        });
+
+        // Registrar uma sessão de estudo finalizada
+        app.post('/api/sessoes', async (req, res) => {
+            const {
+                inicio, fim, duracaoSegundos, plano, tipoEstudoId, tipoEstudoNome,
+                topicos, acertos, erros, paginasLidas, observacoes, revisao
+            } = req.body;
+
+            const doc = {
+                inicio: inicio ? new Date(inicio) : new Date(),
+                fim: fim ? new Date(fim) : new Date(),
+                duracaoSegundos: Number(duracaoSegundos) || 0,
+                plano: plano || null,
+                tipoEstudoId: tipoEstudoId || null,
+                tipoEstudoNome: tipoEstudoNome || null,
+                topicos: Array.isArray(topicos) ? topicos : [],
+                acertos: acertos !== undefined && acertos !== null && acertos !== '' ? Number(acertos) : null,
+                erros: erros !== undefined && erros !== null && erros !== '' ? Number(erros) : null,
+                paginasLidas: paginasLidas !== undefined && paginasLidas !== null && paginasLidas !== '' ? Number(paginasLidas) : null,
+                observacoes: observacoes || '',
+                revisao: { agendada: false, dias: null, dataRevisao: null, concluida: false, concluidaEm: null },
+                criadoEm: new Date()
+            };
+
+            if (revisao && revisao.agendada) {
+                const dias = Number(revisao.dias) || 7;
+                const dataRevisao = new Date(doc.fim.getTime() + dias * 24 * 60 * 60 * 1000);
+                doc.revisao = { agendada: true, dias, dataRevisao, concluida: false, concluidaEm: null };
+            }
+
+            const resultado = await sessoesColl.insertOne(doc);
+            res.json({ success: true, sessao: { ...doc, _id: resultado.insertedId } });
+        });
+
+        // Excluir uma sessão registrada
+        app.delete('/api/sessoes/:id', async (req, res) => {
+            const { id } = req.params;
+            await sessoesColl.deleteOne({ _id: new ObjectId(id) });
+            res.json({ success: true });
+        });
+
+        // Listar revisões agendadas (pendentes por padrão), opcionalmente por plano
+        app.get('/api/revisoes', async (req, res) => {
+            const { plano, status } = req.query;
+            const filtro = { "revisao.agendada": true };
+            if (plano) filtro.plano = plano;
+            if (status !== 'todas') filtro["revisao.concluida"] = false;
+
+            const revisoes = await sessoesColl.find(filtro).sort({ "revisao.dataRevisao": 1 }).toArray();
+            res.json(revisoes);
+        });
+
+        // Marcar uma revisão agendada como concluída
+        app.put('/api/revisoes/:id/concluir', async (req, res) => {
+            const { id } = req.params;
+            await sessoesColl.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { "revisao.concluida": true, "revisao.concluidaEm": new Date() } }
+            );
             res.json({ success: true });
         });
 

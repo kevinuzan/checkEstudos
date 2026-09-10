@@ -1,8 +1,16 @@
 :root {
     --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --primary-light: #dbeafe;
     --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --purple: #7c3aed;
     --bg: #f8fafc;
     --card: #ffffff;
+    --text: #1e293b;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
 }
 
 body {
@@ -13,7 +21,7 @@ body {
 }
 
 .app-container {
-    max-width: 600px;
+    max-width: 640px;
     margin: 0 auto;
 }
 
@@ -293,4 +301,550 @@ input[type="checkbox"] {
 .btn-cancelar {
     background: #e2e8f0;
     color: #334155;
+}
+
+.link-btn {
+    background: none;
+    color: var(--primary);
+    border: none;
+    padding: 4px 0;
+    font-size: 12px;
+    font-weight: bold;
+    text-align: left;
+    align-self: flex-start;
+    cursor: pointer;
+}
+
+select {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-family: inherit;
+    background: white;
+}
+
+/* ============================================================ */
+/* CRONÔMETRO DE ESTUDO                                          */
+/* ============================================================ */
+
+.timer-card {
+    background: linear-gradient(135deg, var(--primary) 0%, #1e40af 100%);
+    border-radius: 16px;
+    padding: 22px 20px;
+    margin-bottom: 18px;
+    box-shadow: 0 10px 20px -8px rgba(37, 99, 235, 0.45);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    text-align: center;
+    transition: box-shadow 0.3s ease;
+}
+
+.timer-card.timer-rodando {
+    box-shadow: 0 10px 28px -6px rgba(34, 197, 94, 0.5);
+    background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+}
+
+.timer-card.timer-pausado {
+    background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
+    box-shadow: 0 10px 28px -6px rgba(245, 158, 11, 0.45);
+}
+
+.timer-label {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.timer-display {
+    font-family: 'Consolas', 'SF Mono', monospace;
+    font-size: 3rem;
+    font-weight: bold;
+    color: white;
+    letter-spacing: 0.03em;
+    line-height: 1;
+}
+
+.timer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+}
+
+.timer-btn {
+    border: none;
+    border-radius: 999px;
+    padding: 12px 22px;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.95);
+    color: var(--primary-dark);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    transition: transform 0.15s ease;
+}
+
+.timer-btn:hover {
+    transform: translateY(-1px);
+}
+
+.timer-btn-stop {
+    background: rgba(15, 23, 42, 0.85);
+    color: white;
+}
+
+/* ============================================================ */
+/* ABAS DE VIEW (Edital / Painel de Estudos)                     */
+/* ============================================================ */
+
+.view-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+    background: var(--card);
+    padding: 6px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.view-tab {
+    flex: 1;
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    padding: 10px;
+    border-radius: 8px;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.view-tab.ativo {
+    background: var(--primary-light);
+    color: var(--primary-dark);
+}
+
+/* ============================================================ */
+/* PAINEL DE ESTUDOS — DASHBOARD                                 */
+/* ============================================================ */
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 22px;
+}
+
+.stat-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.stat-card-destaque {
+    grid-column: 1 / -1;
+    background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
+}
+
+.stat-card-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.stat-card-valor {
+    font-size: 1.6rem;
+    font-weight: bold;
+    color: var(--text);
+}
+
+.stat-card-valor-texto {
+    font-size: 1.15rem;
+    color: var(--purple);
+}
+
+.painel-bloco {
+    margin-bottom: 24px;
+}
+
+.painel-bloco-header h2 {
+    font-size: 1.05rem;
+    color: var(--text);
+    margin: 0 0 12px 0;
+}
+
+.lista-vazia {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+/* --- Cards de revisão --- */
+.lista-revisoes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.revisao-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    border-left: 4px solid var(--purple);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.revisao-card.revisao-atrasada {
+    border-left-color: var(--danger);
+    background: #fef2f2;
+}
+
+.revisao-card-topo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.revisao-card-tipo {
+    font-weight: bold;
+    color: var(--purple);
+    font-size: 13px;
+    background: #ede9fe;
+    padding: 3px 10px;
+    border-radius: 999px;
+}
+
+.revisao-card-data {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.revisao-atrasada .revisao-card-data {
+    color: var(--danger);
+}
+
+.revisao-card-topicos {
+    font-size: 14px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.revisao-concluir-btn {
+    align-self: flex-start;
+    background: var(--success);
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
+/* --- Histórico de sessões --- */
+.lista-historico {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.historico-item {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.historico-item-topo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.historico-tipo {
+    font-weight: bold;
+    color: var(--primary-dark);
+    font-size: 13px;
+    background: var(--primary-light);
+    padding: 3px 10px;
+    border-radius: 999px;
+}
+
+.historico-duracao {
+    font-weight: bold;
+    color: var(--text);
+    font-size: 13px;
+}
+
+.historico-data {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-left: auto;
+}
+
+.historico-excluir {
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+.historico-topicos {
+    font-size: 13px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.historico-badge {
+    align-self: flex-start;
+    font-size: 12px;
+    font-weight: bold;
+    background: #f1f5f9;
+    padding: 3px 10px;
+    border-radius: 999px;
+}
+
+.historico-obs {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* ============================================================ */
+/* MODAL: FINALIZAR SESSÃO DE ESTUDO                              */
+/* ============================================================ */
+
+.modal-sessao {
+    max-width: 480px;
+}
+
+.sessao-duracao-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--primary-light);
+    border-radius: 10px;
+    padding: 10px 14px;
+}
+
+.sessao-duracao-label {
+    font-size: 13px;
+    color: var(--primary-dark);
+    font-weight: 600;
+}
+
+.sessao-duracao-valor {
+    font-family: 'Consolas', 'SF Mono', monospace;
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: var(--primary-dark);
+}
+
+.tipos-estudo-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tipo-chip {
+    background: #f1f5f9;
+    color: var(--text);
+    border: 2px solid transparent;
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.tipo-chip.ativo {
+    background: var(--primary-light);
+    border-color: var(--primary);
+    color: var(--primary-dark);
+}
+
+.busca-topicos {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.sessao-topicos-lista {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.sessao-topicos-vazio {
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 8px;
+    text-align: center;
+}
+
+.sessao-materia-grupo {
+    margin-bottom: 6px;
+}
+
+.sessao-materia-titulo {
+    font-weight: bold;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin: 6px 0 3px 0;
+}
+
+.sessao-topico-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    padding: 4px 2px;
+    cursor: pointer;
+}
+
+.sessao-topico-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.campo-extra {
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.questoes-inputs {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.questoes-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.questoes-input-group label {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.questoes-input-group input {
+    width: 70px;
+}
+
+.questoes-resultado {
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--primary-dark);
+    padding-bottom: 10px;
+}
+
+.revisao-box {
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.revisao-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.revisao-dias-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.revisao-dias-row input {
+    width: 60px;
+}
+
+.revisao-preview {
+    margin-left: auto;
+    font-weight: bold;
+    color: var(--purple);
+}
+
+/* ============================================================ */
+/* GERENCIAR TIPOS DE ESTUDO                                     */
+/* ============================================================ */
+
+.lista-tipos-estudo {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.tipo-estudo-linha {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.tipo-estudo-linha input[type="text"] {
+    min-width: 0;
+}
+
+/* ============================================================ */
+/* RESPONSIVIDADE                                                */
+/* ============================================================ */
+
+@media (max-width: 480px) {
+    .timer-display {
+        font-size: 2.3rem;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .tipo-estudo-linha {
+        grid-template-columns: 1fr;
+    }
 }
