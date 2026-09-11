@@ -296,7 +296,7 @@ async function trocarView(nome) {
 
     if (nome === 'resumo') await carregarResumo();
     if (nome === 'estudos') await carregarPainelEstudos();
-    if (nome === 'jogo') carregarJogo();
+    if (nome === 'jogo') { carregarJogo(); await carregarPontuacaoJogo(); }
 }
 
 // Carrega o iframe do jogo apenas na primeira visita à aba, evitando
@@ -305,6 +305,72 @@ function carregarJogo() {
     const iframe = document.getElementById('jogo-iframe');
     if (iframe && !iframe.getAttribute('src')) {
         iframe.setAttribute('src', '/jogo/');
+    }
+}
+
+// ==================================================================
+// PONTUAÇÃO DO JOGO (persistida no banco, com opção de zerar e de
+// registrar como sessão de estudo)
+// ==================================================================
+
+async function obterPontuacaoJogo() {
+    try {
+        const res = await fetch('/jogo/api/pontuacao');
+        const dados = await res.json();
+        const acertos = Object.values(dados).reduce((soma, d) => soma + (d.acertos || 0), 0);
+        const erros = Object.values(dados).reduce((soma, d) => soma + (d.erros || 0), 0);
+        return { acertos, erros };
+    } catch (err) {
+        console.error('Erro ao carregar pontuação do jogo:', err);
+        return { acertos: 0, erros: 0 };
+    }
+}
+
+async function carregarPontuacaoJogo() {
+    const { acertos, erros } = await obterPontuacaoJogo();
+    const total = acertos + erros;
+    const percentual = total > 0 ? Math.round((acertos / total) * 100) : 0;
+    const el = document.getElementById('jogo-pontuacao-resumo');
+    if (el) {
+        el.textContent = total > 0
+            ? `✅ ${acertos} acertos · ❌ ${erros} erros · ${percentual}% de aproveitamento`
+            : 'Você ainda não pontuou nenhuma rodada.';
+    }
+}
+
+// Abre o modal de finalizar sessão já com o tipo "Jogo" e a pontuação
+// acumulada preenchidos, para o usuário só ajustar a duração e salvar.
+async function registrarSessaoDoJogo() {
+    if (tiposEstudoDisponiveis.length === 0) await carregarTiposEstudo();
+    const tipoJogo = tiposEstudoDisponiveis.find(t => t.nome === 'Jogo');
+
+    abrirModalSessao();
+
+    if (tipoJogo) {
+        tipoEstudoSelecionadoId = tipoJogo._id;
+        renderizarChipsTipos();
+        atualizarCampoExtra();
+    }
+
+    const { acertos, erros } = await obterPontuacaoJogo();
+    document.getElementById('sessao-acertos').value = acertos || '';
+    document.getElementById('sessao-erros').value = erros || '';
+    document.getElementById('sessao-observacoes').value = 'Sessão registrada a partir do jogo (Estuda TRT).';
+    atualizarResultadoQuestoes();
+}
+
+// Zera a pontuação acumulada do jogo (todos os sub-jogos), após confirmação.
+async function zerarPontuacaoJogo() {
+    if (!confirm('Zerar toda a pontuação acumulada do jogo? Essa ação não pode ser desfeita.')) return;
+    await fetch('/jogo/api/pontuacao/resetar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    });
+    await carregarPontuacaoJogo();
+    const iframe = document.getElementById('jogo-iframe');
+    if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ tipo: 'jogo-pontuacao-zerada' }, window.location.origin);
     }
 }
 

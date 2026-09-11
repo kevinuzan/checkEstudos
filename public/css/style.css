@@ -1484,6 +1484,58 @@ input[type="checkbox"] {
     flex-direction: column;
 }
 
+.jogo-pontuacao-barra {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 10px 14px;
+    margin-bottom: 12px;
+}
+
+.jogo-pontuacao-texto {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.jogo-pontuacao-acoes {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.btn-secundario {
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    border: none;
+    padding: 7px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+}
+
+.btn-secundario:hover {
+    background: #dbe4fe;
+}
+
+.btn-secundario.btn-perigo {
+    background: var(--danger-light);
+    color: #b91c1c;
+}
+
+.btn-secundario.btn-perigo:hover {
+    background: #fecaca;
+}
+
 .jogo-frame-wrap {
     flex: 1;
     background: var(--card);

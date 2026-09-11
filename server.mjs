@@ -148,6 +148,7 @@ const PLANOS_COLLECTION = "edital_planos";
 const TIPOS_ESTUDO_COLLECTION = "tipos_estudo";
 const SESSOES_COLLECTION = "sessoes_estudo";
 const MATERIAS_COR_COLLECTION = "materias_cor";
+const JOGO_PONTUACOES_COLLECTION = "jogo_pontuacoes";
 const PLANO_PADRAO = "TRT";
 
 // Tipos de estudo padrão, criados automaticamente na primeira execução.
@@ -164,7 +165,8 @@ const TIPOS_ESTUDO_PADRAO = [
     { nome: "Lei Seca", campoExtra: "nenhum" },
     { nome: "Jurisprudência", campoExtra: "nenhum" },
     { nome: "Doutrina", campoExtra: "nenhum" },
-    { nome: "Áudio", campoExtra: "nenhum" }
+    { nome: "Áudio", campoExtra: "nenhum" },
+    { nome: "Jogo", campoExtra: "questoes" }
 ];
 
 async function startServer() {
@@ -177,6 +179,7 @@ async function startServer() {
         const tiposEstudoColl = db.collection(TIPOS_ESTUDO_COLLECTION);
         const sessoesColl = db.collection(SESSOES_COLLECTION);
         const materiasCorColl = db.collection(MATERIAS_COR_COLLECTION);
+        const jogoPontuacoesColl = db.collection(JOGO_PONTUACOES_COLLECTION);
 
         // --- MIGRAÇÃO: garante que todo item tenha um array "planos" ---
         // Itens antigos (de antes de existir o conceito de "plano") são
@@ -199,6 +202,15 @@ async function startServer() {
             await tiposEstudoColl.insertMany(
                 TIPOS_ESTUDO_PADRAO.map((tipo, i) => ({ ...tipo, ordem: i }))
             );
+        } else {
+            // Garante que o tipo "Jogo" exista mesmo em bancos que já tinham
+            // tipos de estudo cadastrados antes dele ser adicionado.
+            const jogoExiste = await tiposEstudoColl.findOne({ nome: "Jogo" });
+            if (!jogoExiste) {
+                const ultimoTipo = await tiposEstudoColl.find({}).sort({ ordem: -1 }).limit(1).toArray();
+                const proximaOrdem = ultimoTipo.length ? (ultimoTipo[0].ordem || 0) + 1 : 0;
+                await tiposEstudoColl.insertOne({ nome: "Jogo", campoExtra: "questoes", ordem: proximaOrdem });
+            }
         }
 
         // --- PLANOS (metas de estudo, ex: TRT, ENAM) ---
@@ -530,6 +542,61 @@ async function startServer() {
                 { $set: { materia, cor } },
                 { upsert: true }
             );
+            res.json({ success: true });
+        });
+
+        // --- PONTUAÇÃO DO JOGO (mnemônicos, competências, lacunas) ---
+        // Guarda acertos/erros acumulados por sub-jogo, persistidos no Mongo
+        // para não se perderem ao trocar de dispositivo/aba.
+        const TIPOS_JOGO_VALIDOS = ["mnemonicos", "competencias", "lacunas"];
+
+        // Retorna a pontuação acumulada de cada sub-jogo
+        app.get('/jogo/api/pontuacao', async (req, res) => {
+            const docs = await jogoPontuacoesColl.find({}).toArray();
+            const resultado = {};
+            for (const tipo of TIPOS_JOGO_VALIDOS) {
+                const doc = docs.find(d => d.tipo === tipo);
+                resultado[tipo] = { acertos: doc?.acertos || 0, erros: doc?.erros || 0 };
+            }
+            res.json(resultado);
+        });
+
+        // Incrementa acertos/erros de um sub-jogo (chamado a cada rodada)
+        app.post('/jogo/api/pontuacao', async (req, res) => {
+            const { tipo, acertos, erros } = req.body;
+            if (!TIPOS_JOGO_VALIDOS.includes(tipo)) {
+                return res.status(400).json({ success: false, error: 'Tipo de jogo inválido' });
+            }
+            const incAcertos = Number.isFinite(acertos) ? acertos : 0;
+            const incErros = Number.isFinite(erros) ? erros : 0;
+
+            await jogoPontuacoesColl.updateOne(
+                { tipo },
+                { $inc: { acertos: incAcertos, erros: incErros }, $set: { atualizadoEm: new Date() } },
+                { upsert: true }
+            );
+            const doc = await jogoPontuacoesColl.findOne({ tipo });
+            res.json({ success: true, pontuacao: { acertos: doc.acertos || 0, erros: doc.erros || 0 } });
+        });
+
+        // Zera a pontuação de um sub-jogo específico, ou de todos se "tipo" não for enviado
+        app.post('/jogo/api/pontuacao/resetar', async (req, res) => {
+            const { tipo } = req.body;
+            if (tipo) {
+                if (!TIPOS_JOGO_VALIDOS.includes(tipo)) {
+                    return res.status(400).json({ success: false, error: 'Tipo de jogo inválido' });
+                }
+                await jogoPontuacoesColl.updateOne(
+                    { tipo },
+                    { $set: { acertos: 0, erros: 0, atualizadoEm: new Date() } },
+                    { upsert: true }
+                );
+            } else {
+                await jogoPontuacoesColl.updateMany(
+                    {},
+                    { $set: { acertos: 0, erros: 0, atualizadoEm: new Date() } }
+                );
+            }
             res.json({ success: true });
         });
 

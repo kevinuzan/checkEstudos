@@ -1,3 +1,95 @@
+// ==================================================================
+// PLACAR (pontuação persistida no servidor) e FEEDBACK INLINE
+// ==================================================================
+// A pontuação de cada sub-jogo (mnemônicos, competências, lacunas) é
+// somada e salva no banco a cada rodada, para nunca se perder ao trocar
+// de aba/dispositivo. O usuário pode zerar tudo a qualquer momento.
+
+async function obterPlacarTotal() {
+    try {
+        const res = await fetch('/jogo/api/pontuacao');
+        const dados = await res.json();
+        const acertos = Object.values(dados).reduce((s, d) => s + (d.acertos || 0), 0);
+        const erros = Object.values(dados).reduce((s, d) => s + (d.erros || 0), 0);
+        return { acertos, erros };
+    } catch (err) {
+        console.error('Erro ao carregar placar:', err);
+        return { acertos: 0, erros: 0 };
+    }
+}
+
+async function atualizarPlacarTela() {
+    const { acertos, erros } = await obterPlacarTotal();
+    const total = acertos + erros;
+    const el = document.getElementById('placar-texto');
+    if (!el) return;
+    el.textContent = total > 0
+        ? `✅ ${acertos} acertos · ❌ ${erros} erros`
+        : 'Jogue uma rodada para começar a pontuar!';
+}
+
+function iniciarPlacar() {
+    atualizarPlacarTela();
+}
+
+// Envia o resultado de uma rodada para o servidor e avisa a página pai
+// (o checkEstudos), caso o jogo esteja aberto dentro do iframe da aba "Jogo".
+async function registrarPontuacao(tipo, acertos, erros) {
+    try {
+        await fetch('/jogo/api/pontuacao', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tipo, acertos, erros })
+        });
+    } catch (err) {
+        console.error('Erro ao registrar pontuação:', err);
+    }
+    atualizarPlacarTela();
+    if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ tipo: 'jogo-pontuacao-atualizada' }, window.location.origin);
+    }
+}
+
+async function zerarPlacar() {
+    if (!confirm('Zerar toda a pontuação acumulada do jogo? Essa ação não pode ser desfeita.')) return;
+    try {
+        await fetch('/jogo/api/pontuacao/resetar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+    } catch (err) {
+        console.error('Erro ao zerar pontuação:', err);
+    }
+    atualizarPlacarTela();
+    if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ tipo: 'jogo-pontuacao-atualizada' }, window.location.origin);
+    }
+}
+
+// Mantém o placar em dia se a pontuação for zerada pelo botão que fica
+// na página principal do checkEstudos (fora do iframe).
+window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (event.data && event.data.tipo === 'jogo-pontuacao-zerada') {
+        atualizarPlacarTela();
+    }
+});
+
+// Cria (se ainda não existir) e exibe um banner de feedback inline dentro do
+// container do exercício, no lugar de usar alert() — que trava a página e
+// funciona mal no celular.
+function mostrarFeedback(container, header, texto, tipoClasse) {
+    let banner = container.querySelector('.feedback-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.className = 'feedback-banner';
+        header.insertAdjacentElement('afterend', banner);
+    }
+    banner.textContent = texto;
+    banner.className = `feedback-banner mostrar ${tipoClasse}`;
+}
+
 const termosJuridicosPorLetra = {
     A: ["Acórdão", "Advogado", "Ação", "Audiência", "Apelação", "Arbitragem", "Alienação", "Administrativa", "Ação popular", "Ação civil pública", "Alimentação", "Ampla proteção ao salário na falência da empresa", "Assiduidade", "Aptidão", "Avisos", "Aposentadoria", "Autoexecutoriedade", "Atos normativos", "Aquisição de materiais/produtos de marca específica", "Artista consagrado pela crítica ou pela opinião pública", "Apostilas"],
     B: ["Beneficiário", "Bens", "Bancarrota", "Busca e Apreensão", "Bonificação", "Branqueamento de Capital"],
@@ -395,6 +487,8 @@ async function getItemData() {
 
                     let allCorrectlySelected = true;
                     let allCorrectWordsPresent = true;
+                    let acertos = 0;
+                    let erros = 0;
 
                     // Verificar cards selecionados para correção
                     selectedCards.forEach(card => {
@@ -404,12 +498,14 @@ async function getItemData() {
                             card.style.borderColor = '#28a745';
                             card.style.color = '#155724';
                             card.style.fontWeight = 'bold';
+                            acertos++;
                         } else {
                             card.style.backgroundColor = '#f8d7da'; // Vermelho para incorreto
                             card.style.borderColor = '#dc3545';
                             card.style.color = '#721c24';
                             card.style.fontWeight = 'bold';
                             allCorrectlySelected = false; // Encontrou uma seleção incorreta
+                            erros++;
                         }
                     });
 
@@ -417,6 +513,7 @@ async function getItemData() {
                     for (const correctWord of listaPalavras) {
                         if (!selectedTexts.includes(correctWord)) {
                             allCorrectWordsPresent = false; // Uma palavra correta foi perdida
+                            erros++;
                             // Opcionalmente, destacar as palavras corretas perdidas de forma diferente
                             const missedCard = Array.from(allCardsInContainer).find(card => card.innerText.trim() === correctWord);
                             if (missedCard) {
@@ -428,14 +525,16 @@ async function getItemData() {
                         }
                     }
 
-                    // Fornecer feedback com base nas verificações
+                    // Fornecer feedback com base nas verificações (banner inline, não trava a tela no celular)
                     if (selectedCards.length === 0) {
-                        alert('Nenhum card selecionado!');
+                        mostrarFeedback(container, header, 'Nenhum card selecionado!', 'aviso');
                     } else if (allCorrectlySelected && allCorrectWordsPresent && selectedTexts.length === listaPalavras.length) {
-                        alert('Parabéns! Todas as palavras corretas foram selecionadas!');
+                        mostrarFeedback(container, header, 'Parabéns! Todas as palavras corretas foram selecionadas!', 'sucesso');
                     } else {
-                        alert('Verifique suas seleções. Há palavras incorretas selecionadas (vermelho) ou palavras corretas faltando (amarelo).');
+                        mostrarFeedback(container, header, 'Verifique suas seleções. Há palavras incorretas (vermelho) ou corretas faltando (amarelo).', 'erro');
                     }
+
+                    if (selectedCards.length > 0) registrarPontuacao('mnemonicos', acertos, erros);
                 });
 
                 const botaoReset = document.createElement('button');
@@ -574,30 +673,33 @@ async function getItemData2() {
 
                         let allCorrectlySelected = true;
                         let allCorrectWordsPresent = true;
+                        let acertos = 0;
+                        let erros = 0;
 
                         // Verificar cards selecionados para correção
                         selectedCards.forEach(card => {
                             const text = card.innerText.trim();
-                            console.log(text, allCorrectlySelected)
                             if (listaPalavras.includes(text)) {
                                 card.style.backgroundColor = '#d4edda'; // Verde para correto
                                 card.style.borderColor = '#28a745';
                                 card.style.color = '#155724';
                                 card.style.fontWeight = 'bold';
+                                acertos++;
                             } else {
                                 card.style.backgroundColor = '#f8d7da'; // Vermelho para incorreto
                                 card.style.borderColor = '#dc3545';
                                 card.style.color = '#721c24';
                                 card.style.fontWeight = 'bold';
                                 allCorrectlySelected = false; // Encontrou uma seleção incorreta
+                                erros++;
                             }
                         });
 
                         // Verificar se todas as palavras corretas originais foram selecionadas
                         for (const correctWord of listaPalavras) {
-                            console.log(correctWord, selectedTexts)
                             if (!selectedTexts.includes(correctWord)) {
                                 allCorrectWordsPresent = false; // Uma palavra correta foi perdida
+                                erros++;
                                 // Opcionalmente, destacar as palavras corretas perdidas de forma diferente
                                 const missedCard = Array.from(allCardsInContainer).find(card => card.innerText.trim() === correctWord);
                                 if (missedCard) {
@@ -609,14 +711,16 @@ async function getItemData2() {
                             }
                         }
 
-                        // Fornecer feedback com base nas verificações
-                        // if (selectedCards.length === 0) {
-                        //     alert('Nenhum card selecionado!');
-                        // } else if (allCorrectlySelected && allCorrectWordsPresent && selectedTexts.length === listaPalavras.length) {
-                        //     alert('Parabéns! Todas as palavras corretas foram selecionadas!');
-                        // } else {
-                        //     alert('Verifique suas seleções. Há palavras incorretas selecionadas (vermelho) ou palavras corretas faltando (amarelo).');
-                        // }
+                        // Fornecer feedback com base nas verificações (banner inline)
+                        if (selectedCards.length === 0) {
+                            mostrarFeedback(container, header, 'Nenhum card selecionado!', 'aviso');
+                        } else if (allCorrectlySelected && allCorrectWordsPresent && selectedTexts.length === listaPalavras.length) {
+                            mostrarFeedback(container, header, 'Parabéns! Todas as competências corretas foram selecionadas!', 'sucesso');
+                        } else {
+                            mostrarFeedback(container, header, 'Verifique suas seleções. Há itens incorretos (vermelho) ou corretos faltando (amarelo).', 'erro');
+                        }
+
+                        if (selectedCards.length > 0) registrarPontuacao('competencias', acertos, erros);
                     });
 
                     const botaoReset = document.createElement('button');
@@ -812,17 +916,31 @@ async function carregarArtigosComLacunas() {
         botaoCorrigir.textContent = 'Corrigir';
         botaoCorrigir.addEventListener('click', () => {
             const inputs = artigoContainer.querySelectorAll('input.lacuna-input');
+            let acertos = 0;
+            let erros = 0;
             inputs.forEach(input => {
                 const correto = normalizarTexto(input.dataset.resposta);
                 const resposta = normalizarTexto(input.value);
                 if (resposta === correto) {
                     input.style.backgroundColor = '#d4edda';
                     input.style.borderColor = '#28a745';
+                    acertos++;
                 } else {
                     input.style.backgroundColor = '#f8d7da';
                     input.style.borderColor = '#dc3545';
+                    erros++;
                 }
             });
+
+            if (inputs.length > 0) {
+                mostrarFeedback(
+                    artigoContainer,
+                    titulo,
+                    `${acertos} de ${inputs.length} lacunas corretas.`,
+                    acertos === inputs.length ? 'sucesso' : 'erro'
+                );
+                registrarPontuacao('lacunas', acertos, erros);
+            }
         });
 
         const botaoRevelar = document.createElement('button');
