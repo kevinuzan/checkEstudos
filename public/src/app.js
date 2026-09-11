@@ -288,12 +288,24 @@ async function trocarView(nome) {
     document.getElementById('view-resumo').style.display = nome === 'resumo' ? 'block' : 'none';
     document.getElementById('view-edital').style.display = nome === 'edital' ? 'block' : 'none';
     document.getElementById('view-estudos').style.display = nome === 'estudos' ? 'block' : 'none';
+    document.getElementById('view-jogo').style.display = nome === 'jogo' ? 'block' : 'none';
     document.getElementById('tab-resumo').classList.toggle('ativo', nome === 'resumo');
     document.getElementById('tab-edital').classList.toggle('ativo', nome === 'edital');
     document.getElementById('tab-estudos').classList.toggle('ativo', nome === 'estudos');
+    document.getElementById('tab-jogo').classList.toggle('ativo', nome === 'jogo');
 
     if (nome === 'resumo') await carregarResumo();
     if (nome === 'estudos') await carregarPainelEstudos();
+    if (nome === 'jogo') carregarJogo();
+}
+
+// Carrega o iframe do jogo apenas na primeira visita à aba, evitando
+// baixar Bootstrap/FontAwesome do "Estuda TRT" antes de serem necessários.
+function carregarJogo() {
+    const iframe = document.getElementById('jogo-iframe');
+    if (iframe && !iframe.getAttribute('src')) {
+        iframe.setAttribute('src', '/jogo/');
+    }
 }
 
 // ==================================================================

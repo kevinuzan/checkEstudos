@@ -37,6 +37,9 @@
                 <button class="view-tab" id="tab-estudos" onclick="trocarView('estudos')">
                     <span class="view-tab-icone">🕒</span> Estudos
                 </button>
+                <button class="view-tab" id="tab-jogo" onclick="trocarView('jogo')">
+                    <span class="view-tab-icone">🎮</span> Jogo
+                </button>
             </nav>
 
             <div class="sidebar-planos-label">Plano de estudos</div>
@@ -175,6 +178,18 @@
                     </div>
                 </section>
 
+            </div>
+
+            <!-- ===================== VIEW: JOGO (gamificação) ===================== -->
+            <div id="view-jogo" style="display:none;">
+                <section class="painel-bloco jogo-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>🎮 Jogo</h2>
+                    </div>
+                    <div class="jogo-frame-wrap">
+                        <iframe id="jogo-iframe" class="jogo-frame" title="Estuda TRT" loading="lazy"></iframe>
+                    </div>
+                </section>
             </div>
         </main>
     </div>

@@ -1,0 +1,483 @@
+[
+    {
+        "items": [
+            {
+                "minemonico": "Com Fim Fofo, Move Objetos",
+                "palavras_corretas": [
+                    "Competência",
+                    "Finalidade",
+                    "Forma",
+                    "Motivo",
+                    "Objeto"
+                ],
+                "frase_inicial": "Com Fim Fofo, Move Objetos",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Administrativo"
+            },
+            {
+                "minemonico": "POFA",
+                "palavras_corretas": [
+                    "Patrimonial",
+                    "Orçamentária",
+                    "Financeira",
+                    "Administrativa"
+                ],
+                "frase_inicial": "O CSJT exerce a supervisão POFA da Justiça do Trabalho de 1° e 2° Graus.",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito do Trabalho / Administração Pública"
+            },
+            {
+                "minemonico": "MATRACA",
+                "palavras_corretas": [
+                    "Mandato Classista",
+                    "Tratar de assuntos particulares",
+                    "Capacitação"
+                ],
+                "frase_inicial": "O servidor em estágio probatório não pode pegar licença para MATRACA:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Lei 8.112/90 - Regime Jurídico dos Servidores Públicos"
+            },
+            {
+                "minemonico": "MP3.COM",
+                "palavras_corretas": [
+                    "Ministro do Supremo Tribunal Federal",
+                    "Presidente e Vice-Presidente da República",
+                    "Presidente da Câmara dos Deputados",
+                    "Presidente do Senado Federal",
+                    "Carreira diplomática",
+                    "Oficial das Forças Armadas",
+                    "Ministro de Estado da Defesa"
+                ],
+                "frase_inicial": "MP3.COM são os cargos privativos de brasileito nato   ",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Constitucional"
+            },
+            {
+                "minemonico": "IMNSS",
+                "palavras_corretas": [
+                    "Imagem",
+                    "Marca",
+                    "Nome",
+                    "Segredo",
+                    "Sigilo"
+                ],
+                "frase_inicial": "IMNSS são direitos da personalidade:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Civil"
+            },
+            {
+                "minemonico": "FODIVOSE / VOSE FEDI",
+                "palavras_corretas": [
+                    "Forma federativa de estado",
+                    "Direitos individuais",
+                    "Voto direto secreto",
+                    "Separação dos poderes"
+                ],
+                "frase_inicial": "FODIVOSE / VOSE FEDI são cláusulas pétreas da Constituição:",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Constitucional"
+            },
+            {
+                "minemonico": "CENORA",
+                "palavras_corretas": [
+                    "Competência exclusiva",
+                    "Atos normativos",
+                    "Recursos administrativos"
+                ],
+                "frase_inicial": "Não se delega CENORA:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+            },
+            {
+                "minemonico": "PATI",
+                "palavras_corretas": [
+                    "Presunção de legitimidade",
+                    "Autoexecutoriedade",
+                    "Tipicidade",
+                    "Imperatividade"
+                ],
+                "frase_inicial": "PATI são atributos dos atos administrativos:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+            },
+            {
+                "minemonico": "LUTA",
+                "palavras_corretas": [
+                    "Lugar (teoria da Ubiquidade)",
+                    "Tempo da Atividade"
+                ],
+                "frase_inicial": "LUTA resume os critérios de aplicação da lei penal no tempo e no espaço:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Penal"
+            },
+            {
+                "minemonico": "CAPA",
+                "palavras_corretas": [
+                    "Certidões",
+                    "Atestados",
+                    "Pareceres",
+                    "Apostilas"
+                ],
+                "frase_inicial": "CAPA são atos administrativos enunciativos:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+            },
+            {
+                "minemonico": "CAIO PODe",
+                "palavras_corretas": [
+                    "Circulares",
+                    "Avisos",
+                    "Instruções",
+                    "Ofícios",
+                    "Portarias",
+                    "Ordens de Serviço",
+                    "Despacho"
+                ],
+                "frase_inicial": "CAIO PODe são atos administrativos ordinatórios:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+            },
+            {
+                "minemonico": "PÉRA FDP",
+                "palavras_corretas": [
+                    "Promoção",
+                    "Exoneração",
+                    "Readaptação",
+                    "Aposentadoria",
+                    "Falecimento",
+                    "Demissão",
+                    "Posse em cargo inacumulável"
+                ],
+                "frase_inicial": "PÉRA FDP são formas de vacância do cargo público segundo a Lei 8.112:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Lei 8.112/90"
+            },
+            {
+                "minemonico": "DILMAS SEM PTT",
+                "palavras_corretas": [
+                    "Desamparados",
+                    "Infância",
+                    "Lazer",
+                    "Maternidade",
+                    "Alimentação",
+                    "Saúde",
+                    "Segurança",
+                    "Educação",
+                    "Moradia",
+                    "Previdência",
+                    "Trabalho",
+                    "Transporte"
+                ],
+                "frase_inicial": "DILMAS SEM PTT são direitos sociais previstos na CF/88:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direitos Sociais - Direito Constitucional"
+            },
+            {
+                "minemonico": "VELHAS TPM",
+                "palavras_corretas": [
+                    "Vedação ao salário inferior ao mínimo",
+                    "Estabilidade do salário",
+                    "Livre estipulação",
+                    "Higidez salarial",
+                    "Ampla proteção ao salário na falência da empresa",
+                    "Salário é impenhorável",
+                    "Transparência no pagamento",
+                    "Periodicidade do pagamento",
+                    "Monetização do salário"
+                ],
+                "frase_inicial": "VELHAS TPM são proteções constitucionais ao salário segundo a CF/88:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito do Trabalho / Direito Constitucional"
+            },
+            {
+                "minemonico": "DICA PARE",
+                "palavras_corretas": [
+                    "Disciplina",
+                    "Idoneidade moral",
+                    "Capacidade de iniciativa",
+                    "Assiduidade",
+                    "Produtividade",
+                    "Aptidão",
+                    "Responsabilidade",
+                    "Eficiência"
+                ],
+                "frase_inicial": "DICA PARE são critérios do estágio probatório segundo a Lei 8.112/90:",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Lei 8.112/90"
+            },
+            {
+                "minemonico": "SERÁ FÁCIL PRO MOMO",
+                "palavras_corretas": [
+                    "Segurança jurídica",
+                    "Eficiência",
+                    "Razoabilidade",
+                    "Finalidade",
+                    "Contraditório",
+                    "Impessoalidade",
+                    "Legalidade",
+                    "Proporcionalidade",
+                    "Objetividade",
+                    "Moralidade",
+                    "Oralidade"
+                ],
+                "frase_inicial": "SERÁ FÁCIL PRO MOMO são princípios do processo administrativo federal (Lei 9.784/99):",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+            },
+            {
+                "minemonico": "COM GARRA ERRA PROMO",
+                "palavras_corretas": [
+                    "Construir uma sociedade livre, justa e solidária",
+                    "Garantir o desenvolvimento nacional",
+                    "Erradicar a pobreza e a marginalização",
+                    "Promover o bem de todos"
+                ],
+                "frase_inicial": "COM GARRA ERRA PROMO são os objetivos fundamentais da República (Art. 3º da CF/88):",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Constitucional"
+            },
+            {
+                "minemonico": "SOCIDIVAPLU",
+                "palavras_corretas": [
+                    "Soberania nacional",
+                    "Cidadania",
+                    "Dignidade da pessoa humana",
+                    "Valorização do trabalho humano",
+                    "Livre iniciativa"
+                ],
+                "frase_inicial": "SOCIDIVAPLU são os princípios da ordem econômica (Art. 170 da CF/88):",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Constitucional / Econômico"
+            },
+            {
+                "minemonico": "LIMPE",
+                "palavras_corretas": [
+                    "Legalidade",
+                    "Impessoalidade",
+                    "Moralidade",
+                    "Publicidade",
+                    "Eficiência"
+                ],
+                "frase_inicial": "LIMPE são os princípios expressos da Administração Pública (Art. 37 da CF/88):",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+            },
+            {
+                "minemonico": "FACAS",
+                "palavras_corretas": [
+                    "Fornecedor exclusivo",
+                    "Artista consagrado pela crítica ou pela opinião pública",
+                    "Consultor técnico ou instituição com notória especialização",
+                    "Aquisição de materiais/produtos de marca específica",
+                    "Serviços técnicos de natureza singular"
+                ],
+                "frase_inicial": "FACAS são hipóteses de inexigibilidade de licitação (Art. 74 da Lei 14.133/2021):",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Administrativo / Licitações"
+            },
+            {
+                "minemonico": "PANR4",
+                "palavras_corretas": [
+                    "Promoção",
+                    "Aproveitamento",
+                    "Nomeação",
+                    "Readaptação",
+                    "Reversão",
+                    "Reintegração",
+                    "Recondução"
+                ],
+                "frase_inicial": "PANR4 São formas de provimento de cargo público previstas na legislação administrativa.",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+            },
+            {
+                "minemonico": "PADREnaPF",
+                "palavras_corretas": [
+                    "Promoção",
+                    "Aposentadoria",
+                    "Demissão",
+                    "Readaptacao",
+                    "Exoneracao",
+                    "Posse em inacumulavel",
+                    "Falecimento"
+                ],
+                "frase_inicial": "PADREnaPF São hipóteses de vacância de cargo público segundo o regime jurídico dos servidores.",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+            },
+            {
+                "minemonico": "FAFA",
+                "palavras_corretas": [
+                    "Fomento",
+                    "Articulação",
+                    "Fiscalização",
+                    "Aplicação"
+                ],
+                "frase_inicial": "FAFA toca instrumentos - São instrumentos do decreto 3298/99 PCD",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+            },
+            {
+                "minemonico": "PUTOFE",
+                "palavras_corretas": [
+                    "Penitenciário",
+                    "Urbanístico",
+                    "Tributário",
+                    "Orçamento",
+                    "Financeiro",
+                    "Econômico"
+                ],
+                "frase_inicial": "Para União, Estado e DF, PUTOFE compartilham o poder.",
+                "esta_separado": true,
+                "separacao": [],
+                "materia": "Direito Constitucional"
+            },
+            {
+                "minemonico": "DOM",
+                "palavras_corretas": [
+                    "Diretrizes",
+                    "Objetivos",
+                    "Metas"
+                ],
+                "frase_inicial": "No Plano Plurianual, o governo define o DOM para 4 anos.",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Financeiro / Orçamentário"
+            },
+            {
+                "minemonico": "PRIME",
+                "palavras_corretas": [
+                    "Prioridades",
+                    "Regras",
+                    "Indicadores",
+                    "Metas fiscais",
+                    "Equilíbrio"
+                ],
+                "frase_inicial": "A Lei de Diretrizes Orçamentárias define as PRIMEiras coisas que vão guiar o orçamento anual.",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Financeiro / Orçamentário"
+            },
+            {
+                "minemonico": "Dá Dinheiro Anualmente",
+                "palavras_corretas": [
+                    "Despesas",
+                    "Destinação de receitas",
+                    "Ações específicas"
+                ],
+                "frase_inicial": "A Lei Orçamentária Anual é a lei que Dá Dinheiro Anualmente.",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Financeiro / Orçamentário"
+            },
+            {
+                "minemonico": "SuSuCo",
+                "palavras_corretas": [
+                  "Súmula do TST",
+                  "Súmula Vinculante",
+                  "Constituição Federal"
+                ],
+                "frase_inicial": "Se for contra o SuSuCo, caberá recurso de revista",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito do Trabalho"
+              },
+              {
+                "minemonico": "TCU susta Ato, CN susta Contrato",
+                "palavras_corretas": [
+                  "Tribunal de Contas da União",
+                  "Congresso Nacional"
+                ],
+                "frase_inicial": "TCU susta Ato, CN susta Contrato",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Administrativo / Constitucional"
+              },
+              {
+                "minemonico": "Iniciativa popular 1503",
+                "palavras_corretas": [
+                  "Eleitorado nacional - 1%",
+                  "Estados - 5%",
+                  "Eleitores cada estado - 0,3%"
+                ],
+                "frase_inicial": "Iniciativa popular 1503",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Administrativo / Constitucional"
+              },
+              {
+                "minemonico": "Somos Time de Futebol",
+                "palavras_corretas": [
+                  "11 jogadores - 11 membros"
+                ],
+                "frase_inicial": "Quantidade de membros - STF Somos Time de Futebol",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+              },
+              {
+                "minemonico": "Somos Todos Jesus",
+                "palavras_corretas": [
+                  "Jesus faleceu com 33 anos - 33 membros"
+                ],
+                "frase_inicial": "Quantidade de membros - STJ Somos Todos Jesus",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+              },
+              {
+                "minemonico": "Trinta Sem Três",
+                "palavras_corretas": [
+                  "30 sem (menos) 3 = 27 - 27 membros"
+                ],
+                "frase_inicial": "Quantidade de membros - TST Trinta Sem Três",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+              },
+              {
+                "minemonico": "Anagrama para SET",
+                "palavras_corretas": [
+                  "SET - 7 membros"
+                ],
+                "frase_inicial": "Quantidade de membros - TSE Anagrama para SET",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+              },
+              {
+                "minemonico": "Somos Todas Mocinhas",
+                "palavras_corretas": [
+                  "Viraram mocinha aos 15 anos - 15 membros"
+                ],
+                "frase_inicial": "Quantidade de membros - STM Somos Todas Mocinhas",
+                "esta_separado": false,
+                "separacao": [],
+                "materia": "Direito Administrativo"
+              }
+        ]
+    }
+]

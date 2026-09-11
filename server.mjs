@@ -7,6 +7,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import bodyParser from 'body-parser';
 import webpush from 'web-push';
+import fetch from 'node-fetch';
+import * as cheerio from 'cheerio';
+import iconv from 'iconv-lite';
+import fs from 'fs';
+import { promisify } from 'util';
 
 // --- CONFIGURAÇÕES BÁSICAS ---
 const app = express();
@@ -27,6 +32,110 @@ app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// --- JOGO "ESTUDA TRT" (mnemônicos, competências e lacunas da CF) ---
+// Aplicativo separado, montado em /jogo dentro do mesmo servidor.
+app.use('/jogo', express.static(path.join(__dirname, 'public/jogo')));
+
+const readFile = promisify(fs.readFile);
+const writeFile = promisify(fs.writeFile);
+const statAsync = promisify(fs.stat);
+const constituicaoJsonPath = path.join(__dirname, 'public/jogo/json/constituicao.json');
+
+async function baixarConstituicao() {
+    const url = 'https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm';
+    const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' },
+    });
+    if (!response.ok) throw new Error('Falha ao obter Constituição');
+
+    const buffer = await response.arrayBuffer();
+    const html = iconv.decode(Buffer.from(buffer), 'ISO-8859-1');
+    const $ = cheerio.load(html);
+
+    const artigos = [];
+    let encontrouFinal = false;
+
+    $('p').each((_, el) => {
+        if (encontrouFinal) return;
+        const text = $(el).text().trim();
+
+        if (text.includes('Brasília, 5 de outubro de 1988.')) {
+            encontrouFinal = true;
+            return;
+        }
+        if ($(el).find('strike').length > 0) return;
+
+        const artigoMatch = text.match(/^Art\. ?\d+/);
+        if (artigoMatch) {
+            const artigo = { titulo: text, paragrafos: [], incisos: [] };
+            const siblings = [];
+            let current = $(el).next();
+
+            while (current.length && !/^Art\. ?\d+/.test(current.text().trim())) {
+                const t = current.text().trim();
+                if (t.includes('Brasília, 5 de outubro de 1988.')) {
+                    encontrouFinal = true;
+                    break;
+                }
+                siblings.push(current);
+                current = current.next();
+            }
+
+            siblings.forEach(sib => {
+                const ps = sib.is('p') && (sib.attr('style') || '').includes('text-indent: 38px')
+                    ? [sib]
+                    : sib.find('p[style*="text-indent: 38px"]').toArray().map(el => $(el));
+
+                ps.forEach(pElem => {
+                    if (pElem.find('strike').length > 0) return;
+                    const t = pElem.text().trim();
+                    if (/^§/.test(t)) artigo.paragrafos.push(t);
+                    else if (/^[IVXLC]+[-—]\s/.test(t)) artigo.incisos.push(t);
+                    else if (t) artigo.paragrafos.push(t);
+                });
+            });
+
+            artigos.push(artigo);
+        }
+    });
+
+    return artigos;
+}
+
+app.get('/jogo/constituicao', async (req, res) => {
+    try {
+        const exists = fs.existsSync(constituicaoJsonPath);
+        let precisaAtualizar = true;
+
+        if (exists) {
+            const stats = await statAsync(constituicaoJsonPath);
+            const agora = new Date();
+            const modificadoHoje = new Date(stats.mtime).toDateString() === agora.toDateString();
+            if (modificadoHoje) precisaAtualizar = false;
+        }
+
+        if (precisaAtualizar) {
+            try {
+                const artigos = await baixarConstituicao();
+                await writeFile(constituicaoJsonPath, JSON.stringify({ artigos }, null, 2), 'utf8');
+                return res.json({ artigos });
+            } catch (erroDownload) {
+                // Se a atualização falhar (ex: sem acesso à internet) e já existir
+                // um arquivo em cache, serve o cache em vez de quebrar o jogo.
+                if (!exists) throw erroDownload;
+                console.error('Falha ao atualizar a Constituição, servindo cache existente:', erroDownload);
+            }
+        }
+
+        const json = await readFile(constituicaoJsonPath, 'utf8');
+        const dados = JSON.parse(json);
+        return res.json(dados);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Erro interno ao carregar a Constituição' });
+    }
+});
 
 // --- WEB PUSH CONFIG ---
 const publicVapidKey = process.env.VAPID_PUBLIC_KEY;
@@ -277,10 +386,29 @@ async function startServer() {
 
         // --- SESSÕES DE ESTUDO (cronômetro) ---
 
-        // Listar sessões (mais recentes primeiro), opcionalmente filtradas por plano
+        // Monta o filtro de "pertence a este plano" para sessões: uma sessão conta
+        // para um plano se QUALQUER tópico que ela estudou pertence hoje a esse
+        // plano — inclusive tópicos marcados como compartilhados DEPOIS da sessão
+        // ter sido registrada — ou, quando a sessão não tem tópicos vinculados,
+        // se foi registrada com aquele plano ativo (fallback).
+        async function filtroSessoesPorPlano(plano) {
+            if (!plano) return {};
+            const topicosDoPlano = await editalColl.find({ planos: plano }, { projection: { _id: 1 } }).toArray();
+            const idsDoPlano = topicosDoPlano.map(t => t._id.toString());
+            return {
+                $or: [
+                    { "topicos.topicoId": { $in: idsDoPlano } },
+                    { $or: [{ topicos: { $exists: false } }, { topicos: { $size: 0 } }], plano }
+                ]
+            };
+        }
+
+        // Listar sessões (mais recentes primeiro), opcionalmente filtradas por plano.
+        // Uma sessão que estudou uma matéria/tópico compartilhado entre planos
+        // aparece no resumo de TODOS os planos aos quais o tópico pertence.
         app.get('/api/sessoes', async (req, res) => {
             const { plano, limite } = req.query;
-            const filtro = plano ? { plano } : {};
+            const filtro = await filtroSessoesPorPlano(plano);
             const sessoes = await sessoesColl.find(filtro)
                 .sort({ fim: -1 })
                 .limit(parseInt(limite) || 200)
@@ -362,10 +490,11 @@ async function startServer() {
         });
 
         // Listar revisões agendadas (pendentes por padrão), opcionalmente por plano
+        // (mesma regra de compartilhamento usada em /api/sessoes)
         app.get('/api/revisoes', async (req, res) => {
             const { plano, status } = req.query;
-            const filtro = { "revisao.agendada": true };
-            if (plano) filtro.plano = plano;
+            const filtroPlano = await filtroSessoesPorPlano(plano);
+            const filtro = { ...filtroPlano, "revisao.agendada": true };
             if (status !== 'todas') filtro["revisao.concluida"] = false;
 
             const revisoes = await sessoesColl.find(filtro).sort({ "revisao.dataRevisao": 1 }).toArray();
