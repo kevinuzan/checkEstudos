@@ -1499,9 +1499,10 @@ input[type="checkbox"] {
 }
 
 .jogo-pontuacao-texto {
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 12.5px;
+    font-weight: 600;
     color: var(--text);
+    line-height: 1.7;
 }
 
 .jogo-pontuacao-acoes {
@@ -1525,15 +1526,6 @@ input[type="checkbox"] {
 
 .btn-secundario:hover {
     background: #dbe4fe;
-}
-
-.btn-secundario.btn-perigo {
-    background: var(--danger-light);
-    color: #b91c1c;
-}
-
-.btn-secundario.btn-perigo:hover {
-    background: #fecaca;
 }
 
 .jogo-frame-wrap {

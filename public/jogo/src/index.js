@@ -1,31 +1,33 @@
 // ==================================================================
 // PLACAR (pontuação persistida no servidor) e FEEDBACK INLINE
 // ==================================================================
-// A pontuação de cada sub-jogo (mnemônicos, competências, lacunas) é
-// somada e salva no banco a cada rodada, para nunca se perder ao trocar
-// de aba/dispositivo. O usuário pode zerar tudo a qualquer momento.
+// Cada sub-jogo (mnemônicos, competências, lacunas) tem sua própria
+// pontuação, mostrada separadamente — nunca somada com as demais. Tudo é
+// salvo no banco a cada rodada e nunca é zerado: o placar sempre reflete
+// o desempenho acumulado e o de hoje.
 
-async function obterPlacarTotal() {
+const NOMES_JOGO = { mnemonicos: 'Mnemônicos', competencias: 'Competências', lacunas: 'Lacunas' };
+
+async function obterPlacarPorJogo() {
     try {
         const res = await fetch('/jogo/api/pontuacao');
-        const dados = await res.json();
-        const acertos = Object.values(dados).reduce((s, d) => s + (d.acertos || 0), 0);
-        const erros = Object.values(dados).reduce((s, d) => s + (d.erros || 0), 0);
-        return { acertos, erros };
+        return await res.json();
     } catch (err) {
         console.error('Erro ao carregar placar:', err);
-        return { acertos: 0, erros: 0 };
+        return {};
     }
 }
 
 async function atualizarPlacarTela() {
-    const { acertos, erros } = await obterPlacarTotal();
-    const total = acertos + erros;
+    const dados = await obterPlacarPorJogo();
     const el = document.getElementById('placar-texto');
     if (!el) return;
-    el.textContent = total > 0
-        ? `✅ ${acertos} acertos · ❌ ${erros} erros`
-        : 'Jogue uma rodada para começar a pontuar!';
+
+    const linhas = Object.keys(NOMES_JOGO).map(tipo => {
+        const d = dados[tipo] || { total: { acertos: 0, erros: 0 }, hoje: { acertos: 0, erros: 0 } };
+        return `${NOMES_JOGO[tipo]}: ✅ ${d.total.acertos} / ❌ ${d.total.erros} total (hoje: ✅ ${d.hoje.acertos} / ❌ ${d.hoje.erros})`;
+    });
+    el.innerHTML = linhas.join('<br>');
 }
 
 function iniciarPlacar() {
@@ -49,32 +51,6 @@ async function registrarPontuacao(tipo, acertos, erros) {
         window.parent.postMessage({ tipo: 'jogo-pontuacao-atualizada' }, window.location.origin);
     }
 }
-
-async function zerarPlacar() {
-    if (!confirm('Zerar toda a pontuação acumulada do jogo? Essa ação não pode ser desfeita.')) return;
-    try {
-        await fetch('/jogo/api/pontuacao/resetar', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-    } catch (err) {
-        console.error('Erro ao zerar pontuação:', err);
-    }
-    atualizarPlacarTela();
-    if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ tipo: 'jogo-pontuacao-atualizada' }, window.location.origin);
-    }
-}
-
-// Mantém o placar em dia se a pontuação for zerada pelo botão que fica
-// na página principal do checkEstudos (fora do iframe).
-window.addEventListener('message', (event) => {
-    if (event.origin !== window.location.origin) return;
-    if (event.data && event.data.tipo === 'jogo-pontuacao-zerada') {
-        atualizarPlacarTela();
-    }
-});
 
 // Cria (se ainda não existir) e exibe um banner de feedback inline dentro do
 // container do exercício, no lugar de usar alert() — que trava a página e

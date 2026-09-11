@@ -70,41 +70,20 @@ body {
     text-shadow: none;
 }
 
-/* --- Barra de pontuação (placar), sempre visível no topo --- */
+/* --- Barra de pontuação (placar), sempre visível no topo, por sub-jogo --- */
 .placar-barra {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-md);
     background: var(--card-bg-default);
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
     padding: 12px 16px;
     box-shadow: var(--shadow-sm);
-    flex-wrap: wrap;
 }
 
 .placar-texto {
-    font-weight: 700;
-    font-size: 0.95em;
-    color: var(--dark-text);
-}
-
-.btn-placar-zerar {
-    background: var(--danger-light);
-    color: #b91c1c;
-    border: none;
-    padding: 8px 14px;
-    border-radius: var(--radius-sm);
-    font-weight: 700;
+    font-weight: 600;
     font-size: 0.85em;
-    cursor: pointer;
-    transition: background 0.15s;
-    white-space: nowrap;
-}
-
-.btn-placar-zerar:hover {
-    background: #fecaca;
+    color: var(--dark-text);
+    line-height: 1.7;
 }
 
 /* --- Banner de feedback inline (substitui os alerts, funciona bem no celular) --- */
@@ -496,14 +475,8 @@ body {
     }
 
     .placar-barra {
-        flex-direction: column;
-        align-items: stretch;
         text-align: center;
         padding: 10px 12px;
-    }
-
-    .btn-placar-zerar {
-        width: 100%;
     }
 
     .nav-tabs .nav-link {

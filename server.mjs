@@ -149,6 +149,7 @@ const TIPOS_ESTUDO_COLLECTION = "tipos_estudo";
 const SESSOES_COLLECTION = "sessoes_estudo";
 const MATERIAS_COR_COLLECTION = "materias_cor";
 const JOGO_PONTUACOES_COLLECTION = "jogo_pontuacoes";
+const JOGO_RODADAS_COLLECTION = "jogo_rodadas";
 const PLANO_PADRAO = "TRT";
 
 // Tipos de estudo padrão, criados automaticamente na primeira execução.
@@ -180,6 +181,7 @@ async function startServer() {
         const sessoesColl = db.collection(SESSOES_COLLECTION);
         const materiasCorColl = db.collection(MATERIAS_COR_COLLECTION);
         const jogoPontuacoesColl = db.collection(JOGO_PONTUACOES_COLLECTION);
+        const jogoRodadasColl = db.collection(JOGO_RODADAS_COLLECTION);
 
         // --- MIGRAÇÃO: garante que todo item tenha um array "planos" ---
         // Itens antigos (de antes de existir o conceito de "plano") são
@@ -546,22 +548,59 @@ async function startServer() {
         });
 
         // --- PONTUAÇÃO DO JOGO (mnemônicos, competências, lacunas) ---
-        // Guarda acertos/erros acumulados por sub-jogo, persistidos no Mongo
-        // para não se perderem ao trocar de dispositivo/aba.
+        // Cada sub-jogo tem sua própria pontuação, nunca somada com as demais.
+        // Guardamos o total acumulado (para nunca perder o histórico — não existe
+        // "zerar") e também um log por rodada com a data, para saber como foi o
+        // desempenho dia a dia.
         const TIPOS_JOGO_VALIDOS = ["mnemonicos", "competencias", "lacunas"];
 
-        // Retorna a pontuação acumulada de cada sub-jogo
+        function dataDeHojeISO() {
+            const hoje = new Date();
+            return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+        }
+
+        // Retorna, para cada sub-jogo, o total acumulado e o desempenho de hoje
         app.get('/jogo/api/pontuacao', async (req, res) => {
-            const docs = await jogoPontuacoesColl.find({}).toArray();
+            const totais = await jogoPontuacoesColl.find({}).toArray();
+            const hojeISO = dataDeHojeISO();
+            const rodadasHoje = await jogoRodadasColl.find({ diaISO: hojeISO }).toArray();
+
             const resultado = {};
             for (const tipo of TIPOS_JOGO_VALIDOS) {
-                const doc = docs.find(d => d.tipo === tipo);
-                resultado[tipo] = { acertos: doc?.acertos || 0, erros: doc?.erros || 0 };
+                const totalDoc = totais.find(d => d.tipo === tipo);
+                const rodadasDoTipoHoje = rodadasHoje.filter(r => r.tipo === tipo);
+                resultado[tipo] = {
+                    total: { acertos: totalDoc?.acertos || 0, erros: totalDoc?.erros || 0 },
+                    hoje: {
+                        acertos: rodadasDoTipoHoje.reduce((s, r) => s + (r.acertos || 0), 0),
+                        erros: rodadasDoTipoHoje.reduce((s, r) => s + (r.erros || 0), 0)
+                    }
+                };
             }
             res.json(resultado);
         });
 
-        // Incrementa acertos/erros de um sub-jogo (chamado a cada rodada)
+        // Retorna o desempenho dia a dia de um sub-jogo (ou de todos), últimos N dias
+        app.get('/jogo/api/pontuacao/historico', async (req, res) => {
+            const dias = Math.min(parseInt(req.query.dias) || 30, 90);
+            const desde = new Date();
+            desde.setDate(desde.getDate() - dias);
+
+            const filtro = { data: { $gte: desde } };
+            if (req.query.tipo && TIPOS_JOGO_VALIDOS.includes(req.query.tipo)) filtro.tipo = req.query.tipo;
+
+            const rodadas = await jogoRodadasColl.find(filtro).sort({ data: 1 }).toArray();
+            const porDia = {};
+            for (const r of rodadas) {
+                if (!porDia[r.diaISO]) porDia[r.diaISO] = { acertos: 0, erros: 0 };
+                porDia[r.diaISO].acertos += r.acertos || 0;
+                porDia[r.diaISO].erros += r.erros || 0;
+            }
+            res.json(porDia);
+        });
+
+        // Registra o resultado de uma rodada de um sub-jogo (acumula no total e
+        // fica salvo no log diário — a pontuação nunca é zerada).
         app.post('/jogo/api/pontuacao', async (req, res) => {
             const { tipo, acertos, erros } = req.body;
             if (!TIPOS_JOGO_VALIDOS.includes(tipo)) {
@@ -575,29 +614,12 @@ async function startServer() {
                 { $inc: { acertos: incAcertos, erros: incErros }, $set: { atualizadoEm: new Date() } },
                 { upsert: true }
             );
+            await jogoRodadasColl.insertOne({
+                tipo, acertos: incAcertos, erros: incErros, data: new Date(), diaISO: dataDeHojeISO()
+            });
+
             const doc = await jogoPontuacoesColl.findOne({ tipo });
             res.json({ success: true, pontuacao: { acertos: doc.acertos || 0, erros: doc.erros || 0 } });
-        });
-
-        // Zera a pontuação de um sub-jogo específico, ou de todos se "tipo" não for enviado
-        app.post('/jogo/api/pontuacao/resetar', async (req, res) => {
-            const { tipo } = req.body;
-            if (tipo) {
-                if (!TIPOS_JOGO_VALIDOS.includes(tipo)) {
-                    return res.status(400).json({ success: false, error: 'Tipo de jogo inválido' });
-                }
-                await jogoPontuacoesColl.updateOne(
-                    { tipo },
-                    { $set: { acertos: 0, erros: 0, atualizadoEm: new Date() } },
-                    { upsert: true }
-                );
-            } else {
-                await jogoPontuacoesColl.updateMany(
-                    {},
-                    { $set: { acertos: 0, erros: 0, atualizadoEm: new Date() } }
-                );
-            }
-            res.json({ success: true });
         });
 
         httpServer.listen(PORT, () => console.log(`Rodando em http://localhost:${PORT}`));
