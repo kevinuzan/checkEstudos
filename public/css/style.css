@@ -556,6 +556,48 @@ button:active {
     text-decoration: line-through;
 }
 
+.item-check.selecionado {
+    background: var(--primary-light);
+}
+
+.checkbox-selecao-item {
+    accent-color: var(--purple);
+}
+
+.edital-selecao-barra {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.edital-selecao-acoes {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    box-shadow: var(--shadow-sm);
+}
+
+.edital-selecao-contador {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.edital-selecao-planos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
 input[type="checkbox"] {
     width: 18px;
     height: 18px;
@@ -1259,7 +1301,8 @@ input[type="checkbox"] {
     border-radius: var(--radius-sm);
     padding: 12px 14px;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
     gap: 12px;
     box-shadow: var(--shadow-sm);
 }
@@ -1323,6 +1366,64 @@ input[type="checkbox"] {
     transition: width 0.4s ease;
 }
 
+.materia-indicador-seta {
+    display: inline-block;
+    width: 10px;
+    color: var(--text-faint);
+    font-size: 11px;
+}
+
+.materia-indicador-topicos {
+    flex: 1 1 100%;
+    width: 100%;
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.topico-indicador-linha {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 90px 60px;
+    align-items: center;
+    gap: 10px;
+}
+
+.topico-indicador-nome {
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.topico-indicador-barra-fundo {
+    background: #eef1f7;
+    height: 5px;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.topico-indicador-barra {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.4s ease;
+}
+
+.topico-indicador-tempo {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-align: right;
+}
+
+.lista-vazia-topicos {
+    font-size: 12px;
+    color: var(--text-faint);
+}
+
 /* ============================================================ */
 /* RESPONSIVIDADE                                                */
 /* ============================================================ */
@@ -1347,6 +1448,15 @@ input[type="checkbox"] {
 
     .app-bar-title {
         font-size: 0.95rem;
+    }
+
+    .topico-indicador-linha {
+        grid-template-columns: minmax(0, 1fr) 50px;
+        row-gap: 4px;
+    }
+
+    .topico-indicador-barra-fundo {
+        display: none;
     }
 }
 

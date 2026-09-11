@@ -327,6 +327,22 @@ async function startServer() {
             res.json({ success: true });
         });
 
+        // Vincula vários tópicos de uma vez a um plano adicional (migração em
+        // massa, ex: "selecionei 20 tópicos do TRT e quero que valham pro ENAM
+        // também"). Não remove o(s) plano(s) que o tópico já tinha.
+        app.put('/api/edital/bulk-plano', async (req, res) => {
+            const { ids, plano } = req.body;
+            if (!Array.isArray(ids) || ids.length === 0 || !plano) {
+                return res.status(400).json({ success: false, error: 'ids e plano são obrigatórios' });
+            }
+            const objectIds = ids.map(id => new ObjectId(id));
+            await editalColl.updateMany(
+                { _id: { $in: objectIds } },
+                { $addToSet: { planos: plano } }
+            );
+            res.json({ success: true, atualizados: objectIds.length });
+        });
+
         // Deletar um tópico específico
         app.delete('/api/edital/item/:id', async (req, res) => {
             const { id } = req.params;

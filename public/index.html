@@ -153,6 +153,17 @@
                     <button onclick="importarEdital()">Importar Tópicos</button>
                 </section>
 
+                <div class="edital-selecao-barra">
+                    <button type="button" class="btn-secundario" id="btn-toggle-selecao-edital" onclick="alternarModoSelecaoEdital()">☑️ Selecionar vários</button>
+                    <div class="edital-selecao-acoes" id="edital-selecao-acoes" style="display:none;">
+                        <span class="edital-selecao-contador" id="edital-selecao-contador">0 selecionados</span>
+                        <div class="edital-selecao-planos" id="edital-selecao-planos">
+                            <!-- botões de plano inseridos via JS -->
+                        </div>
+                        <button type="button" class="btn-secundario" onclick="cancelarSelecaoEdital()">Cancelar</button>
+                    </div>
+                </div>
+
                 <div id="lista-edital" class="lista-edital-grid">
                     </div>
             </div>

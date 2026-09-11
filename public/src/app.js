@@ -10,6 +10,10 @@ let itensAtuais = [];
 // Id do tópico em edição no modal
 let idEmEdicao = null;
 
+// Seleção em massa de tópicos no Edital (para migrar vários de uma vez para outro plano)
+let modoSelecaoEdital = false;
+let itensSelecionadosEdital = new Set();
+
 // View ativa: "resumo", "edital" ou "estudos"
 let viewAtual = 'resumo';
 
@@ -52,6 +56,7 @@ async function carregarPlanos() {
 
     renderizarTabsPlanos();
     renderPlanosCheckboxes('planos-checkboxes-import', [planoAtual]);
+    atualizarBarraSelecaoEdital();
 }
 
 function renderizarTabsPlanos() {
@@ -80,6 +85,9 @@ async function trocarPlano(nome) {
     if (nome === planoAtual) return;
     planoAtual = nome;
     localStorage.setItem('edital_plano_atual', planoAtual);
+    modoSelecaoEdital = false;
+    itensSelecionadosEdital.clear();
+    atualizarBarraSelecaoEdital();
     renderizarTabsPlanos();
     renderPlanosCheckboxes('planos-checkboxes-import', [planoAtual]);
     await carregarEdital();
@@ -170,17 +178,24 @@ function renderizar(itens) {
             </div>
             <div class="materia-content" style="display: ${estaMinimizado ? 'none' : 'block'}">
                 ${grupos[materia].map(item => `
-                    <div class="item-check ${item.concluido ? 'done' : ''}">
-                        <input type="checkbox" ${item.concluido ? 'checked' : ''}
-                            onchange="toggleCheck('${item._id}', this.checked)">
-                        <span class="topico-texto" onclick="abrirModalEdicao('${item._id}')">
+                    <div class="item-check ${item.concluido ? 'done' : ''} ${modoSelecaoEdital && itensSelecionadosEdital.has(item._id) ? 'selecionado' : ''}">
+                        ${modoSelecaoEdital ? `
+                            <input type="checkbox" class="checkbox-selecao-item" ${itensSelecionadosEdital.has(item._id) ? 'checked' : ''}
+                                onchange="toggleSelecaoItemEdital('${item._id}', this.checked)">
+                        ` : `
+                            <input type="checkbox" ${item.concluido ? 'checked' : ''}
+                                onchange="toggleCheck('${item._id}', this.checked)">
+                        `}
+                        <span class="topico-texto" onclick="${modoSelecaoEdital ? `toggleSelecaoItemEdital('${item._id}', !itensSelecionadosEdital.has('${item._id}'))` : `abrirModalEdicao('${item._id}')`}">
                             ${item.topico}
                             ${item.planos && item.planos.length > 1 ? `<span class="badge-compartilhado" title="Compartilhado entre: ${item.planos.join(', ')}">⇄ ${item.planos.join(' + ')}</span>` : ''}
                         </span>
-                        <div class="actions">
-                            <button class="btn-edit" onclick="abrirModalEdicao('${item._id}')">✎</button>
-                            <button class="btn-delete" onclick="deletarTopico('${item._id}')">🗑️</button>
-                        </div>
+                        ${modoSelecaoEdital ? '' : `
+                            <div class="actions">
+                                <button class="btn-edit" onclick="abrirModalEdicao('${item._id}')">✎</button>
+                                <button class="btn-delete" onclick="deletarTopico('${item._id}')">🗑️</button>
+                            </div>
+                        `}
                     </div>
                 `).join('')}
             </div>
@@ -258,6 +273,68 @@ function toggleMateria(materia) {
     estadosMinimizados[materia] = !estadosMinimizados[materia];
     localStorage.setItem('editais_minimizados', JSON.stringify(estadosMinimizados));
     carregarEdital();
+}
+
+// --- SELEÇÃO EM MASSA (migrar vários tópicos de uma vez para outro plano) ---
+
+function alternarModoSelecaoEdital() {
+    modoSelecaoEdital = !modoSelecaoEdital;
+    if (!modoSelecaoEdital) itensSelecionadosEdital.clear();
+    atualizarBarraSelecaoEdital();
+    carregarEdital();
+}
+
+function cancelarSelecaoEdital() {
+    modoSelecaoEdital = false;
+    itensSelecionadosEdital.clear();
+    atualizarBarraSelecaoEdital();
+    carregarEdital();
+}
+
+function toggleSelecaoItemEdital(id, marcado) {
+    if (marcado) itensSelecionadosEdital.add(id);
+    else itensSelecionadosEdital.delete(id);
+    atualizarBarraSelecaoEdital();
+    carregarEdital();
+}
+
+function atualizarBarraSelecaoEdital() {
+    const btnToggle = document.getElementById('btn-toggle-selecao-edital');
+    const acoes = document.getElementById('edital-selecao-acoes');
+    const contador = document.getElementById('edital-selecao-contador');
+    const planosBox = document.getElementById('edital-selecao-planos');
+    if (!btnToggle || !acoes) return;
+
+    btnToggle.textContent = modoSelecaoEdital ? '✖ Sair da seleção' : '☑️ Selecionar vários';
+    acoes.style.display = modoSelecaoEdital ? 'flex' : 'none';
+    contador.textContent = `${itensSelecionadosEdital.size} selecionado(s)`;
+
+    if (planosBox) {
+        planosBox.innerHTML = planosDisponiveis.map(plano => `
+            <button type="button" class="btn-secundario" onclick="adicionarSelecionadosAoPlano('${plano.nome.replace(/'/g, "\\'")}')">
+                + Vincular ao ${plano.nome}
+            </button>
+        `).join('');
+    }
+}
+
+// Vincula todos os tópicos selecionados também ao plano informado, sem
+// remover os planos que eles já têm (ex: um monte de tópicos do TRT
+// passam a valer para o ENAM também).
+async function adicionarSelecionadosAoPlano(nomePlano) {
+    if (itensSelecionadosEdital.size === 0) return;
+    if (!confirm(`Vincular ${itensSelecionadosEdital.size} tópico(s) selecionado(s) também ao plano "${nomePlano}"?`)) return;
+
+    await fetch('/api/edital/bulk-plano', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(itensSelecionadosEdital), plano: nomePlano })
+    });
+
+    modoSelecaoEdital = false;
+    itensSelecionadosEdital.clear();
+    atualizarBarraSelecaoEdital();
+    await carregarEdital();
 }
 
 async function importarEdital() {
@@ -1355,6 +1432,54 @@ function renderizarGraficoTiposEmpilhado() {
     }
 }
 
+// Divide a duração de cada sessão igualmente entre os TÓPICOS que ela
+// tocou (não só a matéria), para mostrar o tempo por tópico dentro de
+// cada matéria no Resumo.
+function construirSegundosPorTopico() {
+    const segundos = {}; // topicoId -> segundos
+    const info = {}; // topicoId -> { topico, materia }
+    sessoesCache.forEach(s => {
+        const topicos = s.topicos || [];
+        const idsUnicos = Array.from(new Set(topicos.map(t => t.topicoId)));
+        if (idsUnicos.length === 0) return;
+        const partes = s.duracaoSegundos / idsUnicos.length;
+        idsUnicos.forEach(id => {
+            segundos[id] = (segundos[id] || 0) + partes;
+            if (!info[id]) {
+                const t = topicos.find(tp => tp.topicoId === id);
+                info[id] = { topico: t.topico, materia: t.materia };
+            }
+        });
+    });
+    return { segundos, info };
+}
+
+// Lista os tópicos de uma matéria com o tempo de cada um, combinando os
+// tópicos ainda cadastrados no edital com tópicos já removidos mas que
+// têm sessões de estudo registradas (para não perder o histórico deles).
+function obterTopicosDaMateriaParaIndicador(materia, mapaSegundos, infoTopico) {
+    const vistos = new Set();
+    const lista = [];
+    itensAtuais.filter(i => i.materia === materia).forEach(i => {
+        vistos.add(i._id);
+        lista.push({ topico: i.topico, segundos: mapaSegundos[i._id] || 0 });
+    });
+    Object.keys(infoTopico).forEach(id => {
+        if (vistos.has(id) || infoTopico[id].materia !== materia) return;
+        lista.push({ topico: `${infoTopico[id].topico} (removido do edital)`, segundos: mapaSegundos[id] || 0 });
+    });
+    return lista.sort((a, b) => b.segundos - a.segundos);
+}
+
+// Matérias com o detalhamento por tópico expandido no momento (estado só de tela)
+let materiasExpandidasIndicador = new Set();
+
+function alternarIndicadorMateria(materia) {
+    if (materiasExpandidasIndicador.has(materia)) materiasExpandidasIndicador.delete(materia);
+    else materiasExpandidasIndicador.add(materia);
+    renderizarIndicadoresMaterias();
+}
+
 function renderizarIndicadoresMaterias() {
     const container = document.getElementById('materias-indicadores');
     if (!container) return;
@@ -1379,24 +1504,44 @@ function renderizarIndicadoresMaterias() {
     }
 
     const maxSegundos = Math.max(...materiasOrdenadas.map(([, s]) => s), 1);
+    const { segundos: segundosPorTopico, info: infoTopico } = construirSegundosPorTopico();
 
     container.innerHTML = materiasOrdenadas.map(([materia, segundos]) => {
         const cor = corDaMateria(materia);
         const perc = Math.round((segundos / maxSegundos) * 100);
         const materiaEscapada = materia.replace(/'/g, "\\'");
+        const expandida = materiasExpandidasIndicador.has(materia);
+        const topicosDaMateria = expandida ? obterTopicosDaMateriaParaIndicador(materia, segundosPorTopico, infoTopico) : [];
+        const maxSegundosTopico = Math.max(...topicosDaMateria.map(t => t.segundos), 1);
+
         return `
             <div class="materia-indicador">
                 <button type="button" class="materia-cor-swatch" style="background:${cor}"
                     onclick="abrirSeletorCorMateria('${materiaEscapada}')" title="Trocar cor de ${materia}"></button>
-                <div class="materia-indicador-corpo">
+                <div class="materia-indicador-corpo" onclick="alternarIndicadorMateria('${materiaEscapada}')" style="cursor:pointer;">
                     <div class="materia-indicador-topo">
-                        <span class="materia-indicador-nome">${materia}</span>
+                        <span class="materia-indicador-nome">
+                            <span class="materia-indicador-seta">${expandida ? '▾' : '▸'}</span> ${materia}
+                        </span>
                         <span class="materia-indicador-tempo">${segundos > 0 ? formatarDuracaoCurta(segundos) : '—'}</span>
                     </div>
                     <div class="materia-indicador-barra-fundo">
                         <div class="materia-indicador-barra" style="width:${perc}%; background:${cor}"></div>
                     </div>
                 </div>
+                ${expandida ? `
+                    <div class="materia-indicador-topicos">
+                        ${topicosDaMateria.length === 0 ? '<div class="lista-vazia-topicos">Nenhum tópico cadastrado nesta matéria.</div>' : topicosDaMateria.map(t => `
+                            <div class="topico-indicador-linha">
+                                <span class="topico-indicador-nome">${t.topico}</span>
+                                <div class="topico-indicador-barra-fundo">
+                                    <div class="topico-indicador-barra" style="width:${Math.round((t.segundos / maxSegundosTopico) * 100)}%; background:${cor}"></div>
+                                </div>
+                                <span class="topico-indicador-tempo">${t.segundos > 0 ? formatarDuracaoCurta(t.segundos) : '—'}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : ''}
             </div>
         `;
     }).join('');
