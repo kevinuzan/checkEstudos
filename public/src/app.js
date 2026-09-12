@@ -18,12 +18,50 @@ let itensSelecionadosEdital = new Set();
 let viewAtual = 'resumo';
 
 async function iniciar() {
+    renderizarSeletorTema();
     configurarSeletorCorMateria();
     await carregarPlanos();
     await carregarEdital();
     await carregarTiposEstudo();
     restaurarCronometro();
     await carregarResumo(); // a view inicial é o Resumo
+}
+
+// ==================================================================
+// TEMA (cor de destaque + modo claro/escuro, salvo no dispositivo)
+// ==================================================================
+
+const TEMAS_DISPONIVEIS = [
+    { id: '', nome: 'Azul (padrão)', cor: '#2563eb' },
+    { id: 'verde-claro', nome: 'Verde', cor: '#059669' },
+    { id: 'roxo-claro', nome: 'Roxo', cor: '#7c3aed' },
+    { id: 'escuro-azul', nome: 'Dark azul', cor: '#3b82f6' },
+    { id: 'escuro-verde', nome: 'Dark verde', cor: '#22c55e' }
+];
+
+function obterTemaSalvo() {
+    try {
+        return localStorage.getItem('checkestudos_tema') || '';
+    } catch (err) {
+        return '';
+    }
+}
+
+function aplicarTema(temaId) {
+    if (temaId) document.documentElement.setAttribute('data-tema', temaId);
+    else document.documentElement.removeAttribute('data-tema');
+    try { localStorage.setItem('checkestudos_tema', temaId); } catch (err) { /* segue sem salvar */ }
+    renderizarSeletorTema();
+}
+
+function renderizarSeletorTema() {
+    const container = document.getElementById('tema-swatches');
+    if (!container) return;
+    const temaAtual = obterTemaSalvo();
+    container.innerHTML = TEMAS_DISPONIVEIS.map(t => `
+        <button type="button" class="tema-swatch ${temaAtual === t.id ? 'ativo' : ''}"
+            style="background:${t.cor}" title="${t.nome}" onclick="aplicarTema('${t.id}')"></button>
+    `).join('');
 }
 
 // --- PLANOS ---

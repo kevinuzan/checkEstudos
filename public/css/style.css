@@ -4,8 +4,10 @@
 
 :root {
     --primary: #2563eb;
+    --primary-rgb: 37, 99, 235;
     --primary-dark: #1d4ed8;
     --primary-light: #e8f0fe;
+    --primary-light-hover: #dbe4fe;
     --success: #16a34a;
     --success-light: #dcfce7;
     --warning: #d97706;
@@ -22,12 +24,75 @@
     --text-faint: #94a3b8;
     --border: #e5e9f2;
 
+    --surface-muted: #f1f5f9;
+    --surface-muted-hover: #e2e8f0;
+    --track-bg: #eef1f7;
+
     --radius-sm: 8px;
     --radius: 12px;
     --radius-lg: 18px;
     --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
     --shadow: 0 2px 10px rgba(15, 23, 42, 0.07);
     --shadow-lg: 0 12px 28px -10px rgba(15, 23, 42, 0.18);
+}
+
+/* ============================================================ */
+/* TEMAS (cor de destaque + modo claro/escuro, escolhidos pelo   */
+/* usuário e salvos no dispositivo)                              */
+/* ============================================================ */
+
+/* --- Verde (claro) --- */
+[data-tema="verde-claro"] {
+    --primary: #059669;
+    --primary-rgb: 5, 150, 105;
+    --primary-dark: #047857;
+    --primary-light: #d1fae5;
+    --primary-light-hover: #a7f3d0;
+}
+
+/* --- Roxo (claro) --- */
+[data-tema="roxo-claro"] {
+    --primary: #7c3aed;
+    --primary-rgb: 124, 58, 237;
+    --primary-dark: #6d28d9;
+    --primary-light: #ede9fe;
+    --primary-light-hover: #ddd6fe;
+}
+
+/* --- Escuro (azul) --- */
+[data-tema="escuro-azul"],
+[data-tema="escuro-verde"] {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --text-faint: #64748b;
+    --border: #334155;
+
+    --surface-muted: #273449;
+    --surface-muted-hover: #334155;
+    --track-bg: #273449;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 12px 28px -10px rgba(0, 0, 0, 0.55);
+}
+
+[data-tema="escuro-azul"] {
+    --primary: #3b82f6;
+    --primary-rgb: 59, 130, 246;
+    --primary-dark: #60a5fa;
+    --primary-light: #1e3a5f;
+    --primary-light-hover: #24466f;
+}
+
+/* --- Escuro (verde) --- */
+[data-tema="escuro-verde"] {
+    --primary: #22c55e;
+    --primary-rgb: 34, 197, 94;
+    --primary-dark: #4ade80;
+    --primary-light: #14532d;
+    --primary-light-hover: #1b6b3a;
 }
 
 * { box-sizing: border-box; }
@@ -100,7 +165,7 @@ h1, h2, h3 { font-family: inherit; }
     display: flex;
     align-items: center;
     gap: 6px;
-    background: #f1f5f9;
+    background: var(--surface-muted);
     border-radius: 999px;
     padding: 6px 12px;
     font-weight: 700;
@@ -163,6 +228,50 @@ h1, h2, h3 { font-family: inherit; }
     background: transparent;
     color: var(--text-faint);
     border: 1px dashed #cbd5e1;
+}
+
+/* ============================================================ */
+/* SELETOR DE TEMA (cor de destaque + claro/escuro)              */
+/* ============================================================ */
+
+.sidebar-tema {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
+.tema-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-faint);
+    margin-bottom: 8px;
+}
+
+.tema-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tema-swatch {
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    border: 2px solid var(--card);
+    box-shadow: 0 0 0 1.5px var(--border);
+    cursor: pointer;
+    padding: 0;
+    transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.tema-swatch:hover {
+    transform: translateY(-1px);
+}
+
+.tema-swatch.ativo {
+    box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text);
 }
 
 /* ============================================================ */
@@ -353,7 +462,7 @@ h1, h2, h3 { font-family: inherit; }
 }
 
 .progress-bar {
-    background: #eef1f7;
+    background: var(--track-bg);
     height: 10px;
     border-radius: 10px;
     overflow: hidden;
@@ -391,7 +500,7 @@ select {
     border-radius: var(--radius-sm);
     font-family: inherit;
     font-size: 14px;
-    background: white;
+    background: var(--card);
     color: var(--text);
 }
 
@@ -400,7 +509,7 @@ textarea:focus,
 select:focus {
     outline: none;
     border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
 }
 
 textarea {
@@ -548,7 +657,7 @@ button:active {
 }
 
 .item-check.done {
-    background: #fafbfc;
+    background: var(--surface-muted);
 }
 
 .item-check.done .topico-texto {
@@ -619,7 +728,7 @@ input[type="checkbox"] {
 }
 
 .btn-edit {
-    background-color: #eef2ff;
+    background-color: var(--primary-light);
     color: var(--primary-dark);
     border: none;
     padding: 6px 10px;
@@ -630,7 +739,7 @@ input[type="checkbox"] {
 }
 
 .btn-edit:hover {
-    background-color: #dbe4fe;
+    background-color: var(--primary-light-hover);
 }
 
 .btn-delete {
@@ -701,12 +810,12 @@ input[type="checkbox"] {
 }
 
 .btn-cancelar {
-    background: #f1f5f9;
+    background: var(--surface-muted);
     color: var(--text);
 }
 
 .btn-cancelar:hover {
-    background: #e2e8f0;
+    background: var(--surface-muted-hover);
 }
 
 /* ============================================================ */
@@ -756,7 +865,7 @@ input[type="checkbox"] {
 }
 
 .tipo-chip {
-    background: #f1f5f9;
+    background: var(--surface-muted);
     color: var(--text);
     border: 1.5px solid transparent;
     padding: 7px 14px;
@@ -768,7 +877,7 @@ input[type="checkbox"] {
 }
 
 .tipo-chip:hover {
-    background: #e2e8f0;
+    background: var(--surface-muted-hover);
 }
 
 .tipo-chip.ativo {
@@ -1089,7 +1198,7 @@ input[type="checkbox"] {
     align-self: flex-start;
     font-size: 12px;
     font-weight: 700;
-    background: #f1f5f9;
+    background: var(--surface-muted);
     padding: 3px 10px;
     border-radius: 999px;
     color: var(--text);
@@ -1354,7 +1463,7 @@ input[type="checkbox"] {
 }
 
 .materia-indicador-barra-fundo {
-    background: #eef1f7;
+    background: var(--track-bg);
     height: 6px;
     border-radius: 6px;
     overflow: hidden;
@@ -1400,7 +1509,7 @@ input[type="checkbox"] {
 }
 
 .topico-indicador-barra-fundo {
-    background: #eef1f7;
+    background: var(--track-bg);
     height: 5px;
     border-radius: 5px;
     overflow: hidden;
@@ -1635,7 +1744,7 @@ input[type="checkbox"] {
 }
 
 .btn-secundario:hover {
-    background: #dbe4fe;
+    background: var(--primary-light-hover);
 }
 
 .jogo-frame-wrap {

@@ -8,6 +8,15 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css">
+    <script>
+        // Aplica o tema salvo antes da página desenhar, para não "piscar" o tema padrão.
+        (function () {
+            try {
+                var tema = localStorage.getItem('checkestudos_tema');
+                if (tema) document.documentElement.setAttribute('data-tema', tema);
+            } catch (e) { /* localStorage indisponível — segue com o tema padrão */ }
+        })();
+    </script>
 </head>
 <body>
 
@@ -46,6 +55,13 @@
             <nav class="planos-tabs" id="planos-tabs">
                 <!-- abas dos planos (ex: TRT, ENAM) inseridas via JS -->
             </nav>
+
+            <div class="sidebar-tema">
+                <div class="tema-label">Tema</div>
+                <div class="tema-swatches" id="tema-swatches">
+                    <!-- opções de tema inseridas via JS -->
+                </div>
+            </div>
         </aside>
 
         <!-- ===================== CONTEÚDO PRINCIPAL ===================== -->
