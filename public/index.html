@@ -98,9 +98,19 @@
 
             <!-- --- CRONÔMETRO DE ESTUDO (sempre visível) --- -->
             <section class="timer-card" id="timer-card">
+                <div class="timer-modo-row" id="timer-modo-row">
+                    <button type="button" class="timer-modo-btn" id="btn-modo-livre" onclick="definirModoCronometro('livre')">⏱ Livre</button>
+                    <button type="button" class="timer-modo-btn" id="btn-modo-pomodoro" onclick="definirModoCronometro('pomodoro')">🍅 Pomodoro</button>
+                </div>
+                <div class="pomodoro-config" id="pomodoro-config" style="display:none;">
+                    <label>Foco <input type="number" id="pomodoro-foco-min" min="1" max="180" onchange="salvarConfigPomodoroInputs()"> min</label>
+                    <label>Pausa curta <input type="number" id="pomodoro-pausa-curta-min" min="1" max="60" onchange="salvarConfigPomodoroInputs()"> min</label>
+                    <label>Pausa longa <input type="number" id="pomodoro-pausa-longa-min" min="1" max="90" onchange="salvarConfigPomodoroInputs()"> min</label>
+                </div>
                 <div class="timer-display-wrap">
                     <span class="timer-label" id="timer-status-label">Pronto para começar</span>
                     <div class="timer-display" id="timer-display">00:00:00</div>
+                    <span class="pomodoro-ciclo" id="pomodoro-ciclo-info" style="display:none;"></span>
                 </div>
                 <div class="timer-actions">
                     <button class="timer-btn timer-btn-start" id="btn-timer-iniciar" onclick="iniciarCronometro()">▶ Iniciar</button>
@@ -109,6 +119,8 @@
                     <button class="timer-btn timer-btn-stop" id="btn-timer-finalizar" onclick="abrirModalSessao()" style="display:none;">⏹ Finalizar</button>
                 </div>
             </section>
+
+            <div class="pomodoro-toast" id="pomodoro-toast" style="display:none;"></div>
 
             <!-- ===================== VIEW: RESUMO ===================== -->
             <div id="view-resumo">
@@ -169,6 +181,26 @@
                     </div>
                     <div class="materias-indicadores" id="materias-indicadores">
                         <!-- indicadores de matéria inseridos via JS -->
+                    </div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>🎯 Mapa de dificuldades</h2>
+                        <span class="painel-bloco-sub">Tópicos com maior taxa de erro nas questões (plano atual)</span>
+                    </div>
+                    <div class="mapa-dificuldades" id="mapa-dificuldades">
+                        <!-- ranking de tópicos com mais erro inserido via JS -->
+                    </div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>🏅 Conquistas</h2>
+                        <span class="painel-bloco-sub">Marcos da sua jornada de estudos</span>
+                    </div>
+                    <div class="conquistas-grid" id="conquistas-grid">
+                        <!-- medalhas inseridas via JS -->
                     </div>
                 </section>
 

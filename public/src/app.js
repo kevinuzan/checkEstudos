@@ -757,19 +757,96 @@ function formatarDataISO(data) {
 }
 
 // ==================================================================
-// CRONÔMETRO DE ESTUDO
+// CRONÔMETRO DE ESTUDO (modo Livre ou Pomodoro)
 // ==================================================================
 // Estado persistido no localStorage para sobreviver a um F5 / fechar aba:
 //   status: "parado" | "rodando" | "pausado"
 //   inicioSegmentoAtual: epoch ms de quando o trecho atual começou a rodar (null se não estiver rodando)
-//   acumuladoMs: soma dos trechos já rodados antes do segmento atual
+//   acumuladoMs: soma dos trechos já rodados antes do segmento atual (do TRECHO/fase atual)
+//
+// No modo Pomodoro, o cronômetro acima passa a medir só a fase em curso
+// (foco ou pausa); o tempo de foco acumulado entre fases fica à parte, em
+// pomodoroEstado.focoAcumuladoMs — é só isso que vira sessão de estudo.
 
 const CRONOMETRO_KEY = 'cronometro_estado';
+const MODO_CRONOMETRO_KEY = 'cronometro_modo';
+const POMODORO_ESTADO_KEY = 'pomodoro_estado';
+const POMODORO_CONFIG_KEY = 'pomodoro_config';
+
 let cronometroEstado = { status: 'parado', inicioSegmentoAtual: null, acumuladoMs: 0 };
 let cronometroIntervalId = null;
 
+let pomodoroEstado = { fase: null, cicloAtual: 0, focoAcumuladoMs: 0 };
+let pomodoroConfig = { focoMin: 25, pausaCurtaMin: 5, pausaLongaMin: 15, ciclosParaPausaLonga: 4 };
+
+const NOMES_FASE_POMODORO = { 'foco': 'Foco', 'pausa-curta': 'Pausa curta', 'pausa-longa': 'Pausa longa' };
+
+function obterModoCronometro() {
+    try {
+        return localStorage.getItem(MODO_CRONOMETRO_KEY) || 'livre';
+    } catch (err) {
+        return 'livre';
+    }
+}
+
 function salvarCronometroEstado() {
     localStorage.setItem(CRONOMETRO_KEY, JSON.stringify(cronometroEstado));
+}
+
+function salvarPomodoroEstado() {
+    localStorage.setItem(POMODORO_ESTADO_KEY, JSON.stringify(pomodoroEstado));
+}
+
+function salvarConfigPomodoro() {
+    localStorage.setItem(POMODORO_CONFIG_KEY, JSON.stringify(pomodoroConfig));
+}
+
+function duracaoFaseAtualMs() {
+    const minutos = pomodoroEstado.fase === 'foco' ? pomodoroConfig.focoMin
+        : pomodoroEstado.fase === 'pausa-longa' ? pomodoroConfig.pausaLongaMin
+        : pomodoroConfig.pausaCurtaMin;
+    return (Number(minutos) || 1) * 60 * 1000;
+}
+
+// Escolhe o modo (Livre/Pomodoro). Só é permitido trocar com o cronômetro
+// parado, pra não perder o que já está em andamento.
+function definirModoCronometro(modo) {
+    if (cronometroEstado.status !== 'parado') return;
+    try { localStorage.setItem(MODO_CRONOMETRO_KEY, modo); } catch (err) { /* segue sem salvar */ }
+    renderizarConfigPomodoroInputs();
+    atualizarBotoesCronometro();
+    atualizarDisplayCronometro();
+}
+
+function renderizarConfigPomodoroInputs() {
+    const linhaModo = document.getElementById('timer-modo-row');
+    const config = document.getElementById('pomodoro-config');
+    const btnLivre = document.getElementById('btn-modo-livre');
+    const btnPomodoro = document.getElementById('btn-modo-pomodoro');
+    if (!linhaModo) return;
+
+    const modo = obterModoCronometro();
+    if (btnLivre) btnLivre.classList.toggle('ativo', modo === 'livre');
+    if (btnPomodoro) btnPomodoro.classList.toggle('ativo', modo === 'pomodoro');
+
+    // Configuração de minutos só faz sentido editar com tudo parado —
+    // mudar no meio de uma fase em andamento seria confuso.
+    if (config) config.style.display = (modo === 'pomodoro' && cronometroEstado.status === 'parado') ? 'flex' : 'none';
+
+    const inputFoco = document.getElementById('pomodoro-foco-min');
+    const inputPausaCurta = document.getElementById('pomodoro-pausa-curta-min');
+    const inputPausaLonga = document.getElementById('pomodoro-pausa-longa-min');
+    if (inputFoco) inputFoco.value = pomodoroConfig.focoMin;
+    if (inputPausaCurta) inputPausaCurta.value = pomodoroConfig.pausaCurtaMin;
+    if (inputPausaLonga) inputPausaLonga.value = pomodoroConfig.pausaLongaMin;
+}
+
+function salvarConfigPomodoroInputs() {
+    const foco = parseInt(document.getElementById('pomodoro-foco-min').value) || 25;
+    const pausaCurta = parseInt(document.getElementById('pomodoro-pausa-curta-min').value) || 5;
+    const pausaLonga = parseInt(document.getElementById('pomodoro-pausa-longa-min').value) || 15;
+    pomodoroConfig = { ...pomodoroConfig, focoMin: foco, pausaCurtaMin: pausaCurta, pausaLongaMin: pausaLonga };
+    salvarConfigPomodoro();
 }
 
 function restaurarCronometro() {
@@ -778,6 +855,17 @@ function restaurarCronometro() {
         if (salvo) cronometroEstado = salvo;
     } catch (err) { /* estado inválido, ignora */ }
 
+    try {
+        const salvo = JSON.parse(localStorage.getItem(POMODORO_ESTADO_KEY));
+        if (salvo) pomodoroEstado = salvo;
+    } catch (err) { /* estado inválido, ignora */ }
+
+    try {
+        const salvo = JSON.parse(localStorage.getItem(POMODORO_CONFIG_KEY));
+        if (salvo) pomodoroConfig = { ...pomodoroConfig, ...salvo };
+    } catch (err) { /* estado inválido, ignora */ }
+
+    renderizarConfigPomodoroInputs();
     atualizarBotoesCronometro();
     atualizarDisplayCronometro();
 
@@ -786,6 +874,7 @@ function restaurarCronometro() {
     }
 }
 
+// Elapsed da fase/trecho atual (o que o mostrador conta)
 function calcularElapsedMs() {
     let total = cronometroEstado.acumuladoMs;
     if (cronometroEstado.status === 'rodando' && cronometroEstado.inicioSegmentoAtual) {
@@ -794,9 +883,35 @@ function calcularElapsedMs() {
     return total;
 }
 
+// Total de tempo de FOCO já acumulado no pomodoro atual (o que vira sessão de
+// estudo ao finalizar) — soma das fases de foco já completas mais a fase de
+// foco em andamento agora, se for o caso (pausas nunca contam).
+function calcularFocoTotalPomodoroMs() {
+    let total = pomodoroEstado.focoAcumuladoMs || 0;
+    // Conta o trecho de foco em andamento (rodando) ou recém-pausado (o valor
+    // já está acumulado em cronometroEstado.acumuladoMs nesse caso).
+    if (pomodoroEstado.fase === 'foco' && (cronometroEstado.status === 'rodando' || cronometroEstado.status === 'pausado')) {
+        total += calcularElapsedMs();
+    }
+    return total;
+}
+
 function atualizarDisplayCronometro() {
     const display = document.getElementById('timer-display');
-    if (display) display.textContent = formatarHMS(calcularElapsedMs());
+    const cicloInfo = document.getElementById('pomodoro-ciclo-info');
+    if (!display) return;
+
+    if (obterModoCronometro() === 'pomodoro' && pomodoroEstado.fase) {
+        const restanteMs = Math.max(duracaoFaseAtualMs() - calcularElapsedMs(), 0);
+        display.textContent = formatarHMS(restanteMs);
+        if (cicloInfo) {
+            cicloInfo.style.display = 'inline';
+            cicloInfo.textContent = `${NOMES_FASE_POMODORO[pomodoroEstado.fase]} · ciclo ${pomodoroEstado.cicloAtual + 1} · foco total: ${formatarHMS(calcularFocoTotalPomodoroMs())}`;
+        }
+    } else {
+        display.textContent = formatarHMS(calcularElapsedMs());
+        if (cicloInfo) cicloInfo.style.display = 'none';
+    }
 }
 
 function atualizarBotoesCronometro() {
@@ -808,24 +923,47 @@ function atualizarBotoesCronometro() {
     const card = document.getElementById('timer-card');
     if (!btnIniciar) return;
 
+    const modo = obterModoCronometro();
+    const emPomodoro = modo === 'pomodoro';
+
     btnIniciar.style.display = cronometroEstado.status === 'parado' ? 'inline-flex' : 'none';
     btnPausar.style.display = cronometroEstado.status === 'rodando' ? 'inline-flex' : 'none';
     btnRetomar.style.display = cronometroEstado.status === 'pausado' ? 'inline-flex' : 'none';
-    btnFinalizar.style.display = cronometroEstado.status === 'parado' ? 'none' : 'inline-flex';
+    // No pomodoro, "Finalizar" também aparece parado, desde que já tenha algum
+    // foco acumulado (senão não tem o que salvar como sessão ainda).
+    const temFocoParaSalvar = emPomodoro && calcularFocoTotalPomodoroMs() > 0;
+    btnFinalizar.style.display = (cronometroEstado.status !== 'parado' || temFocoParaSalvar) ? 'inline-flex' : 'none';
+
+    if (emPomodoro && pomodoroEstado.fase) {
+        btnIniciar.textContent = `▶ Iniciar ${NOMES_FASE_POMODORO[pomodoroEstado.fase].toLowerCase()}`;
+    } else {
+        btnIniciar.textContent = '▶ Iniciar';
+    }
 
     if (card) card.classList.toggle('timer-rodando', cronometroEstado.status === 'rodando');
     if (card) card.classList.toggle('timer-pausado', cronometroEstado.status === 'pausado');
 
     if (label) {
-        label.textContent = cronometroEstado.status === 'rodando' ? 'Estudando agora...'
-            : cronometroEstado.status === 'pausado' ? 'Pausado'
-            : 'Pronto para começar';
+        if (emPomodoro && pomodoroEstado.fase) {
+            label.textContent = cronometroEstado.status === 'rodando' ? `${pomodoroEstado.fase === 'foco' ? '🍅 Focando' : '☕ Em pausa'}...`
+                : cronometroEstado.status === 'pausado' ? 'Pausado'
+                : `Pronto para ${NOMES_FASE_POMODORO[pomodoroEstado.fase].toLowerCase()}`;
+        } else {
+            label.textContent = cronometroEstado.status === 'rodando' ? 'Estudando agora...'
+                : cronometroEstado.status === 'pausado' ? 'Pausado'
+                : 'Pronto para começar';
+        }
     }
+
+    renderizarConfigPomodoroInputs();
 }
 
 function iniciarIntervaloCronometro() {
     if (cronometroIntervalId) clearInterval(cronometroIntervalId);
-    cronometroIntervalId = setInterval(atualizarDisplayCronometro, 1000);
+    cronometroIntervalId = setInterval(() => {
+        atualizarDisplayCronometro();
+        verificarTransicaoPomodoro();
+    }, 1000);
 }
 
 function pararIntervaloCronometro() {
@@ -834,6 +972,11 @@ function pararIntervaloCronometro() {
 }
 
 function iniciarCronometro() {
+    if (obterModoCronometro() === 'pomodoro' && !pomodoroEstado.fase) {
+        // Início de um pomodoro novo (não é retomada de uma fase seguinte)
+        pomodoroEstado = { fase: 'foco', cicloAtual: 0, focoAcumuladoMs: 0 };
+        salvarPomodoroEstado();
+    }
     cronometroEstado = { status: 'rodando', inicioSegmentoAtual: Date.now(), acumuladoMs: 0 };
     salvarCronometroEstado();
     atualizarBotoesCronometro();
@@ -864,9 +1007,90 @@ function retomarCronometro() {
 function resetarCronometro() {
     cronometroEstado = { status: 'parado', inicioSegmentoAtual: null, acumuladoMs: 0 };
     salvarCronometroEstado();
+    pomodoroEstado = { fase: null, cicloAtual: 0, focoAcumuladoMs: 0 };
+    salvarPomodoroEstado();
     pararIntervaloCronometro();
     atualizarBotoesCronometro();
     atualizarDisplayCronometro();
+}
+
+// Checa, a cada segundo, se a fase atual do pomodoro já bateu o tempo
+// configurado; se sim, fecha a fase (soma no foco acumulado, se era foco),
+// decide a próxima fase e PARA o cronômetro — a próxima fase só começa
+// quando o usuário clicar em "Iniciar" de novo, pra não rodar sem controle
+// com a aba em segundo plano.
+function verificarTransicaoPomodoro() {
+    if (obterModoCronometro() !== 'pomodoro' || cronometroEstado.status !== 'rodando' || !pomodoroEstado.fase) return;
+
+    const elapsed = calcularElapsedMs();
+    if (elapsed < duracaoFaseAtualMs()) return;
+
+    const faseQueTerminou = pomodoroEstado.fase;
+    if (faseQueTerminou === 'foco') {
+        pomodoroEstado.focoAcumuladoMs = (pomodoroEstado.focoAcumuladoMs || 0) + duracaoFaseAtualMs();
+        pomodoroEstado.cicloAtual += 1;
+        const pausaLonga = pomodoroEstado.cicloAtual % pomodoroConfig.ciclosParaPausaLonga === 0;
+        pomodoroEstado.fase = pausaLonga ? 'pausa-longa' : 'pausa-curta';
+    } else {
+        pomodoroEstado.fase = 'foco';
+    }
+    salvarPomodoroEstado();
+
+    cronometroEstado = { status: 'parado', inicioSegmentoAtual: null, acumuladoMs: 0 };
+    salvarCronometroEstado();
+    pararIntervaloCronometro();
+    atualizarBotoesCronometro();
+    atualizarDisplayCronometro();
+
+    mostrarToastPomodoro(
+        faseQueTerminou === 'foco'
+            ? `🍅 Foco concluído! Hora de ${pomodoroEstado.fase === 'pausa-longa' ? 'uma pausa longa' : 'uma pausa curta'}.`
+            : '☕ Pausa concluída! Hora de focar de novo.'
+    );
+}
+
+let pomodoroToastTimeoutId = null;
+
+function mostrarToastPomodoro(mensagem) {
+    const toast = document.getElementById('pomodoro-toast');
+    if (toast) {
+        toast.textContent = mensagem;
+        toast.style.display = 'block';
+        if (pomodoroToastTimeoutId) clearTimeout(pomodoroToastTimeoutId);
+        pomodoroToastTimeoutId = setTimeout(() => { toast.style.display = 'none'; }, 6000);
+    }
+
+    tocarBipPomodoro();
+
+    try {
+        if (typeof Notification !== 'undefined') {
+            if (Notification.permission === 'granted') {
+                new Notification('checkEstudos', { body: mensagem });
+            } else if (Notification.permission !== 'denied') {
+                Notification.requestPermission();
+            }
+        }
+    } catch (err) { /* notificações indisponíveis, segue só com o toast */ }
+}
+
+// Bipe curto e simples via Web Audio API — não depende de nenhum arquivo de som.
+function tocarBipPomodoro() {
+    try {
+        const AudioContextClasse = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClasse) return;
+        const ctx = new AudioContextClasse();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.6);
+    } catch (err) { /* áudio indisponível, segue só com o toast/notificação */ }
 }
 
 // ==================================================================
@@ -1045,7 +1269,9 @@ function abrirModalSessao() {
     document.getElementById('modal-sessao-titulo').textContent = 'Finalizar sessão de estudo';
     document.getElementById('btn-salvar-sessao').textContent = 'Salvar sessão';
 
-    const elapsedMs = calcularElapsedMs();
+    // No modo Pomodoro, só o tempo de FOCO acumulado vira sessão de estudo
+    // (as pausas ficam de fora da duração sugerida).
+    const elapsedMs = obterModoCronometro() === 'pomodoro' ? calcularFocoTotalPomodoroMs() : calcularElapsedMs();
     document.getElementById('sessao-duracao-horas').value = Math.floor(elapsedMs / 3600000);
     document.getElementById('sessao-duracao-minutos').value = Math.round((elapsedMs % 3600000) / 60000);
     document.getElementById('sessao-data').value = formatarDataISO(new Date());
@@ -1453,6 +1679,124 @@ async function carregarResumo() {
     renderizarGraficoMateriasEmpilhado();
     renderizarGraficoTiposEmpilhado();
     renderizarIndicadoresMaterias();
+    renderizarMapaDificuldades();
+    renderizarConquistas();
+}
+
+// ==================================================================
+// MAPA DE DIFICULDADES (tópicos com maior taxa de erro em questões)
+// ==================================================================
+// As sessões guardam acertos/erros por SESSÃO, não por tópico individual
+// (uma sessão pode cobrir vários tópicos de uma vez). Pra estimar a
+// dificuldade por tópico, distribuímos o resultado da sessão igualmente
+// entre os tópicos que ela tocou — a mesma lógica já usada para dividir
+// o tempo estudado entre matérias (distribuirSegundosPorMateria).
+function renderizarMapaDificuldades() {
+    const container = document.getElementById('mapa-dificuldades');
+    if (!container) return;
+
+    const porTopico = {}; // topicoId -> { materia, topico, acertos, erros }
+
+    sessoesCache.forEach(s => {
+        if (s.acertos === null || s.acertos === undefined) return; // sessão sem desempenho em questões
+        const topicos = s.topicos || [];
+        if (topicos.length === 0) return; // sem tópico vinculado, não dá pra atribuir
+
+        const acertosParte = s.acertos / topicos.length;
+        const errosParte = (s.erros || 0) / topicos.length;
+
+        topicos.forEach(t => {
+            if (!porTopico[t.topicoId]) {
+                porTopico[t.topicoId] = { materia: t.materia, topico: t.topico, acertos: 0, erros: 0 };
+            }
+            porTopico[t.topicoId].acertos += acertosParte;
+            porTopico[t.topicoId].erros += errosParte;
+        });
+    });
+
+    const lista = Object.values(porTopico)
+        .map(t => ({ ...t, total: t.acertos + t.erros, taxaErro: (t.acertos + t.erros) > 0 ? t.erros / (t.acertos + t.erros) : 0 }))
+        .filter(t => t.total >= 1) // pelo menos 1 questão registrada (mesmo que fracionada entre tópicos)
+        .sort((a, b) => b.taxaErro - a.taxaErro || b.total - a.total)
+        .slice(0, 8);
+
+    if (lista.length === 0) {
+        container.innerHTML = `<div class="lista-vazia">Registre sessões com acertos/erros vinculadas a tópicos para ver seu mapa de dificuldades aqui.</div>`;
+        return;
+    }
+
+    container.innerHTML = lista.map(t => {
+        const perc = Math.round(t.taxaErro * 100);
+        return `
+            <div class="dificuldade-linha">
+                <div class="dificuldade-nomes">
+                    <div class="dificuldade-topico" title="${t.topico}">${t.topico}</div>
+                    <div class="dificuldade-materia">${t.materia}</div>
+                    <div class="dificuldade-barra-fundo">
+                        <div class="dificuldade-barra" style="width:${perc}%"></div>
+                    </div>
+                </div>
+                <div class="dificuldade-taxa">${perc}% erro</div>
+            </div>
+        `;
+    }).join('');
+}
+
+// ==================================================================
+// CONQUISTAS / MEDALHAS
+// ==================================================================
+// Calculadas a partir de dados que já temos (streak, sessões, horas
+// estudadas, progresso do edital) — nada fica salvo à parte, o "desbloqueio"
+// é sempre recalculado com base no histórico real.
+
+const DEFINICOES_CONQUISTAS = [
+    { id: 'streak-1', emoji: '🔥', nome: 'Primeira Chama', desc: '1 dia seguido estudando', meta: s => s.streak >= 1 },
+    { id: 'streak-7', emoji: '🔥', nome: 'Uma Semana Direto', desc: '7 dias seguidos estudando', meta: s => s.streak >= 7 },
+    { id: 'streak-30', emoji: '🔥', nome: 'Um Mês de Fogo', desc: '30 dias seguidos estudando', meta: s => s.streak >= 30 },
+    { id: 'sessao-1', emoji: '📚', nome: 'Primeira Sessão', desc: 'Registrou a 1ª sessão de estudo', meta: s => s.totalSessoes >= 1 },
+    { id: 'sessao-50', emoji: '📚', nome: '50 Sessões', desc: '50 sessões de estudo registradas', meta: s => s.totalSessoes >= 50 },
+    { id: 'sessao-100', emoji: '📚', nome: '100 Sessões', desc: '100 sessões de estudo registradas', meta: s => s.totalSessoes >= 100 },
+    { id: 'horas-10', emoji: '⏱️', nome: '10 Horas Estudadas', desc: '10h de estudo acumuladas', meta: s => s.totalHoras >= 10 },
+    { id: 'horas-50', emoji: '⏱️', nome: '50 Horas Estudadas', desc: '50h de estudo acumuladas', meta: s => s.totalHoras >= 50 },
+    { id: 'horas-100', emoji: '⏱️', nome: '100 Horas Estudadas', desc: '100h de estudo acumuladas', meta: s => s.totalHoras >= 100 },
+    { id: 'edital-25', emoji: '✅', nome: '25% do Edital', desc: '1/4 do plano atual concluído', meta: s => s.percEdital >= 25 },
+    { id: 'edital-50', emoji: '✅', nome: 'Edital na Metade', desc: 'Metade do plano atual concluído', meta: s => s.percEdital >= 50 },
+    { id: 'edital-100', emoji: '🏆', nome: 'Edital Completo', desc: 'Plano atual 100% concluído', meta: s => s.percEdital >= 100 }
+];
+
+function calcularEstatisticasConquistas() {
+    const totalSegundos = sessoesTodasCache.reduce((soma, s) => soma + (s.duracaoSegundos || 0), 0);
+    const streakEl = document.getElementById('streak-numero');
+    const streak = streakEl ? parseInt(streakEl.textContent) || 0 : 0;
+
+    const totalItens = itensAtuais.length;
+    const concluidos = itensAtuais.filter(i => i.concluido).length;
+    const percEdital = totalItens > 0 ? (concluidos / totalItens) * 100 : 0;
+
+    return {
+        streak,
+        totalSessoes: sessoesTodasCache.length,
+        totalHoras: totalSegundos / 3600,
+        percEdital
+    };
+}
+
+function renderizarConquistas() {
+    const container = document.getElementById('conquistas-grid');
+    if (!container) return;
+
+    const stats = calcularEstatisticasConquistas();
+
+    container.innerHTML = DEFINICOES_CONQUISTAS.map(c => {
+        const conquistada = c.meta(stats);
+        return `
+            <div class="conquista-card ${conquistada ? 'conquistada' : 'bloqueada'}" title="${c.desc}">
+                <span class="conquista-emoji">${conquistada ? c.emoji : '🔒'}</span>
+                <div class="conquista-nome">${c.nome}</div>
+                <div class="conquista-desc">${c.desc}</div>
+            </div>
+        `;
+    }).join('');
 }
 
 function renderizarDashboardResumo() {

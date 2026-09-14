@@ -591,6 +591,87 @@ h1, h2, h3 { font-family: inherit; }
     color: white;
 }
 
+.timer-modo-row {
+    display: flex;
+    gap: 8px;
+}
+
+.timer-modo-btn {
+    border: 1.5px solid rgba(255, 255, 255, 0.4);
+    border-radius: 999px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 700;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.timer-modo-btn:hover {
+    border-color: rgba(255, 255, 255, 0.7);
+}
+
+.timer-modo-btn.ativo {
+    background: rgba(255, 255, 255, 0.94);
+    color: var(--primary-dark);
+    border-color: transparent;
+}
+
+.pomodoro-config {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: var(--radius-sm);
+    padding: 8px 14px;
+}
+
+.pomodoro-config label {
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pomodoro-config input {
+    width: 52px;
+    text-align: center;
+    border: none;
+    border-radius: 6px;
+    padding: 4px 6px;
+    font-size: 12px;
+    font-weight: 700;
+    font-family: inherit;
+}
+
+.pomodoro-ciclo {
+    font-size: 12px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.pomodoro-toast {
+    position: fixed;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: 14px 22px;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+    z-index: 1100;
+    max-width: 90vw;
+}
+
 /* ============================================================ */
 /* NAVEGAÇÃO ENTRE SEÇÕES (painel de toggle)                      */
 /* ============================================================ */
@@ -1773,6 +1854,116 @@ input[type="checkbox"] {
 .lista-vazia-topicos {
     font-size: 12px;
     color: var(--text-faint);
+}
+
+/* ============================================================ */
+/* MAPA DE DIFICULDADES (tópicos com maior taxa de erro)         */
+/* ============================================================ */
+
+.mapa-dificuldades {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dificuldade-linha {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 70px;
+    align-items: center;
+    gap: 10px;
+}
+
+.dificuldade-nomes {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.dificuldade-topico {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dificuldade-materia {
+    font-size: 11px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dificuldade-barra-fundo {
+    background: var(--track-bg);
+    height: 6px;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 4px;
+}
+
+.dificuldade-barra {
+    height: 100%;
+    border-radius: 6px;
+    background: var(--danger);
+    transition: width 0.4s ease;
+}
+
+.dificuldade-taxa {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--danger);
+    text-align: right;
+}
+
+/* ============================================================ */
+/* CONQUISTAS / MEDALHAS                                         */
+/* ============================================================ */
+
+.conquistas-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+}
+
+.conquista-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 10px;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.15s;
+}
+
+.conquista-card.conquistada {
+    border-color: var(--primary);
+    background: var(--primary-light);
+}
+
+.conquista-card.bloqueada {
+    opacity: 0.45;
+    filter: grayscale(1);
+}
+
+.conquista-emoji {
+    font-size: 28px;
+    display: block;
+    margin-bottom: 6px;
+}
+
+.conquista-nome {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 2px;
+}
+
+.conquista-desc {
+    font-size: 10.5px;
+    color: var(--text-faint);
+    line-height: 1.3;
 }
 
 /* ============================================================ */
