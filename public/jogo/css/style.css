@@ -144,16 +144,6 @@ body {
     margin-bottom: var(--gap-lg);
 }
 
-/* --- Título Principal da Aplicação --- */
-#app h1 {
-    color: var(--dark-text);
-    font-size: 1.6em;
-    font-weight: 800;
-    letter-spacing: -0.01em;
-    text-shadow: none;
-    margin-bottom: 2px;
-}
-
 /* --- Barra de pontuação (placar), sempre visível no topo, por sub-jogo --- */
 .placar-barra {
     background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-color) 100%);
@@ -209,53 +199,74 @@ body {
     border: 1px solid var(--feedback-warning-border);
 }
 
-/* --- Abas de Navegação (estilo segmentado, mais próximo do app principal) --- */
-.nav-tabs {
-    display: flex;
+/* --- Seletor de jogo: 3 cards grandes e distintos (ícone + nome + do que    --- */
+/* --- se trata), pra deixar claro que são 3 jogos separados — não abas      --- */
+/* --- finas "acumuladas" umas nas outras.                                   --- */
+.jogo-seletor {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
     border: none;
-    border-bottom: none;
-    background: var(--card-bg-default);
-    border-radius: var(--radius);
-    padding: 5px;
-    gap: 4px;
-    box-shadow: var(--shadow-sm);
     margin-bottom: 0;
     position: sticky;
     top: 0;
     z-index: 5;
+    background: var(--light-bg);
+    padding-top: 2px;
+    padding-bottom: 2px;
 }
 
-.nav-tabs .nav-item {
-    flex: 1;
+.jogo-seletor .nav-item {
+    display: flex;
 }
 
-.nav-link-icone {
-    font-size: 1.05em;
-    margin-right: 2px;
-}
-
-.nav-tabs .nav-link {
+.jogo-seletor .nav-link {
     width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
     color: var(--text-muted);
-    font-weight: 700;
-    font-size: 0.9em;
-    border: none;
-    border-radius: var(--radius-sm);
-    padding: 11px 8px;
-    transition: background 0.15s ease-in-out, color 0.15s ease-in-out, transform 0.1s ease;
+    background: var(--card-bg-default);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 12px 8px;
+    box-shadow: var(--shadow-sm);
+    transition: background 0.15s ease-in-out, color 0.15s ease-in-out, border-color 0.15s ease-in-out, transform 0.1s ease;
     text-align: center;
 }
 
-.nav-tabs .nav-link:hover {
-    background-color: var(--light-bg);
-    border-color: transparent;
+.jogo-seletor .nav-link:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
 }
 
-.nav-tabs .nav-link.active {
+.jogo-seletor-icone {
+    font-size: 1.7em;
+    line-height: 1;
+}
+
+.jogo-seletor-nome {
+    font-weight: 800;
+    font-size: 0.95em;
+}
+
+.jogo-seletor-desc {
+    font-weight: 500;
+    font-size: 0.74em;
+    opacity: 0.8;
+}
+
+.jogo-seletor .nav-link.active {
     color: #ffffff;
     background-color: var(--primary-color);
-    border-color: transparent;
-    box-shadow: 0 3px 8px -2px rgba(0, 0, 0, 0.25);
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.28);
+}
+
+.jogo-seletor .nav-link.active .jogo-seletor-desc {
+    opacity: 0.92;
 }
 
 /* --- Conteúdo das Abas --- */
@@ -621,24 +632,25 @@ body {
         gap: var(--gap-sm);
     }
 
-    #app h1 {
-        font-size: 1.3em;
-        text-align: center;
-    }
-
     .placar-barra {
         text-align: center;
         padding: 10px 12px;
     }
 
-    .nav-tabs .nav-link {
-        padding: 10px 4px;
-        font-size: 0.78em;
+    .jogo-seletor .nav-link {
+        padding: 9px 4px;
     }
 
-    .nav-link-icone {
-        display: block;
-        margin: 0 0 2px;
+    .jogo-seletor-icone {
+        font-size: 1.4em;
+    }
+
+    .jogo-seletor-nome {
+        font-size: 0.82em;
+    }
+
+    .jogo-seletor-desc {
+        display: none;
     }
 
     .container, .container2 {
@@ -723,13 +735,16 @@ body {
         gap: var(--gap-sm);
     }
 
-    #app h1 {
-        font-size: 1.15em;
+    .jogo-seletor .nav-link {
+        padding: 8px 2px;
     }
 
-    .nav-tabs .nav-link {
-        padding: 9px 2px;
-        font-size: 0.68em;
+    .jogo-seletor-icone {
+        font-size: 1.25em;
+    }
+
+    .jogo-seletor-nome {
+        font-size: 0.72em;
     }
 
     .container, .container2 {

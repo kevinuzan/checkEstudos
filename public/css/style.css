@@ -2128,10 +2128,12 @@ input[type="checkbox"] {
 }
 
 /* ===================== VIEW: JOGO (gamificação embutida) ===================== */
+/* Sem "quadro" extra ao redor do jogo — a barra de pontuação e o iframe
+   ocupam o espaço direto, pra sobrar o máximo de área pros jogos em si. */
 
 .jogo-bloco {
-    height: calc(100vh - 220px);
-    min-height: 520px;
+    height: calc(100vh - 170px);
+    min-height: 560px;
     display: flex;
     flex-direction: column;
 }
@@ -2146,8 +2148,9 @@ input[type="checkbox"] {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: var(--shadow-sm);
-    padding: 10px 14px;
-    margin-bottom: 12px;
+    padding: 8px 14px;
+    margin-bottom: 10px;
+    flex-shrink: 0;
 }
 
 .jogo-pontuacao-texto {
@@ -2182,11 +2185,13 @@ input[type="checkbox"] {
 
 .jogo-frame-wrap {
     flex: 1;
-    background: var(--card);
-    border: 1px solid var(--border);
+    /* Sem borda/sombra própria — o jogo já tem a identidade visual dele lá
+       dentro (cores do tema, cards, abas); uma segunda moldura aqui só
+       encolhia o espaço útil sem ganho nenhum. */
+    background: transparent;
     border-radius: var(--radius);
-    box-shadow: var(--shadow-sm);
     overflow: hidden;
+    min-height: 0;
 }
 
 .jogo-frame {
@@ -2198,6 +2203,6 @@ input[type="checkbox"] {
 
 @media (min-width: 901px) {
     .jogo-bloco {
-        height: calc(100vh - 64px);
+        height: calc(100vh - 40px);
     }
 }

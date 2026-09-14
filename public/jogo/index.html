@@ -28,25 +28,38 @@
 </head>
 
 <body onload="getItemData(), getItemData2(), carregarArtigosComLacunas(), iniciarPlacar()">
-    <div id="app" class="container mt-4 mb-4 p-4 shadow-sm rounded-lg">
-        <h1 class="text-center mb-2 text-primary fw-bold">Estuda TRT</h1>
-
+    <div id="app" class="container mt-2 mb-2 p-3 shadow-sm rounded-lg">
         <div class="placar-barra" id="placar-barra">
             <span class="placar-texto" id="placar-texto">Carregando pontuação...</span>
         </div>
 
-        <ul class="nav nav-tabs nav-justified" id="myTab" role="tablist">
+        <!-- Seletor de jogo: 3 opções bem distintas (ícone + nome + do que se
+             trata), em vez de abas finas — pra ficar claro que são 3 jogos
+             separados, não um conteúdo só "acumulado". -->
+        <ul class="nav jogo-seletor" id="myTab" role="tablist">
             <li class="nav-item" role="presentation">
                 <button class="nav-link active" id="mnemonicos-tab" data-bs-toggle="tab" data-bs-target="#mnemonicos"
-                    type="button" role="tab" aria-controls="mnemonicos" aria-selected="true"><span class="nav-link-icone">🧠</span> Mnemônicos</button>
+                    type="button" role="tab" aria-controls="mnemonicos" aria-selected="true">
+                    <span class="jogo-seletor-icone">🧠</span>
+                    <span class="jogo-seletor-nome">Mnemônicos</span>
+                    <span class="jogo-seletor-desc">Associe as palavras certas</span>
+                </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="competencias-tab" data-bs-toggle="tab" data-bs-target="#competencias"
-                    type="button" role="tab" aria-controls="competencias" aria-selected="false"><span class="nav-link-icone">⚖️</span> Competências</button>
+                    type="button" role="tab" aria-controls="competencias" aria-selected="false">
+                    <span class="jogo-seletor-icone">⚖️</span>
+                    <span class="jogo-seletor-nome">Competências</span>
+                    <span class="jogo-seletor-desc">Quem julga cada causa</span>
+                </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="lacunas-tab" data-bs-toggle="tab" data-bs-target="#lacunas" type="button"
-                    role="tab" aria-controls="lacunas" aria-selected="false"><span class="nav-link-icone">📜</span> CF - Lacunas</button>
+                    role="tab" aria-controls="lacunas" aria-selected="false">
+                    <span class="jogo-seletor-icone">📜</span>
+                    <span class="jogo-seletor-nome">CF - Lacunas</span>
+                    <span class="jogo-seletor-desc">Complete o texto da lei</span>
+                </button>
             </li>
         </ul>
 
