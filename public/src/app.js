@@ -28,6 +28,195 @@ async function iniciar() {
 }
 
 // ==================================================================
+// LOGIN (Google) — cada usuário só vê os dados da própria conta, e o
+// progresso de estudo passa a ficar salvo no perfil, não no aparelho.
+// ==================================================================
+
+let appJaIniciado = false;
+
+// Intercepta toda chamada fetch da página: se o servidor responder 401
+// (sessão ausente/expirada), mostra a tela de login em vez de deixar a
+// função que chamou quebrar silenciosamente.
+const fetchOriginal = window.fetch;
+window.fetch = async function (...args) {
+    const resposta = await fetchOriginal(...args);
+    if (resposta.status === 401) {
+        mostrarTelaLogin();
+    }
+    return resposta;
+};
+
+async function iniciarApp() {
+    try {
+        const res = await fetchOriginal('/api/auth/me');
+        if (res.ok) {
+            const dados = await res.json();
+            mostrarUsuarioLogado(dados.usuario);
+            esconderTelaLogin();
+            if (!appJaIniciado) {
+                appJaIniciado = true;
+                await iniciar();
+            }
+            return;
+        }
+    } catch (err) {
+        console.error('Erro ao verificar login:', err);
+    }
+    mostrarTelaLogin();
+}
+
+function mostrarUsuarioLogado(usuario) {
+    const bloco = document.getElementById('sidebar-usuario');
+    const nomeEl = document.getElementById('usuario-nome');
+    const fotoEl = document.getElementById('usuario-foto');
+    if (!bloco || !usuario) return;
+    bloco.style.display = 'flex';
+    if (nomeEl) nomeEl.textContent = usuario.nome || usuario.email || '';
+    if (fotoEl) {
+        if (usuario.foto) { fotoEl.src = usuario.foto; fotoEl.style.display = 'block'; }
+        else fotoEl.style.display = 'none';
+    }
+}
+
+let googleSignInIniciado = false;
+
+async function mostrarTelaLogin() {
+    const overlay = document.getElementById('login-overlay');
+    if (overlay) overlay.style.display = 'flex';
+
+    if (googleSignInIniciado || typeof google === 'undefined' || !google.accounts) return;
+    try {
+        const res = await fetchOriginal('/api/auth/config');
+        const config = await res.json();
+        if (!config.googleClientId) {
+            const erroEl = document.getElementById('login-erro');
+            if (erroEl) {
+                erroEl.textContent = 'Login com Google ainda não foi configurado neste servidor.';
+                erroEl.style.display = 'block';
+            }
+            return;
+        }
+        google.accounts.id.initialize({
+            client_id: config.googleClientId,
+            callback: aoReceberCredencialGoogle
+        });
+        google.accounts.id.renderButton(
+            document.getElementById('google-signin-btn'),
+            { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' }
+        );
+        googleSignInIniciado = true;
+    } catch (err) {
+        console.error('Erro ao preparar login do Google:', err);
+    }
+}
+
+function esconderTelaLogin() {
+    const overlay = document.getElementById('login-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+async function aoReceberCredencialGoogle(resposta) {
+    const erroEl = document.getElementById('login-erro');
+    try {
+        const res = await fetchOriginal('/api/auth/google', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credential: resposta.credential })
+        });
+        const dados = await res.json();
+        if (!dados.success) throw new Error(dados.error || 'Falha no login');
+        if (erroEl) erroEl.style.display = 'none';
+        await iniciarApp();
+    } catch (err) {
+        console.error('Erro ao entrar com Google:', err);
+        if (erroEl) {
+            erroEl.textContent = 'Não foi possível entrar. Tente novamente.';
+            erroEl.style.display = 'block';
+        }
+    }
+}
+
+async function sairDaConta() {
+    await fetchOriginal('/api/auth/logout', { method: 'POST' });
+    appJaIniciado = false;
+    location.reload();
+}
+
+// ==================================================================
+// EXPORTAR / IMPORTAR EDITAL (modelo em JSON, reaproveitável por
+// qualquer pessoa que queira montar o próprio edital)
+// ==================================================================
+
+function baixarArquivoJson(dados, nomeArquivo) {
+    const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = nomeArquivo;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+async function baixarModeloEdital() {
+    try {
+        const res = await fetch('/api/edital/modelo');
+        const dados = await res.json();
+        baixarArquivoJson(dados, 'modelo-edital-checkestudos.json');
+    } catch (err) {
+        console.error('Erro ao baixar modelo de edital:', err);
+        alert('Não foi possível baixar o modelo agora.');
+    }
+}
+
+async function exportarEditalAtual() {
+    try {
+        const res = await fetch(`/api/edital/exportar?plano=${encodeURIComponent(planoAtual)}`);
+        const dados = await res.json();
+        baixarArquivoJson(dados, `edital-${planoAtual}.json`);
+    } catch (err) {
+        console.error('Erro ao exportar edital:', err);
+        alert('Não foi possível exportar o edital agora.');
+    }
+}
+
+async function importarArquivoEdital(event) {
+    const arquivo = event.target.files[0];
+    if (!arquivo) return;
+
+    try {
+        const texto = await arquivo.text();
+        const dados = JSON.parse(texto);
+
+        const nomeSugerido = dados.nomeEdital || planoAtual;
+        const plano = prompt('Importar para qual plano?', nomeSugerido);
+        if (!plano) { event.target.value = ''; return; }
+
+        const res = await fetch('/api/edital/importar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dados, plano: plano.trim() })
+        });
+        const resultado = await res.json();
+        event.target.value = '';
+
+        if (!resultado.success) {
+            alert(resultado.error || 'Não foi possível importar o arquivo.');
+            return;
+        }
+
+        alert(`Edital importado para "${resultado.plano}": ${resultado.criados} tópico(s) novo(s), ${resultado.vinculados} já existiam e foram vinculados.`);
+        await carregarPlanos();
+        await trocarPlano(resultado.plano);
+    } catch (err) {
+        console.error('Erro ao importar edital:', err);
+        event.target.value = '';
+        alert('Arquivo inválido. Baixe o modelo para ver o formato esperado.');
+    }
+}
+
+// ==================================================================
 // TEMA (cor de destaque + modo claro/escuro, salvo no dispositivo)
 // ==================================================================
 
@@ -35,8 +224,10 @@ const TEMAS_DISPONIVEIS = [
     { id: '', nome: 'Azul (padrão)', cor: '#2563eb' },
     { id: 'verde-claro', nome: 'Verde', cor: '#059669' },
     { id: 'roxo-claro', nome: 'Roxo', cor: '#7c3aed' },
+    { id: 'rosa-claro', nome: 'Rosa', cor: '#db2777' },
     { id: 'escuro-azul', nome: 'Dark azul', cor: '#3b82f6' },
-    { id: 'escuro-verde', nome: 'Dark verde', cor: '#22c55e' }
+    { id: 'escuro-verde', nome: 'Dark verde', cor: '#22c55e' },
+    { id: 'escuro-rosa', nome: 'Dark rosa', cor: '#f472b6' }
 ];
 
 function obterTemaSalvo() {
@@ -52,6 +243,13 @@ function aplicarTema(temaId) {
     else document.documentElement.removeAttribute('data-tema');
     try { localStorage.setItem('checkestudos_tema', temaId); } catch (err) { /* segue sem salvar */ }
     renderizarSeletorTema();
+
+    // Avisa o jogo (que roda num iframe à parte, com seu próprio CSS) para
+    // trocar de tema também, caso já esteja carregado.
+    const iframeJogo = document.getElementById('jogo-iframe');
+    if (iframeJogo && iframeJogo.contentWindow) {
+        iframeJogo.contentWindow.postMessage({ tipo: 'checkestudos-tema', tema: temaId }, window.location.origin);
+    }
 }
 
 function renderizarSeletorTema() {
@@ -1626,4 +1824,4 @@ function calcularStreakAtual(datasEstudadas) {
     return streak;
 }
 
-document.addEventListener('DOMContentLoaded', iniciar);
+document.addEventListener('DOMContentLoaded', iniciarApp);

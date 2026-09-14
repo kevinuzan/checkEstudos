@@ -59,9 +59,19 @@
     --primary-light-hover: #ddd6fe;
 }
 
-/* --- Escuro (azul) --- */
+/* --- Rosa (claro) --- */
+[data-tema="rosa-claro"] {
+    --primary: #db2777;
+    --primary-rgb: 219, 39, 119;
+    --primary-dark: #be185d;
+    --primary-light: #fce7f3;
+    --primary-light-hover: #fbcfe8;
+}
+
+/* --- Escuro (azul / verde / rosa) --- */
 [data-tema="escuro-azul"],
-[data-tema="escuro-verde"] {
+[data-tema="escuro-verde"],
+[data-tema="escuro-rosa"] {
     --bg: #0f172a;
     --card: #1e293b;
     --text: #f1f5f9;
@@ -93,6 +103,15 @@
     --primary-dark: #4ade80;
     --primary-light: #14532d;
     --primary-light-hover: #1b6b3a;
+}
+
+/* --- Escuro (rosa) --- */
+[data-tema="escuro-rosa"] {
+    --primary: #f472b6;
+    --primary-rgb: 244, 114, 182;
+    --primary-dark: #f9a8d4;
+    --primary-light: #831843;
+    --primary-light-hover: #9d174d;
 }
 
 * { box-sizing: border-box; }
@@ -275,11 +294,131 @@ h1, h2, h3 { font-family: inherit; }
 }
 
 /* ============================================================ */
+/* LOGIN (Google) E USUÁRIO LOGADO                                */
+/* ============================================================ */
+
+.login-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+}
+
+.login-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    padding: 40px 32px;
+    max-width: 360px;
+    width: 100%;
+    text-align: center;
+}
+
+.login-logo {
+    font-size: 40px;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.login-card h1 {
+    font-size: 20px;
+    margin: 0 0 10px;
+    color: var(--text);
+}
+
+.login-sub {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0 0 24px;
+    line-height: 1.5;
+}
+
+.login-google-btn {
+    display: flex;
+    justify-content: center;
+    min-height: 40px;
+}
+
+.login-erro {
+    color: var(--danger, #ef4444);
+    font-size: 12px;
+    margin-top: 14px;
+}
+
+.sidebar-usuario {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.usuario-foto {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--surface-muted);
+}
+
+.usuario-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.usuario-nome {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.usuario-sair {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 11px;
+    color: var(--text-faint);
+    cursor: pointer;
+    text-align: left;
+    text-decoration: underline;
+}
+
+.usuario-sair:hover {
+    color: var(--primary);
+}
+
+.edital-arquivo-box {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+}
+
+.edital-arquivo-linha {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+/* ============================================================ */
 /* CRONÔMETRO DE ESTUDO                                          */
 /* ============================================================ */
 
 .timer-card {
-    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 55%, #1e40af 100%);
+    background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 55%, var(--primary-dark) 100%);
     border-radius: var(--radius-lg);
     padding: 26px 22px;
     margin-bottom: 20px;
@@ -293,11 +432,11 @@ h1, h2, h3 { font-family: inherit; }
 }
 
 .timer-card.timer-rodando {
-    background: linear-gradient(135deg, #14532d 0%, #16a34a 55%, #15803d 100%);
+    background: linear-gradient(135deg, #14532d 0%, var(--success) 55%, #15803d 100%);
 }
 
 .timer-card.timer-pausado {
-    background: linear-gradient(135deg, #78350f 0%, #d97706 55%, #b45309 100%);
+    background: linear-gradient(135deg, #78350f 0%, var(--warning) 55%, #b45309 100%);
 }
 
 .timer-label {
@@ -333,7 +472,7 @@ h1, h2, h3 { font-family: inherit; }
     font-size: 14px;
     cursor: pointer;
     background: rgba(255, 255, 255, 0.96);
-    color: #1e3a8a;
+    color: var(--primary-dark);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
     font-family: inherit;

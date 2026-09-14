@@ -15,6 +15,16 @@
     <script src="https://kit.fontawesome.com/7113fe860c.js" crossorigin="anonymous"></script>
 
     <link href="/jogo/css/style.css" rel="stylesheet" />
+    <script>
+        // Aplica o mesmo tema escolhido na tela principal do checkEstudos (mesma
+        // origem, então o localStorage é compartilhado) antes da página desenhar.
+        (function () {
+            try {
+                var tema = localStorage.getItem('checkestudos_tema');
+                if (tema) document.documentElement.setAttribute('data-tema', tema);
+            } catch (e) { /* localStorage indisponível — segue com o tema padrão */ }
+        })();
+    </script>
 </head>
 
 <body onload="getItemData(), getItemData2(), carregarArtigosComLacunas(), iniciarPlacar()">

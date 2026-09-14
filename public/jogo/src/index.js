@@ -34,6 +34,17 @@ function iniciarPlacar() {
     atualizarPlacarTela();
 }
 
+// Recebe o tema escolhido na tela principal do checkEstudos enquanto este
+// jogo já está carregado no iframe (a leitura inicial do localStorage no
+// <head> cobre o primeiro carregamento; isso cobre a troca em tempo real).
+window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (event.data && event.data.tipo === 'checkestudos-tema') {
+        if (event.data.tema) document.documentElement.setAttribute('data-tema', event.data.tema);
+        else document.documentElement.removeAttribute('data-tema');
+    }
+});
+
 // Envia o resultado de uma rodada para o servidor e avisa a página pai
 // (o checkEstudos), caso o jogo esteja aberto dentro do iframe da aba "Jogo".
 async function registrarPontuacao(tipo, acertos, erros) {

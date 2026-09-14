@@ -27,6 +27,60 @@
     --gap-lg: 20px;
 }
 
+/* --- Temas (mesmas opções escolhidas na tela principal do checkEstudos,   --- */
+/* --- sincronizadas via localStorage/postMessage, ver src/index.js)       --- */
+
+[data-tema="verde-claro"] {
+    --primary-color: #059669;
+    --primary-dark: #047857;
+    --primary-light: #d1fae5;
+    --card-active-bg: #059669;
+}
+
+[data-tema="roxo-claro"] {
+    --primary-color: #7c3aed;
+    --primary-dark: #6d28d9;
+    --primary-light: #ede9fe;
+    --card-active-bg: #7c3aed;
+}
+
+[data-tema="rosa-claro"] {
+    --primary-color: #db2777;
+    --primary-dark: #be185d;
+    --primary-light: #fce7f3;
+    --card-active-bg: #db2777;
+}
+
+[data-tema="escuro-azul"],
+[data-tema="escuro-verde"],
+[data-tema="escuro-rosa"] {
+    --light-bg: #0f172a;
+    --dark-text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border-color: #334155;
+    --card-bg-default: #1e293b;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+[data-tema="escuro-azul"] {
+    --primary-color: #3b82f6;
+    --primary-dark: #60a5fa;
+    --card-active-bg: #3b82f6;
+}
+
+[data-tema="escuro-verde"] {
+    --primary-color: #22c55e;
+    --primary-dark: #4ade80;
+    --card-active-bg: #22c55e;
+}
+
+[data-tema="escuro-rosa"] {
+    --primary-color: #f472b6;
+    --primary-dark: #f9a8d4;
+    --card-active-bg: #f472b6;
+}
+
 /* --- Base HTML e Body --- */
 * { box-sizing: border-box; }
 

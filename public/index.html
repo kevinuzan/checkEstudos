@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
         // Aplica o tema salvo antes da página desenhar, para não "piscar" o tema padrão.
         (function () {
@@ -19,6 +20,17 @@
     </script>
 </head>
 <body>
+
+    <!-- ===================== TELA DE LOGIN (Google) ===================== -->
+    <div id="login-overlay" class="login-overlay" style="display:none;">
+        <div class="login-card">
+            <span class="login-logo">📘</span>
+            <h1>Meu Edital</h1>
+            <p class="login-sub">Entre com sua conta Google para ver seus estudos, de qualquer aparelho.</p>
+            <div id="google-signin-btn" class="login-google-btn"></div>
+            <p id="login-erro" class="login-erro" style="display:none;"></p>
+        </div>
+    </div>
 
     <div class="layout">
 
@@ -60,6 +72,14 @@
                 <div class="tema-label">Tema</div>
                 <div class="tema-swatches" id="tema-swatches">
                     <!-- opções de tema inseridas via JS -->
+                </div>
+            </div>
+
+            <div class="sidebar-usuario" id="sidebar-usuario" style="display:none;">
+                <img id="usuario-foto" class="usuario-foto" src="" alt="">
+                <div class="usuario-info">
+                    <span class="usuario-nome" id="usuario-nome">—</span>
+                    <button type="button" class="usuario-sair" onclick="sairDaConta()">Sair</button>
                 </div>
             </div>
         </aside>
@@ -167,6 +187,15 @@
                         <!-- checkboxes dos planos inseridos via JS -->
                     </div>
                     <button onclick="importarEdital()">Importar Tópicos</button>
+
+                    <div class="edital-arquivo-box">
+                        <div class="edital-arquivo-linha">
+                            <button type="button" class="btn-secundario" onclick="baixarModeloEdital()">⬇ Baixar modelo de edital</button>
+                            <button type="button" class="btn-secundario" onclick="exportarEditalAtual()">⬆ Exportar edital do plano atual</button>
+                        </div>
+                        <label class="modal-label">Importar arquivo de edital (.json)</label>
+                        <input type="file" id="edital-arquivo-input" accept="application/json" onchange="importarArquivoEdital(event)">
+                    </div>
                 </section>
 
                 <div class="edital-selecao-barra">
