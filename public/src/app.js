@@ -19,6 +19,7 @@ let viewAtual = 'resumo';
 
 async function iniciar() {
     renderizarSeletorTema();
+    renderizarSeletorFundo();
     configurarSeletorCorMateria();
     await carregarPlanos();
     await carregarEdital();
@@ -185,13 +186,16 @@ async function importarArquivoEdital(event) {
     const arquivo = event.target.files[0];
     if (!arquivo) return;
 
+    const nomeArquivoEl = document.getElementById('edital-arquivo-nome');
+    if (nomeArquivoEl) nomeArquivoEl.textContent = arquivo.name;
+
     try {
         const texto = await arquivo.text();
         const dados = JSON.parse(texto);
 
         const nomeSugerido = dados.nomeEdital || planoAtual;
         const plano = prompt('Importar para qual plano?', nomeSugerido);
-        if (!plano) { event.target.value = ''; return; }
+        if (!plano) { event.target.value = ''; if (nomeArquivoEl) nomeArquivoEl.textContent = 'Nenhum arquivo selecionado'; return; }
 
         const res = await fetch('/api/edital/importar', {
             method: 'POST',
@@ -206,12 +210,25 @@ async function importarArquivoEdital(event) {
             return;
         }
 
-        alert(`Edital importado para "${resultado.plano}": ${resultado.criados} tópico(s) novo(s), ${resultado.vinculados} já existiam e foram vinculados.`);
+        // Atualiza tudo na hora (sem precisar dar F5): planos, checkboxes e o
+        // edital em si — mesmo se o plano importado já for o que já estava
+        // selecionado (por isso não usamos trocarPlano aqui, que nesse caso
+        // não faria nada).
         await carregarPlanos();
-        await trocarPlano(resultado.plano);
+        planoAtual = resultado.plano;
+        localStorage.setItem('edital_plano_atual', planoAtual);
+        renderizarTabsPlanos();
+        renderPlanosCheckboxes('planos-checkboxes-import', [planoAtual]);
+        await carregarEdital();
+        if (viewAtual === 'estudos') await carregarPainelEstudos();
+        if (viewAtual === 'resumo') await carregarResumo();
+
+        if (nomeArquivoEl) nomeArquivoEl.textContent = 'Nenhum arquivo selecionado';
+        alert(`Edital importado para "${resultado.plano}": ${resultado.criados} tópico(s) novo(s), ${resultado.vinculados} já existiam e foram vinculados.`);
     } catch (err) {
         console.error('Erro ao importar edital:', err);
         event.target.value = '';
+        if (nomeArquivoEl) nomeArquivoEl.textContent = 'Nenhum arquivo selecionado';
         alert('Arquivo inválido. Baixe o modelo para ver o formato esperado.');
     }
 }
@@ -259,6 +276,38 @@ function renderizarSeletorTema() {
     container.innerHTML = TEMAS_DISPONIVEIS.map(t => `
         <button type="button" class="tema-swatch ${temaAtual === t.id ? 'ativo' : ''}"
             style="background:${t.cor}" title="${t.nome}" onclick="aplicarTema('${t.id}')"></button>
+    `).join('');
+}
+
+// --- FUNDO DE TELA (tom clarinho da cor do tema, por padrão; ou neutro) ---
+
+const FUNDOS_DISPONIVEIS = [
+    { id: '', nome: 'Colorido (tom do tema)' },
+    { id: 'neutro', nome: 'Neutro' }
+];
+
+function obterFundoSalvo() {
+    try {
+        return localStorage.getItem('checkestudos_fundo') || '';
+    } catch (err) {
+        return '';
+    }
+}
+
+function aplicarFundo(fundoId) {
+    if (fundoId) document.documentElement.setAttribute('data-fundo', fundoId);
+    else document.documentElement.removeAttribute('data-fundo');
+    try { localStorage.setItem('checkestudos_fundo', fundoId); } catch (err) { /* segue sem salvar */ }
+    renderizarSeletorFundo();
+}
+
+function renderizarSeletorFundo() {
+    const container = document.getElementById('fundo-opcoes');
+    if (!container) return;
+    const fundoAtual = obterFundoSalvo();
+    container.innerHTML = FUNDOS_DISPONIVEIS.map(f => `
+        <button type="button" class="fundo-opcao ${fundoAtual === f.id ? 'ativo' : ''}"
+            onclick="aplicarFundo('${f.id}')">${f.nome}</button>
     `).join('');
 }
 

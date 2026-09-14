@@ -18,6 +18,7 @@
     --purple-light: #ede9fe;
 
     --bg: #f4f6fb;
+    --bg-suave: #eef3fe;
     --card: #ffffff;
     --text: #0f172a;
     --text-muted: #64748b;
@@ -48,6 +49,7 @@
     --primary-dark: #047857;
     --primary-light: #d1fae5;
     --primary-light-hover: #a7f3d0;
+    --bg-suave: #eafbf3;
 }
 
 /* --- Roxo (claro) --- */
@@ -57,6 +59,7 @@
     --primary-dark: #6d28d9;
     --primary-light: #ede9fe;
     --primary-light-hover: #ddd6fe;
+    --bg-suave: #f5f0fe;
 }
 
 /* --- Rosa (claro) --- */
@@ -66,6 +69,7 @@
     --primary-dark: #be185d;
     --primary-light: #fce7f3;
     --primary-light-hover: #fbcfe8;
+    --bg-suave: #fdf0f6;
 }
 
 /* --- Escuro (azul / verde / rosa) --- */
@@ -73,6 +77,7 @@
 [data-tema="escuro-verde"],
 [data-tema="escuro-rosa"] {
     --bg: #0f172a;
+    --bg-suave: #0f172a;
     --card: #1e293b;
     --text: #f1f5f9;
     --text-muted: #94a3b8;
@@ -94,6 +99,7 @@
     --primary-dark: #60a5fa;
     --primary-light: #1e3a5f;
     --primary-light-hover: #24466f;
+    --bg-suave: #101c33;
 }
 
 /* --- Escuro (verde) --- */
@@ -103,6 +109,7 @@
     --primary-dark: #4ade80;
     --primary-light: #14532d;
     --primary-light-hover: #1b6b3a;
+    --bg-suave: #0f2018;
 }
 
 /* --- Escuro (rosa) --- */
@@ -112,6 +119,17 @@
     --primary-dark: #f9a8d4;
     --primary-light: #831843;
     --primary-light-hover: #9d174d;
+    --bg-suave: #1f1420;
+}
+
+/* --- Fundo de tela: por padrão, um tom bem clarinho da cor do tema   --- */
+/* (--bg-suave); quem preferir o fundo neutro de sempre pode trocar no --- */
+/* menu "Fundo" da barra lateral (data-fundo="neutro").                --- */
+[data-fundo="neutro"] {
+    --bg-suave: var(--bg);
+}
+html:not([data-fundo="neutro"]) {
+    --bg: var(--bg-suave);
 }
 
 * { box-sizing: border-box; }
@@ -293,6 +311,38 @@ h1, h2, h3 { font-family: inherit; }
     box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text);
 }
 
+.sidebar-fundo {
+    margin-top: 14px;
+}
+
+.fundo-opcoes {
+    display: flex;
+    gap: 6px;
+}
+
+.fundo-opcao {
+    flex: 1;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.fundo-opcao:hover {
+    background: var(--surface-muted);
+}
+
+.fundo-opcao.ativo {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
 /* ============================================================ */
 /* LOGIN (Google) E USUÁRIO LOGADO                                */
 /* ============================================================ */
@@ -411,6 +461,59 @@ h1, h2, h3 { font-family: inherit; }
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 10px;
+}
+
+.arquivo-input-oculto {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.arquivo-botao-bonito {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-muted);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.arquivo-botao-bonito:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+    color: var(--primary-dark);
+}
+
+.arquivo-botao-icone {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.arquivo-botao-textos {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    text-align: left;
+}
+
+.arquivo-botao-titulo {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.arquivo-botao-nome {
+    font-size: 11.5px;
+    color: var(--text-faint);
 }
 
 /* ============================================================ */

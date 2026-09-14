@@ -15,7 +15,9 @@
             try {
                 var tema = localStorage.getItem('checkestudos_tema');
                 if (tema) document.documentElement.setAttribute('data-tema', tema);
-            } catch (e) { /* localStorage indisponível — segue com o tema padrão */ }
+                var fundo = localStorage.getItem('checkestudos_fundo');
+                if (fundo === 'neutro') document.documentElement.setAttribute('data-fundo', 'neutro');
+            } catch (e) { /* localStorage indisponível — segue com os padrões */ }
         })();
     </script>
 </head>
@@ -72,6 +74,13 @@
                 <div class="tema-label">Tema</div>
                 <div class="tema-swatches" id="tema-swatches">
                     <!-- opções de tema inseridas via JS -->
+                </div>
+            </div>
+
+            <div class="sidebar-fundo">
+                <div class="tema-label">Fundo</div>
+                <div class="fundo-opcoes" id="fundo-opcoes">
+                    <!-- opções de fundo inseridas via JS -->
                 </div>
             </div>
 
@@ -194,7 +203,14 @@
                             <button type="button" class="btn-secundario" onclick="exportarEditalAtual()">⬆ Exportar edital do plano atual</button>
                         </div>
                         <label class="modal-label">Importar arquivo de edital (.json)</label>
-                        <input type="file" id="edital-arquivo-input" accept="application/json" onchange="importarArquivoEdital(event)">
+                        <label class="arquivo-botao-bonito" for="edital-arquivo-input">
+                            <span class="arquivo-botao-icone">📁</span>
+                            <span class="arquivo-botao-textos">
+                                <span class="arquivo-botao-titulo">Escolher arquivo de edital</span>
+                                <span class="arquivo-botao-nome" id="edital-arquivo-nome">Nenhum arquivo selecionado</span>
+                            </span>
+                        </label>
+                        <input type="file" id="edital-arquivo-input" class="arquivo-input-oculto" accept="application/json" onchange="importarArquivoEdital(event)">
                     </div>
                 </section>
 
