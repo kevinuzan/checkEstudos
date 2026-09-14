@@ -22,6 +22,34 @@ function aplicarJogoDireto() {
     });
 }
 
+// ==================================================================
+// "COMO JOGAR": instruções curtas por jogo, escondidas atrás de um botão
+// pra não poluir a tela — cada jogo recria seu conteúdo do zero (innerHTML
+// = '') sempre que carrega, então esse botão é inserido pelas próprias
+// funções que montam cada jogo (getItemData, getItemData2,
+// carregarArtigosComLacunas), não pelo HTML estático.
+// ==================================================================
+const INSTRUCOES_JOGO = {
+    mnemonicos: 'Leia a frase com o mnemônico em destaque e tente fixar a associação. Use as setas ← → (ou os botões) pra passar pro próximo — não tem certo ou errado aqui, é só treino de memorização.',
+    competencias: 'Leia o caso descrito e escolha quem você acha que tem competência para julgá-lo. Depois de responder, o próprio jogo mostra se acertou e qual é a resposta certa. Use as setas ← → pra ir pro próximo caso.',
+    lacunas: 'Escolha um artigo da Constituição na lista e preencha as lacunas do texto. Ao confirmar, o jogo mostra se acertou. Use as setas ← → pra navegar entre os artigos.',
+};
+
+function criarBotaoComoJogar(chave) {
+    const wrap = document.createElement('div');
+    wrap.className = 'como-jogar-wrap';
+    wrap.innerHTML = `
+        <button type="button" class="btn-como-jogar">❓ Como jogar</button>
+        <div class="como-jogar-box" style="display:none;">${INSTRUCOES_JOGO[chave] || ''}</div>
+    `;
+    const btn = wrap.querySelector('.btn-como-jogar');
+    const box = wrap.querySelector('.como-jogar-box');
+    btn.addEventListener('click', () => {
+        box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    });
+    return wrap;
+}
+
 // Recebe o tema escolhido na tela principal do checkEstudos enquanto este
 // jogo já está carregado no iframe (a leitura inicial do localStorage no
 // <head> cobre o primeiro carregamento; isso cobre a troca em tempo real).
@@ -337,6 +365,7 @@ async function getItemData() {
         .then(data => {
             const app = document.getElementById('mnemonicos');
             app.innerHTML = ''; // Limpa o conteúdo existente no 'app' div
+            app.appendChild(criarBotaoComoJogar('mnemonicos'));
 
             // Adiciona o título principal
             const titleRow = document.createElement('div');
@@ -563,6 +592,7 @@ async function getItemData2() {
         .then(data => {
             const app = document.getElementById('competencias');
             app.innerHTML = ''; // Limpa o conteúdo existente no 'app' div
+            app.appendChild(criarBotaoComoJogar('competencias'));
 
             // Adiciona o título principal
             const titleRow = document.createElement('div');
@@ -832,6 +862,7 @@ function gerarLacunasComInputs(texto, maxPalavras = 3) {
 async function carregarArtigosComLacunas() {
     const app = document.getElementById('lacunas');
     app.innerHTML = '';
+    app.appendChild(criarBotaoComoJogar('lacunas'));
     allContainers3 = [];
     currentIndex3 = 0;
 

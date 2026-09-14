@@ -187,8 +187,23 @@ h1, h2, h3 { font-family: inherit; }
     gap: 8px;
 }
 
+/* --- Marca "Direto à Posse" (logo em SVG + parte em destaque no nome) --- */
+.brand-mark {
+    display: block;
+    flex-shrink: 0;
+}
+
+.brand-acento {
+    color: #c9962b;
+}
+
+[data-tema^="escuro"] .brand-acento {
+    color: #f6d365;
+}
+
 .app-bar-logo {
-    font-size: 1.3rem;
+    width: 26px;
+    height: 26px;
 }
 
 .app-bar-title {
@@ -256,9 +271,9 @@ h1, h2, h3 { font-family: inherit; }
 }
 
 .plano-tab.ativo {
-    background: var(--text);
+    background: var(--primary);
     color: white;
-    border-color: var(--text);
+    border-color: var(--primary);
 }
 
 .plano-tab-novo {
@@ -370,9 +385,9 @@ h1, h2, h3 { font-family: inherit; }
 }
 
 .login-logo {
-    font-size: 40px;
-    display: block;
-    margin-bottom: 8px;
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 10px;
 }
 
 .login-card h1 {

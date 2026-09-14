@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meu Edital</title>
+    <meta name="description" content="Direto à Posse — organize seus estudos para concursos públicos: edital verticalizado, cronômetro, revisões e jogos de memorização.">
+    <title>Direto à Posse</title>
+    <link rel="icon" type="image/svg+xml" href="/img/logo.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -26,8 +28,23 @@
     <!-- ===================== TELA DE LOGIN (Google) ===================== -->
     <div id="login-overlay" class="login-overlay" style="display:none;">
         <div class="login-card">
-            <span class="login-logo">📘</span>
-            <h1>Meu Edital</h1>
+            <svg class="login-logo brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+                <defs>
+                    <linearGradient id="dp-blue-login" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stop-color="#3b82f6" />
+                        <stop offset="100%" stop-color="#1d4ed8" />
+                    </linearGradient>
+                    <linearGradient id="dp-gold-login" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stop-color="#f6d365" />
+                        <stop offset="100%" stop-color="#c9962b" />
+                    </linearGradient>
+                </defs>
+                <circle cx="32" cy="32" r="29" fill="url(#dp-blue-login)" />
+                <circle cx="32" cy="32" r="29" fill="none" stroke="url(#dp-gold-login)" stroke-width="3" />
+                <path d="M19 33 L28 42 L46 22" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"
+                    stroke-linejoin="round" />
+            </svg>
+            <h1>Direto <span class="brand-acento">à Posse</span></h1>
             <p class="login-sub">Entre com sua conta Google para ver seus estudos, de qualquer aparelho.</p>
             <div id="google-signin-btn" class="login-google-btn"></div>
             <p id="login-erro" class="login-erro" style="display:none;"></p>
@@ -40,8 +57,23 @@
         <aside class="sidebar">
             <div class="sidebar-header">
                 <div class="app-bar-brand">
-                    <span class="app-bar-logo">📘</span>
-                    <span class="app-bar-title">Meu Edital</span>
+                    <svg class="app-bar-logo brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+                        <defs>
+                            <linearGradient id="dp-blue-side" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stop-color="#3b82f6" />
+                                <stop offset="100%" stop-color="#1d4ed8" />
+                            </linearGradient>
+                            <linearGradient id="dp-gold-side" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stop-color="#f6d365" />
+                                <stop offset="100%" stop-color="#c9962b" />
+                            </linearGradient>
+                        </defs>
+                        <circle cx="32" cy="32" r="29" fill="url(#dp-blue-side)" />
+                        <circle cx="32" cy="32" r="29" fill="none" stroke="url(#dp-gold-side)" stroke-width="3" />
+                        <path d="M19 33 L28 42 L46 22" fill="none" stroke="#ffffff" stroke-width="6"
+                            stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <span class="app-bar-title">Direto <span class="brand-acento">à Posse</span></span>
                 </div>
                 <div class="streak-badge" id="streak-badge" title="Dias seguidos estudando">
                     <span class="streak-icone">🔥</span>

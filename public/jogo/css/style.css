@@ -144,6 +144,40 @@ body {
     margin-bottom: var(--gap-lg);
 }
 
+/* --- Botão "Como jogar", inserido pelo JS no topo de cada sub-jogo --- */
+.como-jogar-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.btn-como-jogar {
+    align-self: flex-start;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 6px 12px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.btn-como-jogar:hover {
+    filter: brightness(0.97);
+}
+
+.como-jogar-box {
+    background: var(--card-bg-default);
+    color: var(--dark-text);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
 /* --- Barra de pontuação (placar), sempre visível no topo, por sub-jogo --- */
 .placar-barra {
     background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-color) 100%);
