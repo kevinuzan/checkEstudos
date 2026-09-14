@@ -25,6 +25,22 @@
     --gap-sm: 8px;
     --gap-md: 15px;
     --gap-lg: 20px;
+
+    /* Cores de feedback (acerto/erro/aviso/neutro), usadas tanto pelo CSS
+       quanto atribuídas via JS a elementos específicos (cards, inputs de
+       lacuna) — ficam aqui pra automaticamente acompanhar o tema/modo escuro. */
+    --feedback-success-bg: #d4edda;
+    --feedback-success-border: #28a745;
+    --feedback-success-text: #155724;
+    --feedback-error-bg: #f8d7da;
+    --feedback-error-border: #dc3545;
+    --feedback-error-text: #721c24;
+    --feedback-warning-bg: #ffeeba;
+    --feedback-warning-border: #ffc107;
+    --feedback-warning-text: #856404;
+    --feedback-neutro-bg: #e2e3e5;
+    --feedback-neutro-border: #ced4da;
+    --feedback-neutro-text: #383d41;
 }
 
 /* --- Temas (mesmas opções escolhidas na tela principal do checkEstudos,   --- */
@@ -61,6 +77,19 @@
     --card-bg-default: #1e293b;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
     --shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+
+    --feedback-success-bg: #14532d;
+    --feedback-success-border: #22c55e;
+    --feedback-success-text: #bbf7d0;
+    --feedback-error-bg: #7f1d1d;
+    --feedback-error-border: #ef4444;
+    --feedback-error-text: #fecaca;
+    --feedback-warning-bg: #78350f;
+    --feedback-warning-border: #f59e0b;
+    --feedback-warning-text: #fde68a;
+    --feedback-neutro-bg: #334155;
+    --feedback-neutro-border: #475569;
+    --feedback-neutro-text: #cbd5e1;
 }
 
 [data-tema="escuro-azul"] {
@@ -102,7 +131,7 @@ body {
 /* --- Container Principal (#app) --- */
 #app {
     width: 100%;
-    max-width: 960px;
+    max-width: 920px;
     background-color: transparent;
     border: none;
     box-shadow: none !important;
@@ -118,37 +147,44 @@ body {
 /* --- Título Principal da Aplicação --- */
 #app h1 {
     color: var(--dark-text);
-    font-size: 1.7em;
+    font-size: 1.6em;
     font-weight: 800;
     letter-spacing: -0.01em;
     text-shadow: none;
+    margin-bottom: 2px;
 }
 
 /* --- Barra de pontuação (placar), sempre visível no topo, por sub-jogo --- */
 .placar-barra {
-    background: var(--card-bg-default);
-    border: 1px solid var(--border-color);
+    background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-color) 100%);
+    border: none;
     border-radius: var(--radius);
-    padding: 12px 16px;
-    box-shadow: var(--shadow-sm);
+    padding: 14px 18px;
+    box-shadow: var(--shadow);
 }
 
 .placar-texto {
     font-weight: 600;
     font-size: 0.85em;
-    color: var(--dark-text);
-    line-height: 1.7;
+    color: #ffffff;
+    line-height: 1.8;
 }
 
 /* --- Banner de feedback inline (substitui os alerts, funciona bem no celular) --- */
 .feedback-banner {
     border-radius: var(--radius-sm);
-    padding: 10px 14px;
-    font-weight: 600;
-    font-size: 0.9em;
+    padding: 12px 16px;
+    font-weight: 700;
+    font-size: 0.92em;
     margin-bottom: var(--gap-sm);
     text-align: center;
     display: none;
+    animation: feedback-entrar 0.2s ease-out;
+}
+
+@keyframes feedback-entrar {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .feedback-banner.mostrar {
@@ -156,21 +192,21 @@ body {
 }
 
 .feedback-banner.sucesso {
-    background: var(--success-light);
-    color: #14532d;
-    border: 1px solid #86efac;
+    background: var(--feedback-success-bg);
+    color: var(--feedback-success-text);
+    border: 1px solid var(--feedback-success-border);
 }
 
 .feedback-banner.erro {
-    background: var(--danger-light);
-    color: #7f1d1d;
-    border: 1px solid #fca5a5;
+    background: var(--feedback-error-bg);
+    color: var(--feedback-error-text);
+    border: 1px solid var(--feedback-error-border);
 }
 
 .feedback-banner.aviso {
-    background: var(--warning-light);
-    color: #78350f;
-    border: 1px solid #fcd34d;
+    background: var(--feedback-warning-bg);
+    color: var(--feedback-warning-text);
+    border: 1px solid var(--feedback-warning-border);
 }
 
 /* --- Abas de Navegação (estilo segmentado, mais próximo do app principal) --- */
@@ -180,25 +216,33 @@ body {
     border-bottom: none;
     background: var(--card-bg-default);
     border-radius: var(--radius);
-    padding: 4px;
+    padding: 5px;
     gap: 4px;
     box-shadow: var(--shadow-sm);
     margin-bottom: 0;
+    position: sticky;
+    top: 0;
+    z-index: 5;
 }
 
 .nav-tabs .nav-item {
     flex: 1;
 }
 
+.nav-link-icone {
+    font-size: 1.05em;
+    margin-right: 2px;
+}
+
 .nav-tabs .nav-link {
     width: 100%;
     color: var(--text-muted);
     font-weight: 700;
-    font-size: 0.92em;
+    font-size: 0.9em;
     border: none;
     border-radius: var(--radius-sm);
-    padding: 10px 8px;
-    transition: all 0.15s ease-in-out;
+    padding: 11px 8px;
+    transition: background 0.15s ease-in-out, color 0.15s ease-in-out, transform 0.1s ease;
     text-align: center;
 }
 
@@ -211,6 +255,7 @@ body {
     color: #ffffff;
     background-color: var(--primary-color);
     border-color: transparent;
+    box-shadow: 0 3px 8px -2px rgba(0, 0, 0, 0.25);
 }
 
 /* --- Conteúdo das Abas --- */
@@ -226,20 +271,21 @@ body {
 /* --- Container de Cada Minemônico/Competência --- */
 .container, .container2 {
     border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: var(--gap-md);
+    border-radius: var(--radius-lg);
+    padding: var(--gap-lg);
     box-sizing: border-box;
     margin-bottom: var(--gap-md);
     background-color: var(--card-bg-default);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
     align-items: stretch;
+    border-top: 3px solid var(--primary-color);
 }
 
 /* --- Título da Matéria/Tipo de Competência --- */
 .materia-title {
-    font-size: 1.25em;
+    font-size: 1.2em;
     color: var(--primary-color);
     margin-bottom: var(--gap-sm);
     text-align: center;
@@ -249,13 +295,13 @@ body {
 /* --- Cabeçalho com a Frase Inicial/Competência Geral --- */
 .header {
     border-bottom: 1px solid var(--border-color);
-    padding-bottom: var(--gap-sm);
+    padding-bottom: var(--gap-md);
     margin-bottom: var(--gap-md);
     text-align: center;
     font-weight: 600;
     font-size: 1.05em;
     color: var(--dark-text);
-    line-height: 1.5;
+    line-height: 1.6;
 }
 
 /* Estilo do minemônico destacado */
@@ -268,8 +314,8 @@ body {
 /* --- Container dos Cards (Mnemônicos) --- */
 .cards {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: var(--gap-sm);
+    grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+    gap: 10px;
     padding: var(--gap-sm) 0;
     justify-content: center;
 }
@@ -278,28 +324,32 @@ body {
 .cards2 {
     display: grid;
     grid-template-columns: 1fr;
-    gap: var(--gap-sm);
+    gap: 10px;
     padding: var(--gap-sm) 0;
 }
 
 /* --- Estilo Individual do Card (Mnemônicos) --- */
+/* Cartas maiores e com feedback visual mais claro: além da cor, um selo ✓
+   aparece no canto quando selecionada, pra não depender só da cor pra
+   enxergar o que já foi escolhido (mais fácil de ler e de jogar). */
 .card {
-    border: 1.5px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    padding: var(--gap-sm);
+    position: relative;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 12px 10px;
     text-align: center;
     cursor: pointer;
-    transition: all 0.15s ease-in-out;
+    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
     white-space: normal;
     overflow: hidden;
-    min-height: 64px;
+    min-height: 72px;
     display: flex;
     justify-content: center;
     align-items: center;
     flex-direction: column;
     box-sizing: border-box;
-    font-size: 0.9em;
-    font-weight: 600;
+    font-size: 0.92em;
+    font-weight: 700;
     color: var(--dark-text);
     background-color: var(--card-bg-default);
     box-shadow: var(--shadow-sm);
@@ -307,27 +357,44 @@ body {
     user-select: none;
 }
 
-/* Estilo do card ativo (selecionado) */
-.card.active {
-    background-color: var(--card-active-bg);
-    color: var(--card-active-text);
-    border-color: var(--card-active-bg);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
-}
-
 .card:hover {
     border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+.card:active {
+    transform: translateY(0) scale(0.98);
+}
+
+/* Estilo do card ativo (selecionado) — fundo levemente tingido em vez de
+   sólido, pra manter o texto sempre legível, mais o selo de check. */
+.card.active {
+    background-color: var(--primary-light);
+    color: var(--primary-dark);
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.18);
+}
+
+.card.active::after {
+    content: '✓';
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    font-size: 0.85em;
+    font-weight: 900;
+    color: var(--primary-color);
 }
 
 /* --- Estilo Individual do Card (Competências) --- */
 .card2 {
-    border: 1.5px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    padding: var(--gap-md);
+    position: relative;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: var(--gap-md) 40px var(--gap-md) var(--gap-md);
     text-align: left;
     cursor: pointer;
-    transition: all 0.15s ease-in-out;
+    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
     white-space: normal;
     overflow: hidden;
     min-height: 56px;
@@ -343,21 +410,37 @@ body {
     user-select: none;
 }
 
-.card2.active {
-    background-color: var(--card-active-bg);
-    color: var(--card-active-text);
-    border-color: var(--card-active-bg);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
-}
 .card2:hover {
     border-color: var(--primary-color);
+    box-shadow: var(--shadow);
+}
+
+.card2:active {
+    transform: scale(0.99);
+}
+
+.card2.active {
+    background-color: var(--primary-light);
+    color: var(--primary-dark);
+    border-color: var(--primary-color);
+    font-weight: 700;
+}
+
+.card2.active::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    transform: translateY(-50%);
+    font-size: 1.1em;
+    font-weight: 900;
+    color: var(--primary-color);
 }
 
 /* --- Container dos Botões de Ação (Enviar/Reiniciar) --- */
 .botoes-container {
     display: flex;
-    gap: var(--gap-sm);
+    gap: 10px;
     margin-top: var(--gap-md);
     width: 100%;
     box-sizing: border-box;
@@ -366,15 +449,25 @@ body {
 
 /* --- Estilos dos Botões Gerais --- */
 .btn {
-    padding: 0.7em 1.2em;
+    padding: 0.8em 1.3em;
     font-size: 0.95em;
     cursor: pointer;
-    border-radius: var(--radius-sm);
+    border-radius: 999px;
     flex-grow: 1;
     max-width: 220px;
     font-weight: 700;
-    transition: all 0.15s ease-in-out;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
     border: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.16);
+}
+
+.btn:active {
+    transform: translateY(0);
 }
 
 .btn-primary {
@@ -408,13 +501,13 @@ body {
 }
 
 .btn-secondary {
-    background-color: #f1f5f9;
-    border-color: #f1f5f9;
+    background-color: var(--light-bg);
+    border: 1.5px solid var(--border-color);
     color: var(--dark-text);
+    box-shadow: none;
 }
 .btn-secondary:hover {
-    background-color: #e2e8f0;
-    border-color: #e2e8f0;
+    background-color: var(--border-color);
 }
 
 /* --- Botões de Navegação Global (Anterior/Próximo) --- */
@@ -423,6 +516,19 @@ body {
     margin-bottom: var(--gap-md);
     gap: var(--gap-md);
     width: 100%;
+}
+
+.d-flex.justify-content-center.mt-4 .btn {
+    border-radius: 999px;
+    max-width: 70px;
+    background-color: var(--card-bg-default);
+    border: 1.5px solid var(--border-color);
+    color: var(--primary-color);
+    box-shadow: var(--shadow-sm);
+}
+.d-flex.justify-content-center.mt-4 .btn:hover {
+    background-color: var(--primary-light);
+    border-color: var(--primary-color);
 }
 
 /* Botão de atualização */
@@ -450,10 +556,11 @@ body {
     max-width: 320px;
     margin: 0 auto var(--gap-lg) auto;
     border: 1.5px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    padding: 0.6rem 1rem;
+    border-radius: 999px;
+    padding: 0.65rem 1.2rem;
     font-weight: 600;
     background-color: var(--card-bg-default);
+    color: var(--dark-text);
 }
 #lacunas select.form-select:focus {
     border-color: var(--primary-color);
@@ -462,11 +569,12 @@ body {
 }
 
 #lacunas>div:nth-child(3) {
-    background: var(--card-bg-default);
+    background-color: var(--card-bg-default);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: var(--gap-md) var(--gap-lg);
-    box-shadow: var(--shadow-sm);
+    border-radius: var(--radius-lg);
+    padding: var(--gap-lg);
+    box-shadow: var(--shadow);
+    border-top: 3px solid var(--primary-color);
 }
 
 #lacunas h4 {
@@ -477,41 +585,31 @@ body {
 }
 
 #lacunas p {
-    font-size: 1em;
-    line-height: 1.7;
+    font-size: 1.05em;
+    line-height: 2.1;
     margin-bottom: var(--gap-sm);
     color: var(--dark-text);
 }
 
 .lacuna-input {
-    border: 1.5px dashed var(--secondary-color);
+    border: 2px dashed var(--secondary-color);
     border-radius: var(--radius-sm);
-    padding: 0.25em 0.55em;
-    min-width: 80px;
+    padding: 0.3em 0.6em;
+    min-width: 90px;
     font-size: 0.92em;
     font-weight: 700;
     transition: all 0.15s ease-in-out;
     text-align: center;
-    background-color: #f0f3f6;
+    background-color: var(--feedback-neutro-bg);
     color: var(--primary-color);
 }
 
 .lacuna-input:focus {
     outline: none;
     border-color: var(--primary-color);
-    background-color: #e6f0fa;
+    border-style: solid;
+    background-color: var(--primary-light);
     box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.18);
-}
-
-/* Feedback de correção para lacunas */
-.lacuna-input[style*="background-color: rgb(212, 237, 218)"] {
-    border-color: var(--success-color) !important;
-}
-.lacuna-input[style*="background-color: rgb(248, 215, 218)"] {
-    border-color: var(--danger-color) !important;
-}
-.lacuna-input[style*="background-color: rgb(226, 227, 229)"] {
-    border-color: var(--secondary-color) !important;
 }
 
 /* --- Media Queries para Responsividade --- */
@@ -524,7 +622,7 @@ body {
     }
 
     #app h1 {
-        font-size: 1.35em;
+        font-size: 1.3em;
         text-align: center;
     }
 
@@ -534,12 +632,17 @@ body {
     }
 
     .nav-tabs .nav-link {
-        padding: 10px 6px;
-        font-size: 0.8em;
+        padding: 10px 4px;
+        font-size: 0.78em;
+    }
+
+    .nav-link-icone {
+        display: block;
+        margin: 0 0 2px;
     }
 
     .container, .container2 {
-        padding: var(--gap-sm);
+        padding: var(--gap-md) 12px;
         margin-bottom: var(--gap-md);
     }
 
@@ -554,24 +657,24 @@ body {
     }
 
     .cards {
-        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-        gap: var(--gap-sm);
+        grid-template-columns: repeat(auto-fill, minmax(102px, 1fr));
+        gap: 8px;
     }
 
     .card {
-        min-height: 56px;
-        font-size: 0.82em;
-        padding: 6px;
+        min-height: 62px;
+        font-size: 0.85em;
+        padding: 8px 6px;
     }
 
     .cards2 {
-        gap: var(--gap-sm);
+        gap: 8px;
     }
 
     .card2 {
         min-height: 60px;
         font-size: 0.9em;
-        padding: var(--gap-sm);
+        padding: var(--gap-sm) 34px var(--gap-sm) var(--gap-sm);
     }
 
     .botoes-container {
@@ -588,7 +691,7 @@ body {
     .btn {
         max-width: none;
         width: 100%;
-        padding: 0.85em 1em;
+        padding: 0.9em 1em;
         font-size: 0.92em;
     }
 
@@ -597,13 +700,14 @@ body {
     }
 
     #lacunas p {
-        font-size: 0.95em;
+        font-size: 1em;
+        line-height: 1.9;
     }
 
     .lacuna-input {
-        min-width: 56px;
+        min-width: 60px;
         font-size: 0.85em;
-        padding: 0.2em 0.45em;
+        padding: 0.25em 0.5em;
     }
 
     .d-flex.justify-content-center.mt-4 {
@@ -620,12 +724,12 @@ body {
     }
 
     #app h1 {
-        font-size: 1.2em;
+        font-size: 1.15em;
     }
 
     .nav-tabs .nav-link {
-        padding: 9px 4px;
-        font-size: 0.72em;
+        padding: 9px 2px;
+        font-size: 0.68em;
     }
 
     .container, .container2 {
@@ -633,13 +737,13 @@ body {
     }
 
     .cards {
-        grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
         gap: 6px;
     }
 
     .card {
-        min-height: 50px;
-        font-size: 0.78em;
+        min-height: 56px;
+        font-size: 0.8em;
     }
 
     .cards2 {
@@ -652,14 +756,14 @@ body {
     }
 
     .btn {
-        padding: 0.75em 0.8em;
+        padding: 0.8em 0.8em;
         font-size: 0.88em;
     }
 
     .lacuna-input {
-        min-width: 46px;
+        min-width: 50px;
         font-size: 0.8em;
-        padding: 0.2em 0.4em;
+        padding: 0.22em 0.45em;
     }
 
     .d-flex.justify-content-center.mt-4 {

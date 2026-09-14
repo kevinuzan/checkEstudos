@@ -384,7 +384,7 @@ async function getItemData() {
                 // Lógica para destacar o minemônico na frase inicial
                 let highlightedFrase = item.frase_inicial;
                 if (item.minemonico && item.frase_inicial.includes(item.minemonico)) {
-                    const styledMinemonico = `<span style="font-size: 1.2em; color: #28a745; font-weight: bold;">${item.minemonico}</span>`;
+                    const styledMinemonico = `<span style="font-size: 1.2em; color: var(--success-color); font-weight: bold;">${item.minemonico}</span>`;
                     highlightedFrase = item.frase_inicial.replace(item.minemonico, styledMinemonico);
                 }
                 header.innerHTML = highlightedFrase; // Usa innerHTML para renderizar o span
@@ -481,15 +481,15 @@ async function getItemData() {
                     selectedCards.forEach(card => {
                         const text = card.innerText.trim();
                         if (listaPalavras.includes(text)) {
-                            card.style.backgroundColor = '#d4edda'; // Verde para correto
-                            card.style.borderColor = '#28a745';
-                            card.style.color = '#155724';
+                            card.style.backgroundColor = 'var(--feedback-success-bg)'; // Verde para correto
+                            card.style.borderColor = 'var(--feedback-success-border)';
+                            card.style.color = 'var(--feedback-success-text)';
                             card.style.fontWeight = 'bold';
                             acertos++;
                         } else {
-                            card.style.backgroundColor = '#f8d7da'; // Vermelho para incorreto
-                            card.style.borderColor = '#dc3545';
-                            card.style.color = '#721c24';
+                            card.style.backgroundColor = 'var(--feedback-error-bg)'; // Vermelho para incorreto
+                            card.style.borderColor = 'var(--feedback-error-border)';
+                            card.style.color = 'var(--feedback-error-text)';
                             card.style.fontWeight = 'bold';
                             allCorrectlySelected = false; // Encontrou uma seleção incorreta
                             erros++;
@@ -504,9 +504,9 @@ async function getItemData() {
                             // Opcionalmente, destacar as palavras corretas perdidas de forma diferente
                             const missedCard = Array.from(allCardsInContainer).find(card => card.innerText.trim() === correctWord);
                             if (missedCard) {
-                                missedCard.style.backgroundColor = '#ffeeba'; // Amarelo para correto, mas não selecionado
-                                missedCard.style.borderColor = '#ffc107';
-                                missedCard.style.color = '#856404';
+                                missedCard.style.backgroundColor = 'var(--feedback-warning-bg)'; // Amarelo para correto, mas não selecionado
+                                missedCard.style.borderColor = 'var(--feedback-warning-border)';
+                                missedCard.style.color = 'var(--feedback-warning-text)';
                                 missedCard.style.fontWeight = 'bold';
                             }
                         }
@@ -667,15 +667,15 @@ async function getItemData2() {
                         selectedCards.forEach(card => {
                             const text = card.innerText.trim();
                             if (listaPalavras.includes(text)) {
-                                card.style.backgroundColor = '#d4edda'; // Verde para correto
-                                card.style.borderColor = '#28a745';
-                                card.style.color = '#155724';
+                                card.style.backgroundColor = 'var(--feedback-success-bg)'; // Verde para correto
+                                card.style.borderColor = 'var(--feedback-success-border)';
+                                card.style.color = 'var(--feedback-success-text)';
                                 card.style.fontWeight = 'bold';
                                 acertos++;
                             } else {
-                                card.style.backgroundColor = '#f8d7da'; // Vermelho para incorreto
-                                card.style.borderColor = '#dc3545';
-                                card.style.color = '#721c24';
+                                card.style.backgroundColor = 'var(--feedback-error-bg)'; // Vermelho para incorreto
+                                card.style.borderColor = 'var(--feedback-error-border)';
+                                card.style.color = 'var(--feedback-error-text)';
                                 card.style.fontWeight = 'bold';
                                 allCorrectlySelected = false; // Encontrou uma seleção incorreta
                                 erros++;
@@ -690,9 +690,9 @@ async function getItemData2() {
                                 // Opcionalmente, destacar as palavras corretas perdidas de forma diferente
                                 const missedCard = Array.from(allCardsInContainer).find(card => card.innerText.trim() === correctWord);
                                 if (missedCard) {
-                                    missedCard.style.backgroundColor = '#ffeeba'; // Amarelo para correto, mas não selecionado
-                                    missedCard.style.borderColor = '#ffc107';
-                                    missedCard.style.color = '#856404';
+                                    missedCard.style.backgroundColor = 'var(--feedback-warning-bg)'; // Amarelo para correto, mas não selecionado
+                                    missedCard.style.borderColor = 'var(--feedback-warning-border)';
+                                    missedCard.style.color = 'var(--feedback-warning-text)';
                                     missedCard.style.fontWeight = 'bold';
                                 }
                             }
@@ -909,12 +909,14 @@ async function carregarArtigosComLacunas() {
                 const correto = normalizarTexto(input.dataset.resposta);
                 const resposta = normalizarTexto(input.value);
                 if (resposta === correto) {
-                    input.style.backgroundColor = '#d4edda';
-                    input.style.borderColor = '#28a745';
+                    input.style.backgroundColor = 'var(--feedback-success-bg)';
+                    input.style.borderColor = 'var(--feedback-success-border)';
+                    input.style.borderStyle = 'solid';
                     acertos++;
                 } else {
-                    input.style.backgroundColor = '#f8d7da';
-                    input.style.borderColor = '#dc3545';
+                    input.style.backgroundColor = 'var(--feedback-error-bg)';
+                    input.style.borderColor = 'var(--feedback-error-border)';
+                    input.style.borderStyle = 'solid';
                     erros++;
                 }
             });
@@ -937,8 +939,9 @@ async function carregarArtigosComLacunas() {
             const inputs = artigoContainer.querySelectorAll('input.lacuna-input');
             inputs.forEach(input => {
                 input.value = input.dataset.resposta;
-                input.style.backgroundColor = '#e2e3e5';
-                input.style.borderColor = '#ced4da';
+                input.style.backgroundColor = 'var(--feedback-neutro-bg)';
+                input.style.borderColor = 'var(--feedback-neutro-border)';
+                input.style.borderStyle = 'solid';
             });
         });
 
