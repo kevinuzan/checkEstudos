@@ -17,6 +17,10 @@ let itensSelecionadosEdital = new Set();
 // View ativa: "resumo", "edital" ou "estudos"
 let viewAtual = 'resumo';
 
+// Jogo escolhido na tela de seleção, aguardando a resposta do modal
+// "iniciar o cronômetro?" antes de efetivamente abrir o iframe.
+let jogoTipoPendente = null;
+
 async function iniciar() {
     renderizarSeletorTema();
     renderizarSeletorFundo();
@@ -658,16 +662,55 @@ async function trocarView(nome) {
 
     if (nome === 'resumo') await carregarResumo();
     if (nome === 'estudos') await carregarPainelEstudos();
-    if (nome === 'jogo') { carregarJogo(); await carregarPontuacaoJogo(); }
+    if (nome === 'jogo') { mostrarSelecaoJogo(); await carregarPontuacaoJogo(); }
 }
 
-// Carrega o iframe do jogo apenas na primeira visita à aba, evitando
-// baixar Bootstrap/FontAwesome do "Estuda TRT" antes de serem necessários.
-function carregarJogo() {
-    const iframe = document.getElementById('jogo-iframe');
-    if (iframe && !iframe.getAttribute('src')) {
-        iframe.setAttribute('src', '/jogo/');
+// ==================================================================
+// SELEÇÃO DE JOGO: ao entrar na aba "Jogo" a pessoa vê só os 3 cartões
+// pra escolher; ao escolher um, perguntamos se quer contar o tempo como
+// sessão de estudo e então abrimos SÓ aquele jogo (sem ver os outros 2).
+// ==================================================================
+
+function mostrarSelecaoJogo() {
+    const selecao = document.getElementById('jogo-selecao-bloco');
+    const frameWrap = document.getElementById('jogo-frame-wrap');
+    const btnVoltar = document.getElementById('btn-voltar-jogo');
+    if (selecao) selecao.style.display = 'grid';
+    if (frameWrap) frameWrap.style.display = 'none';
+    if (btnVoltar) btnVoltar.style.display = 'none';
+}
+
+function selecionarJogo(tipo) {
+    jogoTipoPendente = tipo;
+    document.getElementById('modal-cronometro-jogo-overlay').style.display = 'flex';
+}
+
+function confirmarCronometroJogo(iniciar) {
+    document.getElementById('modal-cronometro-jogo-overlay').style.display = 'none';
+    const tipo = jogoTipoPendente;
+    jogoTipoPendente = null;
+    if (!tipo) return;
+
+    if (iniciar && cronometroEstado.status === 'parado') {
+        iniciarCronometro();
     }
+    abrirJogo(tipo);
+}
+
+function abrirJogo(tipo) {
+    const iframe = document.getElementById('jogo-iframe');
+    const selecao = document.getElementById('jogo-selecao-bloco');
+    const frameWrap = document.getElementById('jogo-frame-wrap');
+    const btnVoltar = document.getElementById('btn-voltar-jogo');
+    if (iframe) iframe.setAttribute('src', `/jogo/?jogo=${tipo}`);
+    if (selecao) selecao.style.display = 'none';
+    if (frameWrap) frameWrap.style.display = 'block';
+    if (btnVoltar) btnVoltar.style.display = 'inline-flex';
+}
+
+function voltarSelecaoJogo() {
+    mostrarSelecaoJogo();
+    carregarPontuacaoJogo();
 }
 
 // ==================================================================
@@ -697,6 +740,16 @@ async function carregarPontuacaoJogo() {
         return `<div>${NOMES_JOGO_CHECKESTUDOS[tipo]}: ✅ ${d.total.acertos} / ❌ ${d.total.erros} total &middot; hoje: ✅ ${d.hoje.acertos} / ❌ ${d.hoje.erros}</div>`;
     }).join('');
 }
+
+// O jogo (dentro do iframe) avisa por postMessage sempre que uma rodada é
+// registrada, pra esse resumo — mostrado uma única vez, aqui fora do
+// iframe — atualizar na hora, sem esperar o usuário trocar de aba.
+window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (event.data && event.data.tipo === 'jogo-pontuacao-atualizada') {
+        carregarPontuacaoJogo();
+    }
+});
 
 // Abre o modal de finalizar sessão já com o tipo "Jogo" e o desempenho
 // de HOJE (somado entre os 3 sub-jogos) preenchido, para o usuário só
@@ -899,6 +952,7 @@ function calcularFocoTotalPomodoroMs() {
 function atualizarDisplayCronometro() {
     const display = document.getElementById('timer-display');
     const cicloInfo = document.getElementById('pomodoro-ciclo-info');
+    const bolhaTempo = document.getElementById('timer-bolha-tempo');
     if (!display) return;
 
     if (obterModoCronometro() === 'pomodoro' && pomodoroEstado.fase) {
@@ -912,6 +966,8 @@ function atualizarDisplayCronometro() {
         display.textContent = formatarHMS(calcularElapsedMs());
         if (cicloInfo) cicloInfo.style.display = 'none';
     }
+
+    if (bolhaTempo) bolhaTempo.textContent = display.textContent;
 }
 
 function atualizarBotoesCronometro() {
@@ -921,6 +977,8 @@ function atualizarBotoesCronometro() {
     const btnFinalizar = document.getElementById('btn-timer-finalizar');
     const label = document.getElementById('timer-status-label');
     const card = document.getElementById('timer-card');
+    const bolha = document.getElementById('timer-bolha');
+    const bolhaIcone = document.getElementById('timer-bolha-icone');
     if (!btnIniciar) return;
 
     const modo = obterModoCronometro();
@@ -942,6 +1000,13 @@ function atualizarBotoesCronometro() {
 
     if (card) card.classList.toggle('timer-rodando', cronometroEstado.status === 'rodando');
     if (card) card.classList.toggle('timer-pausado', cronometroEstado.status === 'pausado');
+    if (bolha) bolha.classList.toggle('timer-rodando', cronometroEstado.status === 'rodando');
+    if (bolha) bolha.classList.toggle('timer-pausado', cronometroEstado.status === 'pausado');
+    if (bolhaIcone) {
+        bolhaIcone.textContent = cronometroEstado.status === 'rodando' ? (emPomodoro && pomodoroEstado.fase === 'foco' ? '🍅' : '▶')
+            : cronometroEstado.status === 'pausado' ? '⏸'
+            : '⏱';
+    }
 
     if (label) {
         if (emPomodoro && pomodoroEstado.fase) {
@@ -956,6 +1021,14 @@ function atualizarBotoesCronometro() {
     }
 
     renderizarConfigPomodoroInputs();
+}
+
+// Abre/fecha o painel completo do cronômetro (a bolha flutuante fica sempre
+// visível mostrando o tempo; clicar nela revela os controles normais).
+function alternarPainelTimer() {
+    const card = document.getElementById('timer-card');
+    if (!card) return;
+    card.style.display = card.style.display === 'flex' ? 'none' : 'flex';
 }
 
 function iniciarIntervaloCronometro() {
@@ -1263,6 +1336,11 @@ function construirFimAPartirDoInput() {
 function abrirModalSessao() {
     // Congela o cronômetro enquanto o usuário preenche os detalhes da sessão
     if (cronometroEstado.status === 'rodando') pausarCronometro();
+
+    // Fecha o painel flutuante do cronômetro (se estiver aberto) — não faz
+    // sentido os dois abertos ao mesmo tempo.
+    const timerCard = document.getElementById('timer-card');
+    if (timerCard) timerCard.style.display = 'none';
 
     idSessaoEmEdicao = null;
     topicosExtrasSessaoEmEdicao = [];

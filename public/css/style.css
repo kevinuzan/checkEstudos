@@ -519,14 +519,65 @@ h1, h2, h3 { font-family: inherit; }
 /* ============================================================ */
 /* CRONÔMETRO DE ESTUDO                                          */
 /* ============================================================ */
+/* Fica como uma bolha flutuante pequena no canto da tela (não ocupa
+   espaço fixo no topo da página); clicar nela abre o painel completo
+   com os controles (modo, config do pomodoro, iniciar/pausar/finalizar). */
+
+.timer-bolha {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 1040;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 55%, var(--primary-dark) 100%);
+    color: white;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 16px;
+    box-shadow: var(--shadow-lg);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.3s ease, transform 0.15s ease;
+}
+
+.timer-bolha:hover {
+    transform: translateY(-1px);
+}
+
+.timer-bolha.timer-rodando {
+    background: linear-gradient(135deg, #14532d 0%, var(--success) 55%, #15803d 100%);
+}
+
+.timer-bolha.timer-pausado {
+    background: linear-gradient(135deg, #78350f 0%, var(--warning) 55%, #b45309 100%);
+}
+
+.timer-bolha-icone {
+    font-size: 15px;
+}
+
+.timer-bolha-tempo {
+    font-family: 'Consolas', 'SF Mono', monospace;
+    font-weight: 700;
+    font-size: 13.5px;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+}
 
 .timer-card {
+    position: fixed;
+    right: 18px;
+    bottom: 76px;
+    z-index: 1041;
+    width: min(320px, calc(100vw - 32px));
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
     background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 55%, var(--primary-dark) 100%);
     border-radius: var(--radius-lg);
     padding: 26px 22px;
-    margin-bottom: 20px;
     box-shadow: var(--shadow-lg);
-    display: flex;
     flex-direction: column;
     align-items: center;
     gap: 16px;
@@ -540,6 +591,34 @@ h1, h2, h3 { font-family: inherit; }
 
 .timer-card.timer-pausado {
     background: linear-gradient(135deg, #78350f 0%, var(--warning) 55%, #b45309 100%);
+}
+
+.timer-card-fechar {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    background: rgba(255, 255, 255, 0.18);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.timer-card-fechar:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+@media (max-width: 600px) {
+    .timer-card {
+        right: 16px;
+        left: 16px;
+        width: auto;
+        bottom: 72px;
+    }
 }
 
 .timer-label {
@@ -1224,7 +1303,7 @@ input[type="checkbox"] {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    background: #fbfcfe;
+    background: var(--surface-muted);
 }
 
 .sessao-topicos-vazio {
@@ -1281,7 +1360,7 @@ input[type="checkbox"] {
 }
 
 .campo-extra {
-    background: #f8fafc;
+    background: var(--surface-muted);
     border-radius: 10px;
     padding: 12px 14px;
     display: flex;
@@ -2199,6 +2278,70 @@ input[type="checkbox"] {
     width: 100%;
     height: 100%;
     border: 0;
+}
+
+/* Tela de seleção de jogo: a pessoa escolhe 1 dos 3 jogos e vai direto pra
+   ele, sem ver os outros dois "acumulados" na mesma tela. */
+.jogo-selecao-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    padding: 4px 2px 2px;
+}
+
+.jogo-selecao-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
+    background: var(--card);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 22px 14px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.jogo-selecao-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+.jogo-selecao-card .jogo-seletor-icone {
+    font-size: 2.1rem;
+    line-height: 1;
+}
+
+.jogo-selecao-card .jogo-seletor-nome {
+    font-weight: 800;
+    font-size: 14.5px;
+    color: var(--text);
+}
+
+.jogo-selecao-card .jogo-seletor-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+@media (max-width: 700px) {
+    .jogo-selecao-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+.modal-confirm-cronometro {
+    max-width: 380px;
+    text-align: center;
+}
+
+.modal-confirm-texto {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin: 4px 0 4px;
 }
 
 @media (min-width: 901px) {

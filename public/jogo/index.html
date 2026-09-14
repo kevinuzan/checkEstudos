@@ -27,15 +27,16 @@
     </script>
 </head>
 
-<body onload="getItemData(), getItemData2(), carregarArtigosComLacunas(), iniciarPlacar()">
+<body onload="getItemData(), getItemData2(), carregarArtigosComLacunas(), aplicarJogoDireto()">
     <div id="app" class="container mt-2 mb-2 p-3 shadow-sm rounded-lg">
-        <div class="placar-barra" id="placar-barra">
-            <span class="placar-texto" id="placar-texto">Carregando pontuação...</span>
-        </div>
+        <!-- O placar/pontuação já é mostrado uma única vez, na página principal
+             (fora deste iframe) — não repetimos aqui para não duplicar a
+             mesma informação em dois lugares da tela. -->
 
         <!-- Seletor de jogo: 3 opções bem distintas (ícone + nome + do que se
              trata), em vez de abas finas — pra ficar claro que são 3 jogos
-             separados, não um conteúdo só "acumulado". -->
+             separados, não um conteúdo só "acumulado". Fica oculto quando a
+             página é aberta já direto num jogo específico (?jogo=...). -->
         <ul class="nav jogo-seletor" id="myTab" role="tablist">
             <li class="nav-item" role="presentation">
                 <button class="nav-link active" id="mnemonicos-tab" data-bs-toggle="tab" data-bs-target="#mnemonicos"

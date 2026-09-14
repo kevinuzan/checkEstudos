@@ -1,37 +1,25 @@
 // ==================================================================
-// PLACAR (pontuação persistida no servidor) e FEEDBACK INLINE
+// SELEÇÃO DIRETA DE JOGO (?jogo=mnemonicos|competencias|lacunas)
 // ==================================================================
-// Cada sub-jogo (mnemônicos, competências, lacunas) tem sua própria
-// pontuação, mostrada separadamente — nunca somada com as demais. Tudo é
-// salvo no banco a cada rodada e nunca é zerado: o placar sempre reflete
-// o desempenho acumulado e o de hoje.
+// Quando a página principal já sabe qual jogo o usuário escolheu, ela abre
+// este iframe apontando pra um jogo específico via querystring — nesse caso
+// escondemos o seletor com os 3 jogos e deixamos só o escolhido visível,
+// pra não confundir quem já decidiu o que quer praticar.
+const JOGOS_VALIDOS = ['mnemonicos', 'competencias', 'lacunas'];
 
-const NOMES_JOGO = { mnemonicos: 'Mnemônicos', competencias: 'Competências', lacunas: 'Lacunas' };
+function aplicarJogoDireto() {
+    const params = new URLSearchParams(window.location.search);
+    const jogo = params.get('jogo');
+    if (!JOGOS_VALIDOS.includes(jogo)) return;
 
-async function obterPlacarPorJogo() {
-    try {
-        const res = await fetch('/jogo/api/pontuacao');
-        return await res.json();
-    } catch (err) {
-        console.error('Erro ao carregar placar:', err);
-        return {};
-    }
-}
+    const seletor = document.getElementById('myTab');
+    if (seletor) seletor.style.display = 'none';
 
-async function atualizarPlacarTela() {
-    const dados = await obterPlacarPorJogo();
-    const el = document.getElementById('placar-texto');
-    if (!el) return;
-
-    const linhas = Object.keys(NOMES_JOGO).map(tipo => {
-        const d = dados[tipo] || { total: { acertos: 0, erros: 0 }, hoje: { acertos: 0, erros: 0 } };
-        return `${NOMES_JOGO[tipo]}: ✅ ${d.total.acertos} / ❌ ${d.total.erros} total (hoje: ✅ ${d.hoje.acertos} / ❌ ${d.hoje.erros})`;
+    document.querySelectorAll('#tab-content-jogo .tab-pane').forEach(pane => {
+        const ativo = pane.id === jogo;
+        pane.classList.toggle('show', ativo);
+        pane.classList.toggle('active', ativo);
     });
-    el.innerHTML = linhas.join('<br>');
-}
-
-function iniciarPlacar() {
-    atualizarPlacarTela();
 }
 
 // Recebe o tema escolhido na tela principal do checkEstudos enquanto este
@@ -57,7 +45,9 @@ async function registrarPontuacao(tipo, acertos, erros) {
     } catch (err) {
         console.error('Erro ao registrar pontuação:', err);
     }
-    atualizarPlacarTela();
+    // O placar em si só é mostrado na página principal (fora do iframe);
+    // avisamos ela aqui para atualizar o resumo na hora, sem esperar o
+    // usuário sair e voltar pra aba "Jogo".
     if (window.parent && window.parent !== window) {
         window.parent.postMessage({ tipo: 'jogo-pontuacao-atualizada' }, window.location.origin);
     }
