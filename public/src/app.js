@@ -1841,8 +1841,57 @@ function abrirSeletorCorMateria(materia) {
     input.click();
 }
 
+// Escopo do Resumo: "geral" (todos os planos/editais) ou o nome de um plano
+// específico. Independente do "planoAtual" da barra lateral — esse seletor
+// vive só na página de Resumo e não afeta Edital/Estudos/registro de sessão.
+let resumoEscopo = localStorage.getItem('resumo_escopo') || 'geral';
+
+function renderizarSeletorEscopoResumo() {
+    const row = document.getElementById('resumo-escopo-row');
+    if (!row) return;
+
+    // Se o plano salvo como escopo não existe mais, volta pro geral.
+    if (resumoEscopo !== 'geral' && !planosDisponiveis.some(p => p.nome === resumoEscopo)) {
+        resumoEscopo = 'geral';
+        localStorage.setItem('resumo_escopo', resumoEscopo);
+    }
+
+    const pills = [`
+        <button type="button" class="escopo-pill${resumoEscopo === 'geral' ? ' ativo' : ''}" onclick="definirEscopoResumo('geral')">
+            <span class="escopo-pill-icone">🌐</span> Geral
+        </button>
+    `].concat(planosDisponiveis.map(plano => `
+        <button type="button" class="escopo-pill${resumoEscopo === plano.nome ? ' ativo' : ''}" onclick="definirEscopoResumo('${plano.nome.replace(/'/g, "\\'")}')">
+            <span class="escopo-pill-icone">📘</span> ${plano.nome}
+        </button>
+    `));
+
+    row.innerHTML = pills.join('');
+}
+
+async function definirEscopoResumo(escopo) {
+    if (escopo === resumoEscopo) return;
+    resumoEscopo = escopo;
+    localStorage.setItem('resumo_escopo', resumoEscopo);
+    await carregarResumo();
+}
+
+async function carregarSessoesResumo() {
+    try {
+        const url = resumoEscopo === 'geral'
+            ? `/api/sessoes?limite=3000`
+            : `/api/sessoes?plano=${encodeURIComponent(resumoEscopo)}&limite=3000`;
+        const res = await fetch(url);
+        sessoesCache = await res.json();
+    } catch (err) {
+        console.error("Erro ao carregar sessões do resumo:", err);
+        sessoesCache = [];
+    }
+}
+
 async function carregarResumo() {
-    await Promise.all([carregarSessoesPlanoAtual(), carregarMateriasCores(), atualizarStreak()]);
+    renderizarSeletorEscopoResumo();
+    await Promise.all([carregarSessoesResumo(), carregarMateriasCores(), atualizarStreak()]);
     renderizarDashboardResumo();
     renderizarGraficoTrintaDias();
     renderizarGraficoMateriasEmpilhado();
