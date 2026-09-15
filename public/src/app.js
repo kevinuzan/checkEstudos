@@ -2279,9 +2279,9 @@ const DEFINICOES_CONQUISTAS = [
     { id: 'horas-100', emoji: '⏱️', nome: '100 Horas Estudadas', desc: '100h de estudo acumuladas', meta: s => s.totalHoras >= 100 },
     { id: 'edital-10', emoji: '✅', nome: '10% do Edital', desc: 'Primeiros 10% do plano atual concluídos', meta: s => s.percEdital >= 10 },
     { id: 'edital-25', emoji: '✅', nome: '25% do Edital', desc: '1/4 do plano atual concluído', meta: s => s.percEdital >= 25 },
-    { id: 'edital-50', emoji: '✅', nome: 'Edital na Metade', desc: 'Metade do plano atual concluído', meta: s => s.percEdital >= 50 },
+    { id: 'edital-50', emoji: '✅', nome: '50% do Edital', desc: 'Metade do plano atual concluído', meta: s => s.percEdital >= 50 },
     { id: 'edital-75', emoji: '✅', nome: '75% do Edital', desc: '3/4 do plano atual concluído', meta: s => s.percEdital >= 75 },
-    { id: 'edital-100', emoji: '🏆', nome: 'Edital Completo', desc: 'Plano atual 100% concluído', meta: s => s.percEdital >= 100 }
+    { id: 'edital-100', emoji: '🏆', nome: '100% do Edital', desc: 'Plano atual 100% concluído', meta: s => s.percEdital >= 100 }
 ];
 
 function calcularEstatisticasConquistas() {
