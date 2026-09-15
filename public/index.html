@@ -334,11 +334,23 @@
             <!-- ===================== VIEW: ESTATÍSTICAS ===================== -->
             <div id="view-estatisticas" style="display:none;">
 
+                <div class="estat-filtro-row" id="estat-filtro-row">
+                    <button type="button" class="escopo-pill" data-filtro="dia" onclick="definirFiltroEstatisticas('dia')">Dia</button>
+                    <button type="button" class="escopo-pill" data-filtro="semana" onclick="definirFiltroEstatisticas('semana')">Semana</button>
+                    <button type="button" class="escopo-pill" data-filtro="mes" onclick="definirFiltroEstatisticas('mes')">Mês</button>
+                    <button type="button" class="escopo-pill" data-filtro="intervalo" onclick="definirFiltroEstatisticas('intervalo')">Intervalo</button>
+                    <div class="estat-filtro-intervalo" id="estat-filtro-intervalo" style="display:none;">
+                        <input type="date" id="estat-intervalo-inicio" onchange="atualizarIntervaloEstatisticas()">
+                        <span>até</span>
+                        <input type="date" id="estat-intervalo-fim" onchange="atualizarIntervaloEstatisticas()">
+                    </div>
+                </div>
+
                 <section class="painel-bloco painel-bloco-duas-colunas">
                     <div class="painel-bloco-coluna">
                         <div class="painel-bloco-header">
                             <h2>Tempo por matéria</h2>
-                            <span class="painel-bloco-sub">Distribuição do tempo estudado, geral</span>
+                            <span class="painel-bloco-sub" id="estat-materias-sub">Distribuição do tempo estudado</span>
                         </div>
                         <div class="chart-card chart-card-canvas">
                             <canvas id="chart-estat-materias"></canvas>
@@ -347,7 +359,7 @@
                     <div class="painel-bloco-coluna">
                         <div class="painel-bloco-header">
                             <h2>Desempenho por jogo</h2>
-                            <span class="painel-bloco-sub">Acertos x erros, em todos os jogos</span>
+                            <span class="painel-bloco-sub">Acertos x erros — total geral, sem filtro de data</span>
                         </div>
                         <div class="chart-card chart-card-canvas">
                             <canvas id="chart-estat-jogos"></canvas>
@@ -359,7 +371,7 @@
                     <div class="painel-bloco-coluna">
                         <div class="painel-bloco-header">
                             <h2>Progresso por plano de estudos</h2>
-                            <span class="painel-bloco-sub">Questões resolvidas e % de acerto por edital</span>
+                            <span class="painel-bloco-sub" id="estat-planos-sub">Questões resolvidas e % de acerto por edital</span>
                         </div>
                         <div class="chart-card chart-card-canvas">
                             <canvas id="chart-estat-planos"></canvas>
@@ -368,7 +380,7 @@
                     <div class="painel-bloco-coluna">
                         <div class="painel-bloco-header">
                             <h2>Evolução de questões resolvidas</h2>
-                            <span class="painel-bloco-sub">Últimas 12 semanas</span>
+                            <span class="painel-bloco-sub" id="estat-evolucao-sub">Últimos 30 dias</span>
                         </div>
                         <div class="chart-card chart-card-canvas">
                             <canvas id="chart-estat-evolucao"></canvas>

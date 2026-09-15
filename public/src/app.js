@@ -785,6 +785,12 @@ function mostrarSelecaoJogo() {
 }
 
 function selecionarJogo(tipo) {
+    // Se o cronômetro já está rodando (ou pausado, no meio de uma sessão),
+    // não faz sentido perguntar se quer iniciar — abre o jogo direto.
+    if (cronometroEstado.status !== 'parado') {
+        abrirJogo(tipo);
+        return;
+    }
     jogoTipoPendente = tipo;
     document.getElementById('modal-cronometro-jogo-overlay').style.display = 'flex';
 }
@@ -921,6 +927,15 @@ async function registrarSessaoDoJogo() {
 let graficosEstatisticas = {}; // id curto -> instância Chart.js ativa (destruída antes de redesenhar)
 let sessoesEstatisticasCache = []; // todas as sessões, de todos os planos
 
+// Filtro de data da aba Estatísticas: "dia" (hoje), "semana" (últimos 7
+// dias), "mes" (últimos 30 dias) ou "intervalo" (datas escolhidas pela
+// pessoa). Persistido, pra manter a escolha entre visitas à aba.
+let filtroEstatisticasAtivo = localStorage.getItem('estat_filtro') || 'mes';
+let filtroEstatisticasIntervalo = {
+    inicio: localStorage.getItem('estat_intervalo_inicio') || '',
+    fim: localStorage.getItem('estat_intervalo_fim') || ''
+};
+
 // Lê uma cor do tema atual (CSS custom property), pra os gráficos
 // acompanharem tema claro/escuro e as cores de fundo escolhidas.
 function corCssVar(nome, fallback) {
@@ -935,6 +950,101 @@ function destruirGraficoEstatistica(id) {
     }
 }
 
+// Calcula o intervalo [inicio, fim] (objetos Date) de acordo com o filtro
+// ativo. "Semana" e "Mês" são janelas móveis (últimos 7/30 dias, incluindo
+// hoje), no mesmo espírito do gráfico "Últimos 30 dias" do Resumo.
+function obterIntervaloFiltroEstatisticas() {
+    const agora = new Date();
+    const fimPadrao = new Date(agora);
+    fimPadrao.setHours(23, 59, 59, 999);
+
+    if (filtroEstatisticasAtivo === 'dia') {
+        const inicio = new Date(agora);
+        inicio.setHours(0, 0, 0, 0);
+        return { inicio, fim: fimPadrao };
+    }
+    if (filtroEstatisticasAtivo === 'semana') {
+        const inicio = new Date(agora);
+        inicio.setDate(inicio.getDate() - 6);
+        inicio.setHours(0, 0, 0, 0);
+        return { inicio, fim: fimPadrao };
+    }
+    if (filtroEstatisticasAtivo === 'intervalo') {
+        const inicio = filtroEstatisticasIntervalo.inicio
+            ? new Date(`${filtroEstatisticasIntervalo.inicio}T00:00:00`)
+            : new Date(agora.getTime() - 29 * 24 * 60 * 60 * 1000);
+        const fim = filtroEstatisticasIntervalo.fim
+            ? new Date(`${filtroEstatisticasIntervalo.fim}T23:59:59`)
+            : fimPadrao;
+        return { inicio, fim };
+    }
+    // 'mes' (padrão)
+    const inicio = new Date(agora);
+    inicio.setDate(inicio.getDate() - 29);
+    inicio.setHours(0, 0, 0, 0);
+    return { inicio, fim: fimPadrao };
+}
+
+// Sessões (de todos os planos) que caem dentro do intervalo escolhido —
+// usada pelos gráficos de matéria e de plano de estudos.
+function sessoesEstatisticasFiltradas() {
+    const { inicio, fim } = obterIntervaloFiltroEstatisticas();
+    return sessoesEstatisticasCache.filter(s => {
+        const d = new Date(s.fim);
+        return d >= inicio && d <= fim;
+    });
+}
+
+function textoPeriodoFiltroEstatisticas() {
+    const { inicio, fim } = obterIntervaloFiltroEstatisticas();
+    const fmt = (d) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    if (filtroEstatisticasAtivo === 'dia') return 'Hoje';
+    if (filtroEstatisticasAtivo === 'semana') return 'Últimos 7 dias';
+    if (filtroEstatisticasAtivo === 'mes') return 'Últimos 30 dias';
+    return `De ${fmt(inicio)} até ${fmt(fim)}`;
+}
+
+// Sincroniza os pills e os campos de data com o filtro salvo — chamada ao
+// abrir a aba (os botões existem na primeira renderização do HTML, então
+// não precisam ser recriados via JS, só marcados como ativo/inativo).
+function inicializarFiltroEstatisticasUI() {
+    document.querySelectorAll('#estat-filtro-row .escopo-pill[data-filtro]').forEach(btn => {
+        btn.classList.toggle('ativo', btn.dataset.filtro === filtroEstatisticasAtivo);
+    });
+    const intervaloBox = document.getElementById('estat-filtro-intervalo');
+    if (intervaloBox) intervaloBox.style.display = filtroEstatisticasAtivo === 'intervalo' ? 'flex' : 'none';
+    const inicioInput = document.getElementById('estat-intervalo-inicio');
+    const fimInput = document.getElementById('estat-intervalo-fim');
+    if (inicioInput) inicioInput.value = filtroEstatisticasIntervalo.inicio || '';
+    if (fimInput) fimInput.value = filtroEstatisticasIntervalo.fim || '';
+}
+
+function definirFiltroEstatisticas(filtro) {
+    filtroEstatisticasAtivo = filtro;
+    localStorage.setItem('estat_filtro', filtro);
+    inicializarFiltroEstatisticasUI();
+    renderizarGraficosComFiltroEstatisticas();
+}
+
+function atualizarIntervaloEstatisticas() {
+    const inicioInput = document.getElementById('estat-intervalo-inicio');
+    const fimInput = document.getElementById('estat-intervalo-fim');
+    filtroEstatisticasIntervalo.inicio = inicioInput ? inicioInput.value : '';
+    filtroEstatisticasIntervalo.fim = fimInput ? fimInput.value : '';
+    localStorage.setItem('estat_intervalo_inicio', filtroEstatisticasIntervalo.inicio);
+    localStorage.setItem('estat_intervalo_fim', filtroEstatisticasIntervalo.fim);
+    if (filtroEstatisticasAtivo === 'intervalo') renderizarGraficosComFiltroEstatisticas();
+}
+
+// Os gráficos afetados pelo filtro de data (matéria, plano de estudos e
+// evolução) — "Desempenho por jogo" fica de fora porque a pontuação dos
+// jogos é um total acumulado, sem data por partida.
+function renderizarGraficosComFiltroEstatisticas() {
+    renderizarGraficoEstatMaterias();
+    renderizarGraficoEstatPlanos();
+    renderizarGraficoEstatEvolucao();
+}
+
 async function carregarEstatisticas() {
     try {
         const [resSessoes, dadosJogos] = await Promise.all([
@@ -947,6 +1057,7 @@ async function carregarEstatisticas() {
         const vazio = document.getElementById('estat-vazio');
         if (vazio) vazio.style.display = sessoesEstatisticasCache.length > 0 ? 'none' : 'block';
 
+        inicializarFiltroEstatisticasUI();
         renderizarGraficoEstatMaterias();
         renderizarGraficoEstatJogos(dadosJogos);
         renderizarGraficoEstatPlanos();
@@ -963,8 +1074,11 @@ function renderizarGraficoEstatMaterias() {
     if (!canvas || typeof Chart === 'undefined') return;
     destruirGraficoEstatistica('materias');
 
+    const subEl = document.getElementById('estat-materias-sub');
+    if (subEl) subEl.textContent = `Distribuição do tempo estudado — ${textoPeriodoFiltroEstatisticas()}`;
+
     const porMateria = {};
-    sessoesEstatisticasCache.forEach(s => {
+    sessoesEstatisticasFiltradas().forEach(s => {
         const partes = distribuirSegundosPorMateria(s);
         Object.keys(partes).forEach(m => { porMateria[m] = (porMateria[m] || 0) + partes[m]; });
     });
@@ -1042,10 +1156,13 @@ function renderizarGraficoEstatPlanos() {
     if (!canvas || typeof Chart === 'undefined') return;
     destruirGraficoEstatistica('planos');
 
+    const subEl = document.getElementById('estat-planos-sub');
+    if (subEl) subEl.textContent = `Questões resolvidas e % de acerto por edital — ${textoPeriodoFiltroEstatisticas()}`;
+
     const nomesPlanos = planosDisponiveis.map(p => p.nome);
     const porPlano = {};
     nomesPlanos.forEach(nome => { porPlano[nome] = { acertos: 0, erros: 0 }; });
-    sessoesEstatisticasCache.forEach(s => {
+    sessoesEstatisticasFiltradas().forEach(s => {
         if (!s.plano || !(s.plano in porPlano)) return;
         porPlano[s.plano].acertos += s.acertos || 0;
         porPlano[s.plano].erros += s.erros || 0;
@@ -1095,31 +1212,67 @@ function renderizarGraficoEstatPlanos() {
     });
 }
 
-// Barras + linha: questões resolvidas e % de acerto, semana a semana, nas
-// últimas 12 semanas — pra acompanhar a evolução do desempenho ao longo
-// do tempo (independe do plano/edital).
+// Monta os "baldes" (buckets) de tempo pra distribuir as sessões no gráfico
+// de evolução, adaptando o agrupamento ao tamanho do período escolhido no
+// filtro: um dia só vira horas, um intervalo curto vira dias, um intervalo
+// longo vira semanas (senão o gráfico fica com barras demais pra caber).
+function gerarBucketsEvolucaoEstatisticas(inicio, fim) {
+    const umDiaMs = 24 * 60 * 60 * 1000;
+    const spanDias = (fim - inicio) / umDiaMs;
+    const buckets = [];
+
+    if (spanDias <= 1.5) {
+        for (let h = 0; h < 24; h++) {
+            const ini = new Date(inicio);
+            ini.setHours(h, 0, 0, 0);
+            const fimH = new Date(ini.getTime() + 60 * 60 * 1000);
+            buckets.push({ inicio: ini, fim: fimH, label: `${String(h).padStart(2, '0')}h`, acertos: 0, erros: 0 });
+        }
+        return buckets;
+    }
+
+    if (spanDias <= 60) {
+        const totalDias = Math.ceil(spanDias) + 1;
+        for (let i = 0; i < totalDias; i++) {
+            const ini = new Date(inicio.getTime() + i * umDiaMs);
+            ini.setHours(0, 0, 0, 0);
+            const fimD = new Date(ini.getTime() + umDiaMs);
+            buckets.push({ inicio: ini, fim: fimD, label: ini.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }), acertos: 0, erros: 0 });
+        }
+        return buckets;
+    }
+
+    const totalSemanas = Math.ceil(spanDias / 7) + 1;
+    for (let i = 0; i < totalSemanas; i++) {
+        const ini = new Date(inicio.getTime() + i * 7 * umDiaMs);
+        ini.setHours(0, 0, 0, 0);
+        const fimS = new Date(ini.getTime() + 7 * umDiaMs);
+        buckets.push({ inicio: ini, fim: fimS, label: ini.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }), acertos: 0, erros: 0 });
+    }
+    return buckets;
+}
+
+// Barras + linha: questões resolvidas e % de acerto ao longo do período
+// escolhido no filtro de data — pra acompanhar a evolução do desempenho
+// (independe do plano/edital).
 function renderizarGraficoEstatEvolucao() {
     const canvas = document.getElementById('chart-estat-evolucao');
     if (!canvas || typeof Chart === 'undefined') return;
     destruirGraficoEstatistica('evolucao');
 
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    const inicioSemanaAtual = new Date(hoje.getTime() - hoje.getDay() * 24 * 60 * 60 * 1000);
+    const subEl = document.getElementById('estat-evolucao-sub');
+    if (subEl) subEl.textContent = textoPeriodoFiltroEstatisticas();
 
-    const semanas = [];
-    for (let i = 11; i >= 0; i--) {
-        const inicio = new Date(inicioSemanaAtual.getTime() - i * 7 * 24 * 60 * 60 * 1000);
-        const fim = new Date(inicio.getTime() + 7 * 24 * 60 * 60 * 1000);
-        semanas.push({ inicio, fim, acertos: 0, erros: 0 });
-    }
+    const { inicio, fim } = obterIntervaloFiltroEstatisticas();
+    const buckets = gerarBucketsEvolucaoEstatisticas(inicio, fim);
 
     sessoesEstatisticasCache.forEach(s => {
         const dataFim = new Date(s.fim);
-        const semana = semanas.find(sem => dataFim >= sem.inicio && dataFim < sem.fim);
-        if (!semana) return;
-        semana.acertos += s.acertos || 0;
-        semana.erros += s.erros || 0;
+        if (dataFim < inicio || dataFim > fim) return;
+        const bucket = buckets.find(b => dataFim >= b.inicio && dataFim < b.fim);
+        if (!bucket) return;
+        bucket.acertos += s.acertos || 0;
+        bucket.erros += s.erros || 0;
     });
 
     const corTexto = corCssVar('--text-muted', '#64748b');
@@ -1128,12 +1281,12 @@ function renderizarGraficoEstatEvolucao() {
 
     graficosEstatisticas.evolucao = new Chart(canvas, {
         data: {
-            labels: semanas.map(s => s.inicio.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })),
+            labels: buckets.map(b => b.label),
             datasets: [
                 {
                     type: 'bar',
                     label: 'Questões resolvidas',
-                    data: semanas.map(s => s.acertos + s.erros),
+                    data: buckets.map(b => b.acertos + b.erros),
                     backgroundColor: corPrimaria,
                     borderRadius: 3,
                     yAxisID: 'y'
@@ -1141,9 +1294,9 @@ function renderizarGraficoEstatEvolucao() {
                 {
                     type: 'line',
                     label: '% de acerto',
-                    data: semanas.map(s => {
-                        const total = s.acertos + s.erros;
-                        return total > 0 ? Math.round((s.acertos / total) * 100) : null;
+                    data: buckets.map(b => {
+                        const total = b.acertos + b.erros;
+                        return total > 0 ? Math.round((b.acertos / total) * 100) : null;
                     }),
                     borderColor: '#f59e0b',
                     backgroundColor: '#f59e0b',

@@ -327,6 +327,38 @@ h1, h2, h3 { font-family: inherit; }
 }
 
 /* ============================================================ */
+/* FILTRO DE DATA (aba Estatísticas): Dia / Semana / Mês / Intervalo */
+/* ============================================================ */
+
+.estat-filtro-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.estat-filtro-intervalo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 12.5px;
+    color: var(--text-muted);
+}
+
+.estat-filtro-intervalo input[type="date"] {
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px 8px;
+    font-size: 12.5px;
+    font-family: inherit;
+    max-width: 150px;
+}
+
+/* ============================================================ */
 /* SELETOR DE TEMA (cor de destaque + claro/escuro)              */
 /* ============================================================ */
 
@@ -2328,6 +2360,29 @@ input[type="checkbox"] {
 
     .topico-indicador-barra-fundo {
         display: none;
+    }
+}
+
+/* No celular (até 900px, antes da barra lateral), o menu de abas fica numa
+   fileira só: com 7 abas ("Resumo"..."Config.") isso não cabe na largura da
+   tela usando flex:1 pra cada botão (o texto fica espremido/cortado e a
+   fileira acaba passando do limite). A partir daqui a fileira vira scroll
+   horizontal, com cada aba no tamanho do próprio conteúdo. */
+@media (max-width: 900px) {
+    .view-tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .view-tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .view-tab {
+        flex: 0 0 auto;
+        white-space: nowrap;
     }
 }
 
