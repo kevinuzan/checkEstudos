@@ -2634,6 +2634,8 @@ function renderizarDashboardResumo() {
     let totalPaginasLeitura = 0;
     let totalQuestoes = 0;
     let totalAcertos = 0;
+    let totalQuestoesJogo = 0;
+    let totalAcertosJogo = 0;
     const diasComEstudo = new Set();
 
     sessoesCache.forEach(s => {
@@ -2646,14 +2648,23 @@ function renderizarDashboardResumo() {
             totalPaginasLeitura += s.paginasLidas;
         }
         if (s.acertos !== null && s.acertos !== undefined) {
-            totalQuestoes += s.acertos + (s.erros || 0);
-            totalAcertos += s.acertos;
+            // Sessões do tipo "Jogo" ficam de fora de "Questões resolvidas" —
+            // têm seu próprio card ("Jogos resolvidos"), separado dos
+            // exercícios/simulados de estudo de verdade.
+            if (s.tipoEstudoNome === 'Jogo') {
+                totalQuestoesJogo += s.acertos + (s.erros || 0);
+                totalAcertosJogo += s.acertos;
+            } else {
+                totalQuestoes += s.acertos + (s.erros || 0);
+                totalAcertos += s.acertos;
+            }
         }
     });
 
     const mediaSegundosPorDia = diasComEstudo.size > 0 ? totalSegundos / diasComEstudo.size : 0;
     const ritmoLeitura = totalPaginasLeitura > 0 ? totalSegundosLeitura / totalPaginasLeitura : null;
     const percAcerto = totalQuestoes > 0 ? Math.round((totalAcertos / totalQuestoes) * 100) : null;
+    const percAcertoJogo = totalQuestoesJogo > 0 ? Math.round((totalAcertosJogo / totalQuestoesJogo) * 100) : null;
 
     grid.innerHTML = `
         <div class="stat-card">
@@ -2673,6 +2684,12 @@ function renderizarDashboardResumo() {
             <span class="stat-card-valor">${totalQuestoes}</span>
             ${percAcerto !== null ? `<span class="stat-card-extra">${percAcerto}% de acerto</span>` : ''}
         </div>
+        ${totalQuestoesJogo > 0 ? `
+        <div class="stat-card">
+            <span class="stat-card-label">🎮 Jogos resolvidos</span>
+            <span class="stat-card-valor">${totalQuestoesJogo}</span>
+            ${percAcertoJogo !== null ? `<span class="stat-card-extra">${percAcertoJogo}% de acerto</span>` : ''}
+        </div>` : ''}
         ${ritmoLeitura !== null ? `
         <div class="stat-card stat-card-destaque">
             <span class="stat-card-label">Ritmo médio de leitura</span>
