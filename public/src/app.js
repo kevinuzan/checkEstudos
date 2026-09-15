@@ -762,7 +762,14 @@ function alternarImportarTopicos() {
 // sessão de estudo e então abrimos SÓ aquele jogo (sem ver os outros 2).
 // ==================================================================
 
+// Guarda qual jogo específico está aberto no momento (null = tela geral de
+// seleção). Usado pra saber se o placar deve mostrar só aquele jogo ou os 3
+// somados, inclusive quando o próprio jogo avisa (postMessage) que marcou
+// ponto e o placar precisa se atualizar sem trocar de tela.
+let jogoAtualAberto = null;
+
 function mostrarSelecaoJogo() {
+    jogoAtualAberto = null;
     const selecao = document.getElementById('jogo-selecao-bloco');
     const frameWrap = document.getElementById('jogo-frame-wrap');
     const btnVoltar = document.getElementById('btn-voltar-jogo');
@@ -789,6 +796,7 @@ function confirmarCronometroJogo(iniciar) {
 }
 
 function abrirJogo(tipo) {
+    jogoAtualAberto = tipo;
     const iframe = document.getElementById('jogo-iframe');
     const selecao = document.getElementById('jogo-selecao-bloco');
     const frameWrap = document.getElementById('jogo-frame-wrap');
@@ -797,6 +805,9 @@ function abrirJogo(tipo) {
     if (selecao) selecao.style.display = 'none';
     if (frameWrap) frameWrap.style.display = 'block';
     if (btnVoltar) btnVoltar.style.display = 'inline-flex';
+    // Dentro de um jogo específico, o placar mostra só aquele jogo — não os
+    // 3 somados (isso só faz sentido na tela geral de seleção).
+    carregarPontuacaoJogo(tipo);
 }
 
 function voltarSelecaoJogo() {
@@ -810,6 +821,7 @@ function voltarSelecaoJogo() {
 // ==================================================================
 
 const NOMES_JOGO_CHECKESTUDOS = { mnemonicos: 'Mnemônicos', competencias: 'Competências', lacunas: 'Lacunas' };
+const ICONES_JOGO_CHECKESTUDOS = { mnemonicos: '🧠', competencias: '⚖️', lacunas: '📜' };
 
 async function obterPontuacaoJogoPorTipo() {
     try {
@@ -821,24 +833,53 @@ async function obterPontuacaoJogoPorTipo() {
     }
 }
 
-async function carregarPontuacaoJogo() {
+// Um "cartão" compacto por jogo — ícone, nome, % de acerto (quando já
+// houver alguma resposta) e os números de hoje/total, em vez do texto
+// corrido de antes.
+function construirCardPontuacaoJogo(tipo, d) {
+    const totalRespostas = d.total.acertos + d.total.erros;
+    const percAcerto = totalRespostas > 0 ? Math.round((d.total.acertos / totalRespostas) * 100) : null;
+    const houveHoje = (d.hoje.acertos + d.hoje.erros) > 0;
+
+    return `
+        <div class="jogo-stat-card">
+            <div class="jogo-stat-card-topo">
+                <span class="jogo-stat-card-icone">${ICONES_JOGO_CHECKESTUDOS[tipo] || '🎮'}</span>
+                <span class="jogo-stat-card-nome">${NOMES_JOGO_CHECKESTUDOS[tipo] || tipo}</span>
+                ${percAcerto !== null ? `<span class="jogo-stat-card-perc">${percAcerto}%</span>` : ''}
+            </div>
+            <div class="jogo-stat-card-linha">
+                <span class="jogo-stat-card-acerto">✅ ${d.total.acertos}</span>
+                <span class="jogo-stat-card-erro">❌ ${d.total.erros}</span>
+            </div>
+            ${houveHoje ? `<div class="jogo-stat-card-hoje">hoje: ✅ ${d.hoje.acertos} &middot; ❌ ${d.hoje.erros}</div>` : ''}
+        </div>
+    `;
+}
+
+// filtroTipo: quando informado ('mnemonicos'|'competencias'|'lacunas'), mostra
+// só o placar daquele jogo (usado quando um jogo específico está aberto).
+// Sem filtro, mostra os 3 jogos juntos (tela geral de seleção).
+async function carregarPontuacaoJogo(filtroTipo) {
     const dados = await obterPontuacaoJogoPorTipo();
     const el = document.getElementById('jogo-pontuacao-resumo');
     if (!el) return;
 
-    el.innerHTML = Object.keys(NOMES_JOGO_CHECKESTUDOS).map(tipo => {
+    const tipos = filtroTipo ? [filtroTipo] : Object.keys(NOMES_JOGO_CHECKESTUDOS);
+    el.innerHTML = tipos.map(tipo => {
         const d = dados[tipo] || { total: { acertos: 0, erros: 0 }, hoje: { acertos: 0, erros: 0 } };
-        return `<div>${NOMES_JOGO_CHECKESTUDOS[tipo]}: ✅ ${d.total.acertos} / ❌ ${d.total.erros} total &middot; hoje: ✅ ${d.hoje.acertos} / ❌ ${d.hoje.erros}</div>`;
+        return construirCardPontuacaoJogo(tipo, d);
     }).join('');
 }
 
 // O jogo (dentro do iframe) avisa por postMessage sempre que uma rodada é
 // registrada, pra esse resumo — mostrado uma única vez, aqui fora do
-// iframe — atualizar na hora, sem esperar o usuário trocar de aba.
+// iframe — atualizar na hora, sem esperar o usuário trocar de aba. Respeita
+// o filtro do jogo atualmente aberto, se houver um.
 window.addEventListener('message', (event) => {
     if (event.origin !== window.location.origin) return;
     if (event.data && event.data.tipo === 'jogo-pontuacao-atualizada') {
-        carregarPontuacaoJogo();
+        carregarPontuacaoJogo(jogoAtualAberto || undefined);
     }
 });
 
