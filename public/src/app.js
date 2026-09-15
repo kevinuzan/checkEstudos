@@ -84,12 +84,33 @@ function mostrarUsuarioLogado(usuario) {
 }
 
 let googleSignInIniciado = false;
+let tentativasEsperaGoogle = 0;
 
+// O script do Google (accounts.google.com/gsi/client, no <head>) carrega de
+// forma assíncrona — na primeira visita, essa função pode rodar antes dele
+// terminar de carregar. Antes, isso fazia a função desistir de vez e o botão
+// de login só aparecia depois de atualizar a página (quando o script já
+// estava em cache). Agora, se o Google ainda não estiver pronto, tenta de
+// novo a cada 200ms por até ~10s, em vez de desistir na primeira tentativa.
 async function mostrarTelaLogin() {
     const overlay = document.getElementById('login-overlay');
     if (overlay) overlay.style.display = 'flex';
 
-    if (googleSignInIniciado || typeof google === 'undefined' || !google.accounts) return;
+    if (googleSignInIniciado) return;
+
+    if (typeof google === 'undefined' || !google.accounts) {
+        if (tentativasEsperaGoogle < 50) {
+            tentativasEsperaGoogle++;
+            setTimeout(mostrarTelaLogin, 200);
+        } else {
+            const erroEl = document.getElementById('login-erro');
+            if (erroEl) {
+                erroEl.textContent = 'Não foi possível carregar o login do Google. Verifique sua conexão e atualize a página.';
+                erroEl.style.display = 'block';
+            }
+        }
+        return;
+    }
     try {
         const res = await fetchOriginal('/api/auth/config');
         const config = await res.json();
@@ -655,14 +676,76 @@ async function trocarView(nome) {
     document.getElementById('view-edital').style.display = nome === 'edital' ? 'block' : 'none';
     document.getElementById('view-estudos').style.display = nome === 'estudos' ? 'block' : 'none';
     document.getElementById('view-jogo').style.display = nome === 'jogo' ? 'block' : 'none';
+    document.getElementById('view-configuracoes').style.display = nome === 'configuracoes' ? 'block' : 'none';
     document.getElementById('tab-resumo').classList.toggle('ativo', nome === 'resumo');
     document.getElementById('tab-edital').classList.toggle('ativo', nome === 'edital');
     document.getElementById('tab-estudos').classList.toggle('ativo', nome === 'estudos');
     document.getElementById('tab-jogo').classList.toggle('ativo', nome === 'jogo');
+    document.getElementById('tab-configuracoes').classList.toggle('ativo', nome === 'configuracoes');
 
     if (nome === 'resumo') await carregarResumo();
     if (nome === 'estudos') await carregarPainelEstudos();
     if (nome === 'jogo') { mostrarSelecaoJogo(); await carregarPontuacaoJogo(); }
+    if (nome === 'configuracoes') await abrirConfiguracoes();
+}
+
+// ==================================================================
+// VIEW: CONFIGURAÇÕES (tema, fundo, apelido, importar tópicos)
+// ==================================================================
+
+async function abrirConfiguracoes() {
+    renderizarSeletorTema();
+    renderizarSeletorFundo();
+    const input = document.getElementById('config-apelido-input');
+    if (!input) return;
+    try {
+        const res = await fetch('/api/auth/me');
+        if (!res.ok) return;
+        const dados = await res.json();
+        input.value = dados.usuario?.apelido || '';
+        input.placeholder = dados.usuario?.nomeGoogle ? `Ex: ${dados.usuario.nomeGoogle.split(' ')[0]}` : 'Ex: Ana';
+    } catch (err) {
+        console.error('Erro ao carregar perfil:', err);
+    }
+}
+
+async function salvarApelido() {
+    const input = document.getElementById('config-apelido-input');
+    const btn = document.getElementById('btn-salvar-apelido');
+    if (!input || !btn) return;
+    const apelido = input.value.trim();
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/perfil/apelido', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apelido })
+        });
+        const dados = await res.json();
+        if (dados.success) {
+            const nomeEl = document.getElementById('usuario-nome');
+            if (nomeEl) nomeEl.textContent = dados.nome;
+            btn.textContent = 'Salvo ✓';
+        } else {
+            btn.textContent = 'Erro ao salvar';
+        }
+    } catch (err) {
+        console.error('Erro ao salvar apelido:', err);
+        btn.textContent = 'Erro ao salvar';
+    }
+    setTimeout(() => { btn.textContent = textoOriginal; btn.disabled = false; }, 1600);
+}
+
+// "Importar tópicos" fica sempre minimizado por padrão dentro de
+// Configurações — a pessoa clica pra abrir só quando precisa importar algo.
+function alternarImportarTopicos() {
+    const conteudo = document.getElementById('conteudo-importar-topicos');
+    const seta = document.getElementById('seta-importar-topicos');
+    if (!conteudo) return;
+    const abrindo = conteudo.style.display === 'none';
+    conteudo.style.display = abrindo ? 'flex' : 'none';
+    if (seta) seta.classList.toggle('aberta', abrindo);
 }
 
 // ==================================================================

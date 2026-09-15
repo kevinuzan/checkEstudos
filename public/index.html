@@ -95,26 +95,15 @@
                 <button class="view-tab" id="tab-jogo" onclick="trocarView('jogo')">
                     <span class="view-tab-icone">🎮</span> Jogo
                 </button>
+                <button class="view-tab" id="tab-configuracoes" onclick="trocarView('configuracoes')">
+                    <span class="view-tab-icone">⚙️</span> Config.
+                </button>
             </nav>
 
             <div class="sidebar-planos-label">Plano de estudos</div>
             <nav class="planos-tabs" id="planos-tabs">
                 <!-- abas dos planos (ex: TRT, ENAM) inseridas via JS -->
             </nav>
-
-            <div class="sidebar-tema">
-                <div class="tema-label">Tema</div>
-                <div class="tema-swatches" id="tema-swatches">
-                    <!-- opções de tema inseridas via JS -->
-                </div>
-            </div>
-
-            <div class="sidebar-fundo">
-                <div class="tema-label">Fundo</div>
-                <div class="fundo-opcoes" id="fundo-opcoes">
-                    <!-- opções de fundo inseridas via JS -->
-                </div>
-            </div>
 
             <div class="sidebar-usuario" id="sidebar-usuario" style="display:none;">
                 <img id="usuario-foto" class="usuario-foto" src="" alt="">
@@ -257,33 +246,6 @@
                     </div>
                 </section>
 
-                <section class="add-section">
-                    <h3 class="secao-titulo">Importar tópicos</h3>
-                    <input type="text" id="materia-input" placeholder="Matéria (ex: Português)">
-                    <textarea id="bulk-input" placeholder="Cole os tópicos do edital aqui (um por linha)"></textarea>
-                    <div class="planos-check-label">Vincular aos planos:</div>
-                    <div class="planos-checkboxes" id="planos-checkboxes-import">
-                        <!-- checkboxes dos planos inseridos via JS -->
-                    </div>
-                    <button onclick="importarEdital()">Importar Tópicos</button>
-
-                    <div class="edital-arquivo-box">
-                        <div class="edital-arquivo-linha">
-                            <button type="button" class="btn-secundario" onclick="baixarModeloEdital()">⬇ Baixar modelo de edital</button>
-                            <button type="button" class="btn-secundario" onclick="exportarEditalAtual()">⬆ Exportar edital do plano atual</button>
-                        </div>
-                        <label class="modal-label">Importar arquivo de edital (.json)</label>
-                        <label class="arquivo-botao-bonito" for="edital-arquivo-input">
-                            <span class="arquivo-botao-icone">📁</span>
-                            <span class="arquivo-botao-textos">
-                                <span class="arquivo-botao-titulo">Escolher arquivo de edital</span>
-                                <span class="arquivo-botao-nome" id="edital-arquivo-nome">Nenhum arquivo selecionado</span>
-                            </span>
-                        </label>
-                        <input type="file" id="edital-arquivo-input" class="arquivo-input-oculto" accept="application/json" onchange="importarArquivoEdital(event)">
-                    </div>
-                </section>
-
                 <div class="edital-selecao-barra">
                     <button type="button" class="btn-secundario" id="btn-toggle-selecao-edital" onclick="alternarModoSelecaoEdital()">☑️ Selecionar vários</button>
                     <div class="edital-selecao-acoes" id="edital-selecao-acoes" style="display:none;">
@@ -357,6 +319,82 @@
                         <iframe id="jogo-iframe" class="jogo-frame" title="Jogo" loading="lazy"></iframe>
                     </div>
                 </section>
+            </div>
+
+            <!-- ===================== VIEW: CONFIGURAÇÕES ===================== -->
+            <div id="view-configuracoes" style="display:none;">
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Perfil</h2>
+                    </div>
+                    <div class="config-card">
+                        <label class="modal-label">Nome de exibição</label>
+                        <p class="config-card-sub">Por padrão usamos o nome da sua conta Google — pode trocar por outro nome só pra aparecer aqui no app.</p>
+                        <div class="perfil-nome-row">
+                            <input type="text" id="config-apelido-input" placeholder="Ex: Ana" maxlength="60">
+                            <button type="button" id="btn-salvar-apelido" onclick="salvarApelido()">Salvar</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Aparência</h2>
+                    </div>
+                    <div class="config-card">
+                        <div class="config-linha">
+                            <div class="tema-label">Tema</div>
+                            <div class="tema-swatches" id="tema-swatches">
+                                <!-- opções de tema inseridas via JS -->
+                            </div>
+                        </div>
+                        <div class="config-linha">
+                            <div class="tema-label">Fundo</div>
+                            <div class="fundo-opcoes" id="fundo-opcoes">
+                                <!-- opções de fundo inseridas via JS -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Edital</h2>
+                    </div>
+                    <div class="config-card config-card-sem-padding">
+                        <button type="button" class="toggle-secao" id="btn-toggle-importar-topicos" onclick="alternarImportarTopicos()">
+                            <span>Importar tópicos</span>
+                            <span class="toggle-secao-seta" id="seta-importar-topicos">▸</span>
+                        </button>
+                        <div class="toggle-secao-conteudo" id="conteudo-importar-topicos" style="display:none;">
+                            <input type="text" id="materia-input" placeholder="Matéria (ex: Português)">
+                            <textarea id="bulk-input" placeholder="Cole os tópicos do edital aqui (um por linha)"></textarea>
+                            <div class="planos-check-label">Vincular aos planos:</div>
+                            <div class="planos-checkboxes" id="planos-checkboxes-import">
+                                <!-- checkboxes dos planos inseridos via JS -->
+                            </div>
+                            <button onclick="importarEdital()">Importar Tópicos</button>
+
+                            <div class="edital-arquivo-box">
+                                <div class="edital-arquivo-linha">
+                                    <button type="button" class="btn-secundario" onclick="baixarModeloEdital()">⬇ Baixar modelo de edital</button>
+                                    <button type="button" class="btn-secundario" onclick="exportarEditalAtual()">⬆ Exportar edital do plano atual</button>
+                                </div>
+                                <label class="modal-label">Importar arquivo de edital (.json)</label>
+                                <label class="arquivo-botao-bonito" for="edital-arquivo-input">
+                                    <span class="arquivo-botao-icone">📁</span>
+                                    <span class="arquivo-botao-textos">
+                                        <span class="arquivo-botao-titulo">Escolher arquivo de edital</span>
+                                        <span class="arquivo-botao-nome" id="edital-arquivo-nome">Nenhum arquivo selecionado</span>
+                                    </span>
+                                </label>
+                                <input type="file" id="edital-arquivo-input" class="arquivo-input-oculto" accept="application/json" onchange="importarArquivoEdital(event)">
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
             </div>
         </main>
     </div>

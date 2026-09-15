@@ -306,7 +306,9 @@ async function startServer() {
 
                 const token = emitirTokenSessao(usuario);
                 definirCookieSessao(res, token);
-                res.json({ success: true, usuario: { nome, email, foto } });
+                // Se a pessoa já escolheu um apelido (nome de exibição diferente do
+                // nome da conta Google), ele prevalece sobre o nome vindo do Google.
+                res.json({ success: true, usuario: { nome: usuario.apelido || nome, apelido: usuario.apelido || '', nomeGoogle: nome, email, foto } });
             } catch (err) {
                 console.error('Erro no login com Google:', err);
                 res.status(401).json({ success: false, error: 'Falha ao verificar login do Google' });
@@ -329,7 +331,26 @@ async function startServer() {
         app.get('/api/auth/me', requireAuth, async (req, res) => {
             const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) });
             if (!usuario) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
-            res.json({ success: true, usuario: { nome: usuario.nome, email: usuario.email, foto: usuario.foto } });
+            res.json({
+                success: true,
+                usuario: {
+                    nome: usuario.apelido || usuario.nome,
+                    apelido: usuario.apelido || '',
+                    nomeGoogle: usuario.nome,
+                    email: usuario.email,
+                    foto: usuario.foto
+                }
+            });
+        });
+
+        // Define (ou remove, se vazio) um apelido — o nome mostrado no app no
+        // lugar do nome da conta Google. Não mexe no nome real da conta.
+        app.put('/api/perfil/apelido', requireAuth, async (req, res) => {
+            const apelido = (req.body.apelido || '').toString().trim().slice(0, 60);
+            await usuariosColl.updateOne({ _id: new ObjectId(req.userId) }, { $set: { apelido: apelido || null } });
+            const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) });
+            if (!usuario) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
+            res.json({ success: true, nome: usuario.apelido || usuario.nome, apelido: usuario.apelido || '' });
         });
 
         app.post('/api/auth/logout', (req, res) => {

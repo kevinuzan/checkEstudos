@@ -286,12 +286,6 @@ h1, h2, h3 { font-family: inherit; }
 /* SELETOR DE TEMA (cor de destaque + claro/escuro)              */
 /* ============================================================ */
 
-.sidebar-tema {
-    margin-top: 18px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
-}
-
 .tema-label {
     font-size: 11px;
     font-weight: 700;
@@ -324,10 +318,6 @@ h1, h2, h3 { font-family: inherit; }
 
 .tema-swatch.ativo {
     box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text);
-}
-
-.sidebar-fundo {
-    margin-top: 14px;
 }
 
 .fundo-opcoes {
@@ -903,6 +893,87 @@ h1, h2, h3 { font-family: inherit; }
     gap: 10px;
     margin-bottom: 22px;
     box-shadow: var(--shadow-sm);
+}
+
+/* ============================================================ */
+/* VIEW: CONFIGURAÇÕES                                           */
+/* ============================================================ */
+
+.config-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.config-card-sem-padding {
+    padding: 0;
+    overflow: hidden;
+}
+
+.config-card-sub {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin: -8px 0 0;
+}
+
+.config-linha {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.perfil-nome-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.perfil-nome-row input {
+    flex: 1;
+    min-width: 180px;
+}
+
+.toggle-secao {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: transparent;
+    border: none;
+    padding: 16px 18px;
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.toggle-secao:hover {
+    background: var(--surface-muted);
+}
+
+.toggle-secao-seta {
+    color: var(--text-faint);
+    transition: transform 0.15s ease;
+    font-size: 13px;
+}
+
+.toggle-secao-seta.aberta {
+    transform: rotate(90deg);
+}
+
+.toggle-secao-conteudo {
+    padding: 0 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
 }
 
 /* ============================================================ */
