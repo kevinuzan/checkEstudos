@@ -1061,14 +1061,9 @@ button:active {
 .plano-checkbox {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     font-size: 14px;
     cursor: pointer;
-}
-
-.plano-checkbox input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
 }
 
 .badge-compartilhado {
@@ -1089,6 +1084,11 @@ button:active {
 
 .materia-group {
     margin-top: 16px;
+    break-inside: avoid;
+    -webkit-column-break-inside: avoid;
+    display: inline-block;
+    width: 100%;
+    vertical-align: top;
 }
 
 .materia-header {
@@ -1157,8 +1157,67 @@ button:active {
     background: var(--primary-light);
 }
 
+/* --- Checkboxes com visual próprio (em vez do padrão do navegador), pra
+   combinar com o resto do app (pílulas, cantos arredondados, cores do tema) --- */
+.item-check input[type="checkbox"],
+.plano-checkbox input[type="checkbox"],
 .checkbox-selecao-item {
-    accent-color: var(--purple);
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    border: 1.5px solid var(--border);
+    background: var(--card);
+    cursor: pointer;
+    position: relative;
+    margin: 0;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.item-check input[type="checkbox"]:hover,
+.plano-checkbox input[type="checkbox"]:hover,
+.checkbox-selecao-item:hover {
+    border-color: var(--primary);
+}
+
+.item-check input[type="checkbox"]:checked,
+.plano-checkbox input[type="checkbox"]:checked {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.item-check input[type="checkbox"]:checked::after,
+.plano-checkbox input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+/* A seleção em massa do Edital usa roxo (mesma cor usada em outras telas de
+   "modo de seleção"), pra não confundir com o check normal de concluído. */
+.checkbox-selecao-item:checked {
+    background: var(--purple);
+    border-color: var(--purple);
+}
+
+.checkbox-selecao-item:checked::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
 }
 
 .edital-selecao-barra {
@@ -2268,10 +2327,14 @@ input[type="checkbox"] {
     }
 
     .lista-edital-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 0 20px;
-        align-items: start;
+        /* Colunas "masonry" via CSS multi-column, em vez de grid de 2
+           colunas fixas: numa grid, cada LINHA fica com a altura da matéria
+           mais alta dela, então uma matéria com 50 subtópicos ao lado de
+           outra com 10 sobra um buraco enorme. Com column-count, cada
+           matéria (break-inside: avoid) flui pra coluna mais vazia, sem
+           depender de "estar na mesma linha" da vizinha. */
+        column-count: 2;
+        column-gap: 20px;
     }
 
     .lista-revisoes,

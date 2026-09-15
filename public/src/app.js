@@ -468,7 +468,10 @@ function renderizar(itens) {
     let concluidosGeral = itens.filter(i => i.concluido).length;
 
     for (const materia in grupos) {
-        const estaMinimizado = estadosMinimizados[materia] || false;
+        // Por padrão as matérias começam fechadas (menos poluição visual ao
+        // abrir a aba) — só ficam abertas se a pessoa já clicou pra expandir
+        // antes (fica salvo por matéria no localStorage).
+        const estaMinimizado = materia in estadosMinimizados ? estadosMinimizados[materia] : true;
         const totalMat = grupos[materia].length;
         const concluidosMat = grupos[materia].filter(i => i.concluido).length;
 
@@ -580,7 +583,12 @@ async function deletarTopico(id) {
 }
 
 function toggleMateria(materia) {
-    estadosMinimizados[materia] = !estadosMinimizados[materia];
+    // Mesma regra de "fechado por padrão" usada na renderização — sem isso,
+    // o primeiro clique numa matéria nova (que já aparece fechada, mas nunca
+    // foi gravada no localStorage) marcaria ela como fechada de novo, e o
+    // clique pareceria não fazer nada.
+    const estaMinimizadoAtual = materia in estadosMinimizados ? estadosMinimizados[materia] : true;
+    estadosMinimizados[materia] = !estaMinimizadoAtual;
     localStorage.setItem('editais_minimizados', JSON.stringify(estadosMinimizados));
     carregarEdital();
 }
