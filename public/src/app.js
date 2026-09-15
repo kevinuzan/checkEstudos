@@ -684,16 +684,22 @@ async function trocarView(nome) {
     document.getElementById('view-edital').style.display = nome === 'edital' ? 'block' : 'none';
     document.getElementById('view-estudos').style.display = nome === 'estudos' ? 'block' : 'none';
     document.getElementById('view-jogo').style.display = nome === 'jogo' ? 'block' : 'none';
+    document.getElementById('view-estatisticas').style.display = nome === 'estatisticas' ? 'block' : 'none';
+    document.getElementById('view-conquistas').style.display = nome === 'conquistas' ? 'block' : 'none';
     document.getElementById('view-configuracoes').style.display = nome === 'configuracoes' ? 'block' : 'none';
     document.getElementById('tab-resumo').classList.toggle('ativo', nome === 'resumo');
     document.getElementById('tab-edital').classList.toggle('ativo', nome === 'edital');
     document.getElementById('tab-estudos').classList.toggle('ativo', nome === 'estudos');
     document.getElementById('tab-jogo').classList.toggle('ativo', nome === 'jogo');
+    document.getElementById('tab-estatisticas').classList.toggle('ativo', nome === 'estatisticas');
+    document.getElementById('tab-conquistas').classList.toggle('ativo', nome === 'conquistas');
     document.getElementById('tab-configuracoes').classList.toggle('ativo', nome === 'configuracoes');
 
     if (nome === 'resumo') await carregarResumo();
     if (nome === 'estudos') await carregarPainelEstudos();
     if (nome === 'jogo') { mostrarSelecaoJogo(); await carregarPontuacaoJogo(); }
+    if (nome === 'estatisticas') await carregarEstatisticas();
+    if (nome === 'conquistas') await abrirConquistas();
     if (nome === 'configuracoes') await abrirConfiguracoes();
 }
 
@@ -905,6 +911,259 @@ async function registrarSessaoDoJogo() {
     document.getElementById('sessao-erros').value = errosHoje || '';
     document.getElementById('sessao-observacoes').value = 'Sessão registrada a partir do jogo (Estuda TRT) — desempenho de hoje.';
     atualizarResultadoQuestoes();
+}
+
+// ==================================================================
+// VIEW: ESTATÍSTICAS (gráficos por matéria, por jogo, por plano de
+// estudos e evolução de questões resolvidas — usando Chart.js)
+// ==================================================================
+
+let graficosEstatisticas = {}; // id curto -> instância Chart.js ativa (destruída antes de redesenhar)
+let sessoesEstatisticasCache = []; // todas as sessões, de todos os planos
+
+// Lê uma cor do tema atual (CSS custom property), pra os gráficos
+// acompanharem tema claro/escuro e as cores de fundo escolhidas.
+function corCssVar(nome, fallback) {
+    const valor = getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+    return valor || fallback;
+}
+
+function destruirGraficoEstatistica(id) {
+    if (graficosEstatisticas[id]) {
+        graficosEstatisticas[id].destroy();
+        delete graficosEstatisticas[id];
+    }
+}
+
+async function carregarEstatisticas() {
+    try {
+        const [resSessoes, dadosJogos] = await Promise.all([
+            fetch('/api/sessoes?limite=3000'),
+            obterPontuacaoJogoPorTipo()
+        ]);
+        sessoesEstatisticasCache = await resSessoes.json();
+        if (Object.keys(materiasCores).length === 0) await carregarMateriasCores();
+
+        const vazio = document.getElementById('estat-vazio');
+        if (vazio) vazio.style.display = sessoesEstatisticasCache.length > 0 ? 'none' : 'block';
+
+        renderizarGraficoEstatMaterias();
+        renderizarGraficoEstatJogos(dadosJogos);
+        renderizarGraficoEstatPlanos();
+        renderizarGraficoEstatEvolucao();
+    } catch (err) {
+        console.error('Erro ao carregar estatísticas:', err);
+    }
+}
+
+// Doughnut: tempo de estudo (minutos) distribuído por matéria — mesma
+// distribuição igualitária usada no Resumo (distribuirSegundosPorMateria).
+function renderizarGraficoEstatMaterias() {
+    const canvas = document.getElementById('chart-estat-materias');
+    if (!canvas || typeof Chart === 'undefined') return;
+    destruirGraficoEstatistica('materias');
+
+    const porMateria = {};
+    sessoesEstatisticasCache.forEach(s => {
+        const partes = distribuirSegundosPorMateria(s);
+        Object.keys(partes).forEach(m => { porMateria[m] = (porMateria[m] || 0) + partes[m]; });
+    });
+
+    const entradas = Object.entries(porMateria).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const corTexto = corCssVar('--text-muted', '#64748b');
+
+    graficosEstatisticas.materias = new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+            labels: entradas.map(([m]) => m),
+            datasets: [{
+                data: entradas.map(([, seg]) => Math.round(seg / 60)),
+                backgroundColor: entradas.map(([m]) => corDaMateria(m)),
+                borderColor: corCssVar('--card', '#fff'),
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { color: corTexto, boxWidth: 12, font: { size: 11 } } },
+                tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.parsed} min` } }
+            }
+        }
+    });
+}
+
+// Barras agrupadas: acertos x erros acumulados em cada um dos 3 jogos.
+function renderizarGraficoEstatJogos(dadosJogos) {
+    const canvas = document.getElementById('chart-estat-jogos');
+    if (!canvas || typeof Chart === 'undefined') return;
+    destruirGraficoEstatistica('jogos');
+
+    const tipos = Object.keys(NOMES_JOGO_CHECKESTUDOS);
+    const corTexto = corCssVar('--text-muted', '#64748b');
+    const corGrade = corCssVar('--border', '#e2e8f0');
+
+    graficosEstatisticas.jogos = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: tipos.map(t => NOMES_JOGO_CHECKESTUDOS[t]),
+            datasets: [
+                {
+                    label: 'Acertos',
+                    data: tipos.map(t => (dadosJogos[t] && dadosJogos[t].total.acertos) || 0),
+                    backgroundColor: '#16a34a',
+                    borderRadius: 4
+                },
+                {
+                    label: 'Erros',
+                    data: tipos.map(t => (dadosJogos[t] && dadosJogos[t].total.erros) || 0),
+                    backgroundColor: '#dc2626',
+                    borderRadius: 4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { color: corTexto, boxWidth: 12, font: { size: 11 } } } },
+            scales: {
+                x: { ticks: { color: corTexto, font: { size: 11 } }, grid: { display: false } },
+                y: { beginAtZero: true, ticks: { color: corTexto, precision: 0 }, grid: { color: corGrade } }
+            }
+        }
+    });
+}
+
+// Barras + linha (eixos duplos): questões resolvidas e % de acerto, por
+// plano de estudos (edital) — pra comparar o desempenho entre planos.
+function renderizarGraficoEstatPlanos() {
+    const canvas = document.getElementById('chart-estat-planos');
+    if (!canvas || typeof Chart === 'undefined') return;
+    destruirGraficoEstatistica('planos');
+
+    const nomesPlanos = planosDisponiveis.map(p => p.nome);
+    const porPlano = {};
+    nomesPlanos.forEach(nome => { porPlano[nome] = { acertos: 0, erros: 0 }; });
+    sessoesEstatisticasCache.forEach(s => {
+        if (!s.plano || !(s.plano in porPlano)) return;
+        porPlano[s.plano].acertos += s.acertos || 0;
+        porPlano[s.plano].erros += s.erros || 0;
+    });
+
+    const corTexto = corCssVar('--text-muted', '#64748b');
+    const corGrade = corCssVar('--border', '#e2e8f0');
+    const corPrimaria = corCssVar('--primary', '#2563eb');
+
+    graficosEstatisticas.planos = new Chart(canvas, {
+        data: {
+            labels: nomesPlanos,
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Questões resolvidas',
+                    data: nomesPlanos.map(n => porPlano[n].acertos + porPlano[n].erros),
+                    backgroundColor: corPrimaria,
+                    borderRadius: 4,
+                    yAxisID: 'y'
+                },
+                {
+                    type: 'line',
+                    label: '% de acerto',
+                    data: nomesPlanos.map(n => {
+                        const total = porPlano[n].acertos + porPlano[n].erros;
+                        return total > 0 ? Math.round((porPlano[n].acertos / total) * 100) : null;
+                    }),
+                    borderColor: '#f59e0b',
+                    backgroundColor: '#f59e0b',
+                    yAxisID: 'y1',
+                    tension: 0.3,
+                    spanGaps: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { color: corTexto, boxWidth: 12, font: { size: 11 } } } },
+            scales: {
+                x: { ticks: { color: corTexto, font: { size: 11 } }, grid: { display: false } },
+                y: { beginAtZero: true, position: 'left', ticks: { color: corTexto, precision: 0 }, grid: { color: corGrade } },
+                y1: { beginAtZero: true, max: 100, position: 'right', ticks: { color: corTexto, callback: (v) => v + '%' }, grid: { display: false } }
+            }
+        }
+    });
+}
+
+// Barras + linha: questões resolvidas e % de acerto, semana a semana, nas
+// últimas 12 semanas — pra acompanhar a evolução do desempenho ao longo
+// do tempo (independe do plano/edital).
+function renderizarGraficoEstatEvolucao() {
+    const canvas = document.getElementById('chart-estat-evolucao');
+    if (!canvas || typeof Chart === 'undefined') return;
+    destruirGraficoEstatistica('evolucao');
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const inicioSemanaAtual = new Date(hoje.getTime() - hoje.getDay() * 24 * 60 * 60 * 1000);
+
+    const semanas = [];
+    for (let i = 11; i >= 0; i--) {
+        const inicio = new Date(inicioSemanaAtual.getTime() - i * 7 * 24 * 60 * 60 * 1000);
+        const fim = new Date(inicio.getTime() + 7 * 24 * 60 * 60 * 1000);
+        semanas.push({ inicio, fim, acertos: 0, erros: 0 });
+    }
+
+    sessoesEstatisticasCache.forEach(s => {
+        const dataFim = new Date(s.fim);
+        const semana = semanas.find(sem => dataFim >= sem.inicio && dataFim < sem.fim);
+        if (!semana) return;
+        semana.acertos += s.acertos || 0;
+        semana.erros += s.erros || 0;
+    });
+
+    const corTexto = corCssVar('--text-muted', '#64748b');
+    const corGrade = corCssVar('--border', '#e2e8f0');
+    const corPrimaria = corCssVar('--primary', '#2563eb');
+
+    graficosEstatisticas.evolucao = new Chart(canvas, {
+        data: {
+            labels: semanas.map(s => s.inicio.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })),
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Questões resolvidas',
+                    data: semanas.map(s => s.acertos + s.erros),
+                    backgroundColor: corPrimaria,
+                    borderRadius: 3,
+                    yAxisID: 'y'
+                },
+                {
+                    type: 'line',
+                    label: '% de acerto',
+                    data: semanas.map(s => {
+                        const total = s.acertos + s.erros;
+                        return total > 0 ? Math.round((s.acertos / total) * 100) : null;
+                    }),
+                    borderColor: '#f59e0b',
+                    backgroundColor: '#f59e0b',
+                    yAxisID: 'y1',
+                    tension: 0.3,
+                    spanGaps: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { color: corTexto, boxWidth: 12, font: { size: 11 } } } },
+            scales: {
+                x: { ticks: { color: corTexto, font: { size: 10 } }, grid: { display: false } },
+                y: { beginAtZero: true, position: 'left', ticks: { color: corTexto, precision: 0 }, grid: { color: corGrade } },
+                y1: { beginAtZero: true, max: 100, position: 'right', ticks: { color: corTexto, callback: (v) => v + '%' }, grid: { display: false } }
+            }
+        }
+    });
 }
 
 // ==================================================================
@@ -2018,8 +2277,10 @@ const DEFINICOES_CONQUISTAS = [
     { id: 'horas-10', emoji: '⏱️', nome: '10 Horas Estudadas', desc: '10h de estudo acumuladas', meta: s => s.totalHoras >= 10 },
     { id: 'horas-50', emoji: '⏱️', nome: '50 Horas Estudadas', desc: '50h de estudo acumuladas', meta: s => s.totalHoras >= 50 },
     { id: 'horas-100', emoji: '⏱️', nome: '100 Horas Estudadas', desc: '100h de estudo acumuladas', meta: s => s.totalHoras >= 100 },
+    { id: 'edital-10', emoji: '✅', nome: '10% do Edital', desc: 'Primeiros 10% do plano atual concluídos', meta: s => s.percEdital >= 10 },
     { id: 'edital-25', emoji: '✅', nome: '25% do Edital', desc: '1/4 do plano atual concluído', meta: s => s.percEdital >= 25 },
     { id: 'edital-50', emoji: '✅', nome: 'Edital na Metade', desc: 'Metade do plano atual concluído', meta: s => s.percEdital >= 50 },
+    { id: 'edital-75', emoji: '✅', nome: '75% do Edital', desc: '3/4 do plano atual concluído', meta: s => s.percEdital >= 75 },
     { id: 'edital-100', emoji: '🏆', nome: 'Edital Completo', desc: 'Plano atual 100% concluído', meta: s => s.percEdital >= 100 }
 ];
 
@@ -2040,11 +2301,40 @@ function calcularEstatisticasConquistas() {
     };
 }
 
+// No Resumo mostramos só as conquistas já desbloqueadas (lista compacta) —
+// a lista completa (desbloqueadas + bloqueadas) fica na aba "Conquistas".
 function renderizarConquistas() {
     const container = document.getElementById('conquistas-grid');
     if (!container) return;
 
     const stats = calcularEstatisticasConquistas();
+    const desbloqueadas = DEFINICOES_CONQUISTAS.filter(c => c.meta(stats));
+
+    if (desbloqueadas.length === 0) {
+        container.innerHTML = `<div class="conquistas-vazio">Ainda sem conquistas desbloqueadas — continue estudando! Veja todos os marcos em <button type="button" class="link-botao" onclick="trocarView('conquistas')">🏅 Conquistas</button>.</div>`;
+        return;
+    }
+
+    container.innerHTML = desbloqueadas.map(c => `
+        <div class="conquista-card conquistada" title="${c.desc}">
+            <span class="conquista-emoji">${c.emoji}</span>
+            <div class="conquista-nome">${c.nome}</div>
+            <div class="conquista-desc">${c.desc}</div>
+        </div>
+    `).join('');
+}
+
+// Aba "Conquistas": TODAS as medalhas (desbloqueadas e bloqueadas), com
+// contador e botão de compartilhar (Instagram Stories) nas já conquistadas.
+function renderizarConquistasCompleto() {
+    const container = document.getElementById('conquistas-grid-completo');
+    if (!container) return;
+
+    const stats = calcularEstatisticasConquistas();
+    const desbloqueadas = DEFINICOES_CONQUISTAS.filter(c => c.meta(stats)).length;
+
+    const contador = document.getElementById('conquistas-contador');
+    if (contador) contador.textContent = `${desbloqueadas}/${DEFINICOES_CONQUISTAS.length} desbloqueadas`;
 
     container.innerHTML = DEFINICOES_CONQUISTAS.map(c => {
         const conquistada = c.meta(stats);
@@ -2053,9 +2343,132 @@ function renderizarConquistas() {
                 <span class="conquista-emoji">${conquistada ? c.emoji : '🔒'}</span>
                 <div class="conquista-nome">${c.nome}</div>
                 <div class="conquista-desc">${c.desc}</div>
+                ${conquistada ? `<button type="button" class="conquista-compartilhar" onclick="compartilharConquista('${c.id}', this)">📤 Compartilhar</button>` : ''}
             </div>
         `;
     }).join('');
+}
+
+async function abrirConquistas() {
+    // Garante que sessoesTodasCache está atualizado mesmo se a pessoa abrir
+    // essa aba sem antes passar pelo Resumo nessa sessão.
+    await atualizarStreak();
+    renderizarConquistasCompleto();
+}
+
+// ==================================================================
+// COMPARTILHAR CONQUISTA — gera uma imagem no formato Instagram Stories
+// (1080x1920) com a medalha, pra ajudar a divulgar o app.
+// ==================================================================
+
+// Quebra um texto em várias linhas dentro de uma largura máxima no canvas,
+// centralizado horizontalmente em x, a partir de y (linha a linha).
+function quebrarTextoCanvas(ctx, texto, x, y, larguraMax, alturaLinha, fonte, cor) {
+    ctx.font = fonte;
+    ctx.fillStyle = cor;
+    ctx.textAlign = 'center';
+    const palavras = texto.split(' ');
+    const linhas = [];
+    let linhaAtual = '';
+    palavras.forEach(palavra => {
+        const tentativa = linhaAtual ? `${linhaAtual} ${palavra}` : palavra;
+        if (ctx.measureText(tentativa).width > larguraMax && linhaAtual) {
+            linhas.push(linhaAtual);
+            linhaAtual = palavra;
+        } else {
+            linhaAtual = tentativa;
+        }
+    });
+    if (linhaAtual) linhas.push(linhaAtual);
+
+    const yInicial = y - ((linhas.length - 1) * alturaLinha) / 2;
+    linhas.forEach((linha, i) => ctx.fillText(linha, x, yInicial + i * alturaLinha));
+}
+
+async function compartilharConquista(id, botaoEl) {
+    const def = DEFINICOES_CONQUISTAS.find(c => c.id === id);
+    if (!def) return;
+    const stats = calcularEstatisticasConquistas();
+    if (!def.meta(stats)) return; // só compartilha o que já foi conquistado
+
+    const textoOriginal = botaoEl ? botaoEl.textContent : '';
+    if (botaoEl) { botaoEl.textContent = 'Gerando...'; botaoEl.disabled = true; }
+
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1080;
+        canvas.height = 1920;
+        const ctx = canvas.getContext('2d');
+
+        // Fundo: gradiente diagonal na identidade visual do app (azul → escuro),
+        // sempre na mesma paleta de marca, independente do tema escolhido —
+        // é uma imagem pra compartilhar fora do app.
+        const fundo = ctx.createLinearGradient(0, 0, 1080, 1920);
+        fundo.addColorStop(0, '#1d4ed8');
+        fundo.addColorStop(0.55, '#3b82f6');
+        fundo.addColorStop(1, '#0f172a');
+        ctx.fillStyle = fundo;
+        ctx.fillRect(0, 0, 1080, 1920);
+
+        // Círculos decorativos translúcidos.
+        ctx.globalAlpha = 0.08;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(120, 220, 260, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(980, 1700, 340, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Selo dourado com o emoji da conquista.
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(540, 760, 220, 0, Math.PI * 2);
+        const selo = ctx.createLinearGradient(320, 540, 760, 980);
+        selo.addColorStop(0, '#f6d365');
+        selo.addColorStop(1, '#c9962b');
+        ctx.fillStyle = selo;
+        ctx.fill();
+        ctx.lineWidth = 10;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '190px "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+        ctx.fillText(def.emoji, 540, 775);
+        ctx.textBaseline = 'alphabetic';
+
+        ctx.font = '700 34px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillText('CONQUISTA DESBLOQUEADA', 540, 1060);
+
+        quebrarTextoCanvas(ctx, def.nome, 540, 1150, 900, 80, '800 76px Inter, sans-serif', '#ffffff');
+        quebrarTextoCanvas(ctx, def.desc, 540, 1330, 820, 54, '400 40px Inter, sans-serif', 'rgba(255,255,255,0.85)');
+
+        ctx.font = '700 46px Inter, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('Direto à Posse', 540, 1780);
+        ctx.font = '400 30px Inter, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fillText('Rumo à aprovação 🎯', 540, 1830);
+
+        await new Promise(resolve => {
+            canvas.toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `conquista-${def.id}.png`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 4000);
+                resolve();
+            }, 'image/png');
+        });
+    } catch (err) {
+        console.error('Erro ao gerar imagem da conquista:', err);
+    } finally {
+        if (botaoEl) { botaoEl.textContent = textoOriginal; botaoEl.disabled = false; }
+    }
 }
 
 function renderizarDashboardResumo() {

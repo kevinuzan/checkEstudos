@@ -95,6 +95,12 @@
                 <button class="view-tab" id="tab-jogo" onclick="trocarView('jogo')">
                     <span class="view-tab-icone">🎮</span> Jogo
                 </button>
+                <button class="view-tab" id="tab-estatisticas" onclick="trocarView('estatisticas')">
+                    <span class="view-tab-icone">📊</span> Estatísticas
+                </button>
+                <button class="view-tab" id="tab-conquistas" onclick="trocarView('conquistas')">
+                    <span class="view-tab-icone">🏅</span> Conquistas
+                </button>
                 <button class="view-tab" id="tab-configuracoes" onclick="trocarView('configuracoes')">
                     <span class="view-tab-icone">⚙️</span> Config.
                 </button>
@@ -228,10 +234,10 @@
                 <section class="painel-bloco">
                     <div class="painel-bloco-header">
                         <h2>🏅 Conquistas</h2>
-                        <span class="painel-bloco-sub">Marcos da sua jornada de estudos</span>
+                        <button type="button" class="link-botao" onclick="trocarView('conquistas')">Ver todas →</button>
                     </div>
                     <div class="conquistas-grid" id="conquistas-grid">
-                        <!-- medalhas inseridas via JS -->
+                        <!-- só as medalhas já desbloqueadas, inseridas via JS -->
                     </div>
                 </section>
 
@@ -323,6 +329,72 @@
                         <iframe id="jogo-iframe" class="jogo-frame" title="Jogo" loading="lazy"></iframe>
                     </div>
                 </section>
+            </div>
+
+            <!-- ===================== VIEW: ESTATÍSTICAS ===================== -->
+            <div id="view-estatisticas" style="display:none;">
+
+                <section class="painel-bloco painel-bloco-duas-colunas">
+                    <div class="painel-bloco-coluna">
+                        <div class="painel-bloco-header">
+                            <h2>Tempo por matéria</h2>
+                            <span class="painel-bloco-sub">Distribuição do tempo estudado, geral</span>
+                        </div>
+                        <div class="chart-card chart-card-canvas">
+                            <canvas id="chart-estat-materias"></canvas>
+                        </div>
+                    </div>
+                    <div class="painel-bloco-coluna">
+                        <div class="painel-bloco-header">
+                            <h2>Desempenho por jogo</h2>
+                            <span class="painel-bloco-sub">Acertos x erros, em todos os jogos</span>
+                        </div>
+                        <div class="chart-card chart-card-canvas">
+                            <canvas id="chart-estat-jogos"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="painel-bloco painel-bloco-duas-colunas">
+                    <div class="painel-bloco-coluna">
+                        <div class="painel-bloco-header">
+                            <h2>Progresso por plano de estudos</h2>
+                            <span class="painel-bloco-sub">Questões resolvidas e % de acerto por edital</span>
+                        </div>
+                        <div class="chart-card chart-card-canvas">
+                            <canvas id="chart-estat-planos"></canvas>
+                        </div>
+                    </div>
+                    <div class="painel-bloco-coluna">
+                        <div class="painel-bloco-header">
+                            <h2>Evolução de questões resolvidas</h2>
+                            <span class="painel-bloco-sub">Últimas 12 semanas</span>
+                        </div>
+                        <div class="chart-card chart-card-canvas">
+                            <canvas id="chart-estat-evolucao"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="estat-vazio" id="estat-vazio" style="display:none;">
+                    Ainda não há sessões registradas com questões (acertos/erros) suficientes para montar os gráficos. Estude um pouco e registre suas sessões pra ver as estatísticas aqui!
+                </div>
+
+            </div>
+
+            <!-- ===================== VIEW: CONQUISTAS ===================== -->
+            <div id="view-conquistas" style="display:none;">
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>🏅 Todas as Conquistas</h2>
+                        <span class="painel-bloco-sub" id="conquistas-contador">0/0 desbloqueadas</span>
+                    </div>
+                    <div class="conquistas-grid" id="conquistas-grid-completo">
+                        <!-- todas as medalhas (desbloqueadas e bloqueadas) inseridas via JS -->
+                    </div>
+                </section>
+
             </div>
 
             <!-- ===================== VIEW: CONFIGURAÇÕES ===================== -->
@@ -533,6 +605,7 @@
     <!-- Input de cor invisível, usado para trocar a cor de uma matéria -->
     <input type="color" id="color-picker-oculto" style="position:fixed; top:-100px; left:-100px; opacity:0;">
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="/src/app.js"></script>
 </body>
 </html>

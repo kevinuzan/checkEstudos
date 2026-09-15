@@ -1865,6 +1865,22 @@ input[type="checkbox"] {
     box-shadow: var(--shadow-sm);
 }
 
+.chart-card-canvas {
+    position: relative;
+    height: 260px;
+}
+
+.estat-vazio {
+    background: var(--card);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-top: 4px;
+}
+
 .chart-bars {
     display: flex;
     align-items: flex-end;
@@ -2232,6 +2248,51 @@ input[type="checkbox"] {
     font-size: 10.5px;
     color: var(--text-faint);
     line-height: 1.3;
+}
+
+.conquista-compartilhar {
+    display: inline-block;
+    margin-top: 8px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.conquista-compartilhar:hover {
+    background: var(--primary-dark);
+}
+
+.conquista-compartilhar:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.conquistas-vazio {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 16px 8px;
+}
+
+.link-botao {
+    background: none;
+    border: none;
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 12.5px;
+    cursor: pointer;
+    padding: 0;
+}
+
+.link-botao:hover {
+    text-decoration: underline;
 }
 
 /* ============================================================ */
