@@ -1923,18 +1923,28 @@ async function carregarFlashcards() {
     renderizarBaralhos();
 }
 
-// Monta as pílulas "🌐 Geral" + cada matéria (derivada dos baralhos existentes)
-// no cabeçalho da aba Flashcards — clicar em "Geral" mostra todos os baralhos,
-// vinculados a uma matéria ou não.
+// Nome do "baralho inteiro" (nível raiz) de cada baralho salvo — pra quem
+// veio de importação do Anki, é o primeiro segmento do caminho (ex: "ENAM",
+// ignorando matéria/tópico/subtópico); pra baralho avulso (sem pastas),
+// é a própria matéria informada na criação. Cada raiz vira 1 pílula.
+function raizDoBaralho(b) {
+    if ((b.caminho || []).length > 0) return b.caminho[0];
+    return (b.materia || '').trim();
+}
+
+// Monta as pílulas "🌐 Geral" + cada baralho inteiro (raiz) existente no
+// cabeçalho da aba Flashcards — clicar em "Geral" mostra tudo; clicar numa
+// pílula mostra só aquele baralho (com todas as suas matérias/tópicos por
+// dentro), nunca um tópico solto no menu de cima.
 function renderizarFiltroFlashcards() {
     const row = document.getElementById('flashcards-escopo-row');
     if (!row) return;
 
-    const materias = [...new Set(baralhosCache.map(b => (b.materia || '').trim()).filter(m => m !== ''))]
+    const raizes = [...new Set(baralhosCache.map(raizDoBaralho).filter(r => r !== ''))]
         .sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
-    // Se a matéria escolhida no filtro não existe mais em nenhum baralho, volta pra Geral.
-    if (flashcardsFiltroMateria !== 'geral' && !materias.includes(flashcardsFiltroMateria)) {
+    // Se a raiz escolhida no filtro não existe mais em nenhum baralho, volta pra Geral.
+    if (flashcardsFiltroMateria !== 'geral' && !raizes.includes(flashcardsFiltroMateria)) {
         flashcardsFiltroMateria = 'geral';
         localStorage.setItem('flashcards_filtro_materia', flashcardsFiltroMateria);
     }
@@ -1947,12 +1957,12 @@ function renderizarFiltroFlashcards() {
     btnGeral.onclick = () => definirFiltroFlashcards('geral');
     row.appendChild(btnGeral);
 
-    materias.forEach(materia => {
+    raizes.forEach(raiz => {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'escopo-pill' + (flashcardsFiltroMateria === materia ? ' ativo' : '');
-        btn.textContent = materia;
-        btn.onclick = () => definirFiltroFlashcards(materia);
+        btn.className = 'escopo-pill' + (flashcardsFiltroMateria === raiz ? ' ativo' : '');
+        btn.innerHTML = '<span class="escopo-pill-icone">📘</span> ' + raiz;
+        btn.onclick = () => definirFiltroFlashcards(raiz);
         row.appendChild(btn);
     });
 
@@ -2037,12 +2047,16 @@ function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
         const expandido = flashcardsPastasExpandidas.has(chave);
         const cont = agregarContagensArvore(filho);
 
+        const chaveEscapada = chave.replace(/'/g, "\\'");
         html += `
             <div class="baralho-arvore-pasta">
-                <div class="baralho-arvore-pasta-header" style="--profundidade:${profundidade}" onclick="toggleFlashcardsPasta('${chave.replace(/'/g, "\\'")}')">
+                <div class="baralho-arvore-pasta-header" style="--profundidade:${profundidade}" onclick="toggleFlashcardsPasta('${chaveEscapada}')">
                     <span class="seta-subtopicos">${expandido ? '▾' : '▸'}</span>
                     <span class="baralho-arvore-pasta-nome">${filho.nome}</span>
                     ${renderizarContagensArvore(cont)}
+                    ${cont.revisar > 0 || cont.novos > 0 || cont.aprender > 0
+                        ? `<button type="button" class="baralho-arvore-revisar-pasta" onclick="event.stopPropagation(); revisarPasta('${chaveEscapada}')" title="Revisar tudo em &quot;${filho.nome.replace(/"/g, '&quot;')}&quot;">▶</button>`
+                        : '<span class="baralho-arvore-revisar-pasta-vazio"></span>'}
                 </div>
                 ${expandido ? renderizarNodoArvoreBaralhos(filho, caminhoFilho, profundidade + 1) : ''}
             </div>
@@ -2061,6 +2075,26 @@ function toggleFlashcardsPasta(chave) {
     renderizarBaralhos();
 }
 
+// Baralhos que ficam dentro de uma pasta (matéria/tópico/subtópico) —
+// qualquer baralho cujo caminho comece exatamente com os segmentos da pasta.
+function baralhosDaPasta(chave) {
+    const segmentos = chave.split('::');
+    return baralhosCache.filter(b => {
+        const c = b.caminho || [];
+        if (c.length < segmentos.length) return false;
+        return segmentos.every((seg, i) => c[i] === seg);
+    });
+}
+
+// "▶" no cabeçalho de uma pasta — revisa TODOS os cartões pendentes de
+// TODOS os baralhos daquele tópico/subtópico de uma vez, não só um baralho
+// específico.
+function revisarPasta(chave) {
+    const ids = baralhosDaPasta(chave).map(b => b._id);
+    if (ids.length === 0) return;
+    iniciarRevisao(ids);
+}
+
 function renderizarBaralhos() {
     const grid = document.getElementById('flashcards-baralhos-grid');
     const vazio = document.getElementById('flashcards-vazio');
@@ -2076,51 +2110,35 @@ function renderizarBaralhos() {
         return;
     }
 
-    if (flashcardsFiltroMateria === 'geral') {
-        if (vazio) vazio.style.display = 'none';
-        grid.classList.add('modo-arvore');
-        const arvore = construirArvoreBaralhos(baralhosCache);
-        grid.innerHTML = `
-            <div class="baralho-arvore-cabecalho">
-                <span>Baralho</span>
-                <span class="baralho-arvore-contagens">
-                    <span title="Novos">Novo</span>
-                    <span title="Aprendendo">Aprender</span>
-                    <span title="Pra revisar">Revisar</span>
-                </span>
-                <span></span>
-            </div>
-            <div class="baralho-arvore">${renderizarNodoArvoreBaralhos(arvore, [], 0)}</div>
-        `;
-        return;
-    }
-
-    grid.classList.remove('modo-arvore');
-    const baralhosFiltrados = baralhosCache.filter(b => (b.materia || '').trim() === flashcardsFiltroMateria);
+    // "Geral" mostra a árvore inteira; qualquer outra pílula é sempre um
+    // baralho INTEIRO (raiz) — mostra a mesma árvore, só que filtrada pra
+    // conter apenas esse baralho (com todas as matérias/tópicos por dentro),
+    // nunca uma lista solta de tópicos.
+    const baralhosNoEscopo = flashcardsFiltroMateria === 'geral'
+        ? baralhosCache
+        : baralhosCache.filter(b => raizDoBaralho(b) === flashcardsFiltroMateria);
 
     if (vazio) {
-        vazio.style.display = baralhosFiltrados.length === 0 ? 'block' : 'none';
-        vazio.textContent = `Nenhum baralho em "${flashcardsFiltroMateria}" ainda.`;
+        vazio.style.display = baralhosNoEscopo.length === 0 ? 'block' : 'none';
+        vazio.textContent = flashcardsFiltroMateria === 'geral'
+            ? 'Você ainda não tem nenhum baralho. Crie um do zero ou importe um baralho do Anki (.apkg) pra começar!'
+            : `Nenhum cartão em "${flashcardsFiltroMateria}" ainda.`;
     }
 
-    grid.innerHTML = baralhosFiltrados.map(b => `
-        <div class="baralho-card">
-            <div class="baralho-card-topo">
-                <span class="baralho-card-nome">${b.nome}</span>
-                ${b.materia ? `<span class="baralho-card-materia">${b.materia}</span>` : ''}
-                ${b.origem === 'anki' ? `<span class="baralho-card-origem-anki">Anki</span>` : ''}
-            </div>
-            <div class="baralho-card-info">
-                <span>${b.totalCartoes} cartão${b.totalCartoes === 1 ? '' : 'ões'}</span>
-                ${b.aRevisar > 0 ? `<span class="baralho-card-badge">${b.aRevisar} pra revisar</span>` : ''}
-            </div>
-            <div class="baralho-card-acoes">
-                <button type="button" class="btn-secundario" onclick="abrirBaralho('${b._id}')">📚 Ver cartões</button>
-                ${b.aRevisar > 0 ? `<button type="button" onclick="iniciarRevisao('${b._id}')">▶ Revisar</button>` : ''}
-                <button type="button" class="baralho-card-excluir" onclick="excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>
-            </div>
+    grid.classList.add('modo-arvore');
+    const arvore = construirArvoreBaralhos(baralhosNoEscopo);
+    grid.innerHTML = `
+        <div class="baralho-arvore-cabecalho">
+            <span>Baralho</span>
+            <span class="baralho-arvore-contagens">
+                <span class="contagem-novo" title="Novos">Novo</span>
+                <span class="contagem-aprender" title="Aprendendo">Aprender</span>
+                <span class="contagem-revisar" title="Pra revisar">Revisar</span>
+            </span>
+            <span></span>
         </div>
-    `).join('');
+        <div class="baralho-arvore">${renderizarNodoArvoreBaralhos(arvore, [], 0)}</div>
+    `;
 }
 
 // --- MODAL: CRIAR/EDITAR BARALHO ---
@@ -2563,14 +2581,12 @@ async function salvarCartao() {
 
         if (cartaoEdicaoEmRevisao) {
             cartaoEdicaoEmRevisao = false;
-            // Atualiza a fila de revisão do zero — o cartão editado continua
-            // devido, então ele deve reaparecer, e a sessão continua normal.
-            try {
-                const resFila = await fetch(`/api/flashcards/baralhos/${baralhoAtualId}/revisar`);
-                filaRevisaoCache = await resFila.json();
-            } catch (err) {
-                console.error('Erro ao atualizar fila de revisão:', err);
-            }
+            // Atualiza a fila de revisão do zero (somando de novo todos os
+            // baralhos da sessão, mesmo quando é uma revisão de pasta inteira)
+            // — o cartão editado continua devido, então ele deve reaparecer,
+            // e a sessão continua normal.
+            const idsFila = revisaoIdsAtual.length > 0 ? revisaoIdsAtual : [baralhoAtualId];
+            filaRevisaoCache = await buscarFilaRevisaoParaIds(idsFila);
             mostrarProximoCartaoRevisao();
         } else {
             await abrirBaralho(baralhoAtualId);
@@ -2592,16 +2608,32 @@ async function excluirCartao(id) {
 
 // --- SESSÃO DE REVISÃO (repetição espaçada, estilo SM-2/Anki) ---
 
-async function iniciarRevisao(id) {
-    try {
-        const res = await fetch(`/api/flashcards/baralhos/${id}/revisar`);
-        filaRevisaoCache = await res.json();
-    } catch (err) {
-        console.error('Erro ao carregar cartões pra revisar:', err);
-        filaRevisaoCache = [];
-    }
+// IDs dos baralhos envolvidos na sessão de revisão atual — um único id
+// quando a revisão partiu de um baralho específico, ou vários quando
+// partiu de "▶" numa pasta (revisando o tópico/subtópico inteiro).
+let revisaoIdsAtual = [];
 
-    baralhoAtualId = id;
+async function buscarFilaRevisaoParaIds(ids) {
+    const listas = await Promise.all(ids.map(async id => {
+        try {
+            const res = await fetch(`/api/flashcards/baralhos/${id}/revisar`);
+            return await res.json();
+        } catch (err) {
+            console.error('Erro ao carregar cartões pra revisar:', err);
+            return [];
+        }
+    }));
+    return listas.flat().sort((a, b) => new Date(a.dataProximaRevisao) - new Date(b.dataProximaRevisao));
+}
+
+// Aceita tanto um único id de baralho quanto uma lista de ids (revisão de
+// uma pasta/tópico inteiro, somando os cartões pendentes de todos eles).
+async function iniciarRevisao(idOuIds) {
+    const ids = Array.isArray(idOuIds) ? idOuIds : [idOuIds];
+    filaRevisaoCache = await buscarFilaRevisaoParaIds(ids);
+
+    revisaoIdsAtual = ids;
+    baralhoAtualId = ids.length === 1 ? ids[0] : null;
     if (filaRevisaoCache.length === 0) {
         alert('Não há cartões pendentes de revisão nesse baralho agora.');
         return;
@@ -2666,6 +2698,7 @@ async function responderRevisao(qualidade) {
 function sairRevisao() {
     cartaoRevisaoAtual = null;
     filaRevisaoCache = [];
+    revisaoIdsAtual = [];
     carregarFlashcards();
 }
 

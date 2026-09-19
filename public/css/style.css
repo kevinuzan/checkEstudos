@@ -2759,26 +2759,30 @@ input[type="checkbox"] {
 .baralho-arvore-contagens {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
     flex-shrink: 0;
     font-size: 12.5px;
     font-weight: 700;
-    min-width: 132px;
+    min-width: 220px;
     justify-content: flex-end;
 }
 
-.baralho-arvore-cabecalho .baralho-arvore-contagens span {
+/* Cada coluna (Novo/Aprender/Revisar) tem sua própria largura fixa —
+   a mesma classe é usada tanto no cabeçalho (texto) quanto nas linhas
+   (números), então as duas colunas ficam sempre alinhadas verticalmente
+   e o texto do cabeçalho nunca esbarra na coluna vizinha. */
+.baralho-arvore-contagens span {
     display: inline-block;
-    width: 44px;
+    white-space: nowrap;
     text-align: right;
 }
 
-.baralho-arvore-contagens .contagem-novo,
-.baralho-arvore-contagens .contagem-aprender,
-.baralho-arvore-contagens .contagem-revisar {
-    display: inline-block;
-    width: 44px;
-    text-align: right;
+.baralho-arvore-contagens .contagem-novo { width: 46px; }
+.baralho-arvore-contagens .contagem-aprender { width: 78px; }
+.baralho-arvore-contagens .contagem-revisar { width: 60px; }
+
+.baralho-arvore-cabecalho .baralho-arvore-contagens span {
+    font-size: 10.5px;
 }
 
 .contagem-novo { color: #2563eb; }
@@ -2799,6 +2803,29 @@ input[type="checkbox"] {
 .baralho-arvore-excluir:hover {
     color: #dc2626;
     background: var(--card);
+}
+
+.baralho-arvore-revisar-pasta {
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    border: none;
+    padding: 4px 9px;
+    font-size: 11.5px;
+    font-weight: 700;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.baralho-arvore-revisar-pasta:hover {
+    background: var(--primary);
+    color: #fff;
+}
+
+.baralho-arvore-revisar-pasta-vazio {
+    display: inline-block;
+    width: 31px;
+    flex-shrink: 0;
 }
 
 .baralho-card {
