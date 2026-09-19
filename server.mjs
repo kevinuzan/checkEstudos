@@ -19,6 +19,7 @@ import multer from 'multer';
 import AdmZip from 'adm-zip';
 import initSqlJs from 'sql.js';
 import { decompress as decompressZstd } from 'fzstd';
+import pdfParse from 'pdf-parse';
 
 // --- CONFIGURAÇÕES BÁSICAS ---
 const app = express();
@@ -639,6 +640,139 @@ async function startServer() {
                 }
             }
             res.json({ success: true, plano: nomePlano, criados, vinculados });
+        });
+
+        // Gera uma SUGESTÃO de edital (matérias + tópicos) a partir de um PDF
+        // enviado pela pessoa, usando IA pra extrair o conteúdo programático.
+        // Não salva nada no banco — devolve os dados no mesmo formato usado
+        // pelo modelo/exportação (checkestudos-edital-v1) pra pessoa revisar
+        // e editar no front antes de confirmar via /api/edital/importar.
+        const uploadPdfEdital = multer({
+            storage: multer.memoryStorage(),
+            limits: { fileSize: 20 * 1024 * 1024 } // 20MB
+        });
+
+        app.post('/api/edital/sugestao-pdf', requireAuth, uploadPdfEdital.single('arquivo'), async (req, res) => {
+            if (!req.file) {
+                return res.status(400).json({ success: false, error: 'Envie um arquivo PDF.' });
+            }
+            if (!process.env.API_CLAUDE) {
+                return res.status(500).json({ success: false, error: 'A chave da API de IA não está configurada no servidor.' });
+            }
+
+            try {
+                const dadosPdf = await pdfParse(req.file.buffer);
+
+                // Limita o tamanho do PDF aceito (em páginas) antes de gastar
+                // qualquer chamada de IA — controla custo e evita mandar
+                // editais gigantes pro modelo de uma vez só.
+                const LIMITE_PAGINAS = 50;
+                if (dadosPdf.numpages && dadosPdf.numpages > LIMITE_PAGINAS) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Esse PDF tem ${dadosPdf.numpages} páginas — o limite atual é de ${LIMITE_PAGINAS} páginas por importação. Tente enviar só a seção de conteúdo programático do edital, ou dividir o arquivo.`
+                    });
+                }
+
+                let texto = (dadosPdf.text || '').trim();
+
+                if (!texto) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Não foi possível ler texto desse PDF — ele pode ser um arquivo escaneado/imagem, sem texto selecionável.'
+                    });
+                }
+
+                // Limita também o tamanho do texto mandado pra IA (segunda
+                // rede de segurança, caso um PDF dentro do limite de páginas
+                // ainda tenha um volume de texto incomum): controla custo e
+                // garante folga de sobra no contexto do modelo.
+                const LIMITE_CARACTERES = 220000;
+                if (texto.length > LIMITE_CARACTERES) texto = texto.slice(0, LIMITE_CARACTERES);
+
+                const ferramenta = {
+                    name: 'retornar_edital',
+                    description: 'Retorna a lista de matérias e tópicos do conteúdo programático extraído do edital.',
+                    input_schema: {
+                        type: 'object',
+                        properties: {
+                            nomeEdital: {
+                                type: 'string',
+                                description: 'Nome curto do concurso/cargo (ex: sigla do órgão + cargo), se identificável no texto.'
+                            },
+                            materias: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        materia: { type: 'string' },
+                                        topicos: { type: 'array', items: { type: 'string' } }
+                                    },
+                                    required: ['materia', 'topicos']
+                                }
+                            }
+                        },
+                        required: ['materias']
+                    }
+                };
+
+                const respostaIA = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': process.env.API_CLAUDE,
+                        'anthropic-version': '2023-06-01'
+                    },
+                    body: JSON.stringify({
+                        model: 'claude-haiku-4-5',
+                        max_tokens: 8000,
+                        system: 'Você extrai o conteúdo programático (matérias e tópicos) de editais de concurso público brasileiro. Ignore capa, regras de inscrição, cronograma, vagas, remuneração, rodapés e numeração de página — foque só na seção de "conteúdo programático" / "objeto de avaliação" / "programa". Cada matéria/disciplina deve virar uma entrada, com os tópicos dela como itens de texto separados, mantendo a redação original o mais fiel possível (sem resumir/reescrever o conteúdo). Não invente nada que não esteja no texto. Se não conseguir identificar o nome do concurso/cargo, deixe nomeEdital em branco.',
+                        messages: [
+                            { role: 'user', content: `Aqui está o texto extraído de um edital em PDF. Extraia a lista de matérias e tópicos do conteúdo programático:\n\n${texto}` }
+                        ],
+                        tools: [ferramenta],
+                        tool_choice: { type: 'tool', name: 'retornar_edital' }
+                    })
+                });
+
+                if (!respostaIA.ok) {
+                    const erroTexto = await respostaIA.text();
+                    console.error('Erro da API de IA ao gerar sugestão de edital:', respostaIA.status, erroTexto);
+                    return res.status(502).json({ success: false, error: 'Não foi possível gerar a sugestão agora (erro na API de IA). Tente novamente em instantes.' });
+                }
+
+                const corpoIA = await respostaIA.json();
+                const blocoFerramenta = (corpoIA.content || []).find(b => b.type === 'tool_use' && b.name === 'retornar_edital');
+                if (!blocoFerramenta || !blocoFerramenta.input || !Array.isArray(blocoFerramenta.input.materias)) {
+                    return res.status(502).json({ success: false, error: 'A IA não conseguiu identificar matérias e tópicos nesse PDF.' });
+                }
+
+                const materiasSugeridas = blocoFerramenta.input.materias
+                    .map(b => ({
+                        materia: (b.materia || '').trim(),
+                        topicos: Array.isArray(b.topicos) ? b.topicos.map(t => (t || '').trim()).filter(t => t !== '') : []
+                    }))
+                    .filter(b => b.materia !== '' && b.topicos.length > 0);
+
+                if (materiasSugeridas.length === 0) {
+                    return res.status(422).json({
+                        success: false,
+                        error: 'Não foi possível identificar um conteúdo programático nesse PDF. Confira se é o arquivo certo ou importe manualmente.'
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    dados: {
+                        formato: FORMATO_EDITAL_EXPORTADO,
+                        nomeEdital: (blocoFerramenta.input.nomeEdital || '').trim() || 'Edital importado (PDF)',
+                        materias: materiasSugeridas
+                    }
+                });
+            } catch (err) {
+                console.error('Erro ao gerar sugestão de edital a partir de PDF:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível processar esse PDF agora.' });
+            }
         });
 
         // --- TIPOS DE ESTUDO (simulado, resumo, leitura, etc. — editáveis) ---

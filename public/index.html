@@ -295,6 +295,20 @@
                             </label>
                             <input type="file" id="edital-arquivo-input" class="arquivo-input-oculto" accept="application/json" onchange="importarArquivoEdital(event)">
                         </div>
+
+                        <div class="edital-arquivo-box">
+                            <label class="modal-label">Gerar sugestão de edital a partir de um PDF (IA)</label>
+                            <p class="config-texto-ajuda">Envie o PDF do edital (até 50 páginas) e a IA sugere as matérias e tópicos — você revisa e edita tudo antes de confirmar a importação.</p>
+                            <label class="arquivo-botao-bonito" for="edital-pdf-input">
+                                <span class="arquivo-botao-icone">🧠</span>
+                                <span class="arquivo-botao-textos">
+                                    <span class="arquivo-botao-titulo">Escolher PDF do edital</span>
+                                    <span class="arquivo-botao-nome" id="edital-pdf-nome">Nenhum arquivo selecionado</span>
+                                </span>
+                            </label>
+                            <input type="file" id="edital-pdf-input" class="arquivo-input-oculto" accept="application/pdf" onchange="gerarSugestaoEditalPdf(event)">
+                            <p class="config-texto-ajuda" id="sugestao-pdf-status" style="display:none;"></p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -584,6 +598,25 @@
             <div class="modal-actions">
                 <button class="btn-cancelar" onclick="fecharModalNovoTopico()">Cancelar</button>
                 <button onclick="salvarNovoTopico()">Adicionar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de revisão da sugestão de edital gerada por IA a partir de um PDF -->
+    <div id="modal-sugestao-edital-overlay" class="modal-overlay" style="display:none;">
+        <div class="modal modal-grande">
+            <h3>Sugestão de edital (revise antes de importar)</h3>
+            <p class="config-texto-ajuda">A IA pode errar — confira e ajuste os nomes das matérias e os tópicos abaixo antes de confirmar. Nada é salvo até você clicar em "Confirmar importação".</p>
+            <label class="modal-label">Importar para o plano</label>
+            <input type="text" id="sugestao-plano-input" placeholder="Nome do plano (ex: TRT)">
+            <label class="modal-label">Matérias e tópicos sugeridos</label>
+            <div id="sugestao-materias-lista">
+                <!-- blocos por matéria inseridos via JS -->
+            </div>
+            <button type="button" class="btn-secundario" onclick="adicionarBlocoMateriaSugestao()">+ Adicionar matéria</button>
+            <div class="modal-actions">
+                <button class="btn-cancelar" onclick="fecharModalSugestaoEdital()">Cancelar</button>
+                <button onclick="confirmarImportacaoSugestaoEdital()">Confirmar importação</button>
             </div>
         </div>
     </div>

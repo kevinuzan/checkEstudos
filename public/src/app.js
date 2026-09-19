@@ -745,6 +745,148 @@ async function salvarNovoTopico() {
     if (viewAtual === 'resumo') await carregarResumo();
 }
 
+// --- SUGESTÃO DE EDITAL A PARTIR DE PDF (IA) ---
+// Manda o PDF pro servidor, que extrai o texto e pede pra IA organizar em
+// matérias/tópicos. O resultado é só uma sugestão editável — nada é salvo
+// no banco até a pessoa revisar e confirmar a importação no modal.
+
+let sugestaoEditalAtual = null; // { formato, nomeEdital, materias: [{materia, topicos}] }
+
+async function gerarSugestaoEditalPdf(event) {
+    const arquivo = event.target.files[0];
+    if (!arquivo) return;
+
+    const nomeEl = document.getElementById('edital-pdf-nome');
+    const statusEl = document.getElementById('sugestao-pdf-status');
+    if (nomeEl) nomeEl.textContent = arquivo.name;
+    if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.textContent = '🧠 Lendo o PDF e gerando a sugestão... isso pode levar até 1 minuto.';
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('arquivo', arquivo);
+
+        const res = await fetch('/api/edital/sugestao-pdf', { method: 'POST', body: formData });
+        const resultado = await res.json();
+
+        event.target.value = '';
+        if (nomeEl) nomeEl.textContent = 'Nenhum arquivo selecionado';
+        if (statusEl) statusEl.style.display = 'none';
+
+        if (!resultado.success) {
+            alert(resultado.error || 'Não foi possível gerar a sugestão a partir desse PDF.');
+            return;
+        }
+
+        abrirModalSugestaoEdital(resultado.dados);
+    } catch (err) {
+        console.error('Erro ao gerar sugestão de edital a partir de PDF:', err);
+        event.target.value = '';
+        if (nomeEl) nomeEl.textContent = 'Nenhum arquivo selecionado';
+        if (statusEl) statusEl.style.display = 'none';
+        alert('Não foi possível processar esse PDF agora.');
+    }
+}
+
+function abrirModalSugestaoEdital(dados) {
+    sugestaoEditalAtual = dados;
+    document.getElementById('sugestao-plano-input').value = dados.nomeEdital || planoAtual;
+    renderizarBlocosMateriaSugestao();
+    document.getElementById('modal-sugestao-edital-overlay').style.display = 'flex';
+}
+
+function fecharModalSugestaoEdital() {
+    sugestaoEditalAtual = null;
+    document.getElementById('modal-sugestao-edital-overlay').style.display = 'none';
+}
+
+function renderizarBlocosMateriaSugestao() {
+    const container = document.getElementById('sugestao-materias-lista');
+    if (!container || !sugestaoEditalAtual) return;
+    container.innerHTML = sugestaoEditalAtual.materias.map((bloco, i) => `
+        <div class="sugestao-materia-bloco">
+            <div class="sugestao-materia-topo">
+                <input type="text" class="sugestao-materia-nome" data-indice="${i}" value="${(bloco.materia || '').replace(/"/g, '&quot;')}" placeholder="Nome da matéria">
+                <button type="button" class="btn-remover-materia-sugestao" onclick="removerBlocoMateriaSugestao(${i})" title="Remover matéria">🗑️</button>
+            </div>
+            <textarea class="sugestao-materia-topicos" data-indice="${i}" placeholder="Um tópico por linha">${(bloco.topicos || []).join('\n')}</textarea>
+        </div>
+    `).join('');
+}
+
+function adicionarBlocoMateriaSugestao() {
+    if (!sugestaoEditalAtual) return;
+    sincronizarBlocosMateriaSugestao();
+    sugestaoEditalAtual.materias.push({ materia: '', topicos: [] });
+    renderizarBlocosMateriaSugestao();
+}
+
+function removerBlocoMateriaSugestao(indice) {
+    if (!sugestaoEditalAtual) return;
+    sincronizarBlocosMateriaSugestao();
+    sugestaoEditalAtual.materias.splice(indice, 1);
+    renderizarBlocosMateriaSugestao();
+}
+
+// Lê o que a pessoa editou nos campos de volta pro objeto sugestaoEditalAtual
+// — chamado antes de adicionar/remover um bloco (pra não perder edição em
+// andamento) e antes de confirmar a importação.
+function sincronizarBlocosMateriaSugestao() {
+    if (!sugestaoEditalAtual) return;
+    document.querySelectorAll('.sugestao-materia-nome').forEach(input => {
+        const i = Number(input.dataset.indice);
+        if (sugestaoEditalAtual.materias[i]) sugestaoEditalAtual.materias[i].materia = input.value;
+    });
+    document.querySelectorAll('.sugestao-materia-topicos').forEach(textarea => {
+        const i = Number(textarea.dataset.indice);
+        if (sugestaoEditalAtual.materias[i]) {
+            sugestaoEditalAtual.materias[i].topicos = textarea.value.split('\n').map(t => t.trim()).filter(t => t !== '');
+        }
+    });
+}
+
+async function confirmarImportacaoSugestaoEdital() {
+    if (!sugestaoEditalAtual) return;
+    sincronizarBlocosMateriaSugestao();
+
+    const plano = document.getElementById('sugestao-plano-input').value.trim();
+    if (!plano) return alert('Informe o nome do plano para importar.');
+
+    const materiasValidas = sugestaoEditalAtual.materias
+        .map(b => ({ materia: (b.materia || '').trim(), topicos: (b.topicos || []).filter(t => t.trim() !== '') }))
+        .filter(b => b.materia !== '' && b.topicos.length > 0);
+
+    if (materiasValidas.length === 0) return alert('Adicione ao menos uma matéria com tópicos antes de importar.');
+
+    const dados = { formato: sugestaoEditalAtual.formato, nomeEdital: sugestaoEditalAtual.nomeEdital, materias: materiasValidas };
+
+    const res = await fetch('/api/edital/importar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dados, plano })
+    });
+    const resultado = await res.json();
+
+    if (!resultado.success) {
+        alert(resultado.error || 'Não foi possível importar o edital.');
+        return;
+    }
+
+    fecharModalSugestaoEdital();
+
+    await carregarPlanos();
+    planoAtual = resultado.plano;
+    localStorage.setItem('edital_plano_atual', planoAtual);
+    renderizarTabsPlanos();
+    await carregarEdital();
+    if (viewAtual === 'estudos') await carregarPainelEstudos();
+    if (viewAtual === 'resumo') await carregarResumo();
+
+    alert(`Edital importado para "${resultado.plano}": ${resultado.criados} tópico(s) novo(s), ${resultado.vinculados} já existiam e foram vinculados.`);
+}
+
 // ==================================================================
 // NAVEGAÇÃO ENTRE SEÇÕES (Resumo / Edital / Estudos)
 // ==================================================================
