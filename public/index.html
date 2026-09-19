@@ -273,6 +273,30 @@
 
                 <div id="lista-edital" class="lista-edital-grid">
                     </div>
+
+                <div class="config-card config-card-sem-padding edital-importacao-card">
+                    <button type="button" class="toggle-secao" id="btn-toggle-importacao-edital" onclick="alternarImportacaoEdital()">
+                        <span>Importação de Edital</span>
+                        <span class="toggle-secao-seta" id="seta-importacao-edital">▸</span>
+                    </button>
+                    <div class="toggle-secao-conteudo" id="conteudo-importacao-edital" style="display:none;">
+                        <div class="edital-arquivo-box">
+                            <div class="edital-arquivo-linha">
+                                <button type="button" class="btn-secundario" onclick="baixarModeloEdital()">⬇ Baixar modelo de edital</button>
+                                <button type="button" class="btn-secundario" onclick="exportarEditalAtual()">⬆ Exportar edital do plano atual</button>
+                            </div>
+                            <label class="modal-label">Importar arquivo de edital (.json)</label>
+                            <label class="arquivo-botao-bonito" for="edital-arquivo-input">
+                                <span class="arquivo-botao-icone">📁</span>
+                                <span class="arquivo-botao-textos">
+                                    <span class="arquivo-botao-titulo">Escolher arquivo de edital</span>
+                                    <span class="arquivo-botao-nome" id="edital-arquivo-nome">Nenhum arquivo selecionado</span>
+                                </span>
+                            </label>
+                            <input type="file" id="edital-arquivo-input" class="arquivo-input-oculto" accept="application/json" onchange="importarArquivoEdital(event)">
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- ===================== VIEW: ESTUDOS (revisões e histórico) ===================== -->
@@ -514,38 +538,6 @@
                             <div class="tema-label">Fundo</div>
                             <div class="fundo-opcoes" id="fundo-opcoes">
                                 <!-- opções de fundo inseridas via JS -->
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="painel-bloco">
-                    <div class="painel-bloco-header">
-                        <h2>Edital</h2>
-                    </div>
-                    <div class="config-card config-card-sem-padding">
-                        <button type="button" class="toggle-secao" id="btn-toggle-importar-topicos" onclick="alternarImportarTopicos()">
-                            <span>Importar tópicos</span>
-                            <span class="toggle-secao-seta" id="seta-importar-topicos">▸</span>
-                        </button>
-                        <div class="toggle-secao-conteudo" id="conteudo-importar-topicos" style="display:none;">
-                            <p class="config-texto-ajuda">Para adicionar tópicos a uma matéria (existente ou nova), use o botão "+ Adicionar tópico" na aba Edital, ou clique abaixo.</p>
-                            <button type="button" onclick="abrirModalNovoTopico()">+ Adicionar tópico</button>
-
-                            <div class="edital-arquivo-box">
-                                <div class="edital-arquivo-linha">
-                                    <button type="button" class="btn-secundario" onclick="baixarModeloEdital()">⬇ Baixar modelo de edital</button>
-                                    <button type="button" class="btn-secundario" onclick="exportarEditalAtual()">⬆ Exportar edital do plano atual</button>
-                                </div>
-                                <label class="modal-label">Importar arquivo de edital (.json)</label>
-                                <label class="arquivo-botao-bonito" for="edital-arquivo-input">
-                                    <span class="arquivo-botao-icone">📁</span>
-                                    <span class="arquivo-botao-textos">
-                                        <span class="arquivo-botao-titulo">Escolher arquivo de edital</span>
-                                        <span class="arquivo-botao-nome" id="edital-arquivo-nome">Nenhum arquivo selecionado</span>
-                                    </span>
-                                </label>
-                                <input type="file" id="edital-arquivo-input" class="arquivo-input-oculto" accept="application/json" onchange="importarArquivoEdital(event)">
                             </div>
                         </div>
                     </div>

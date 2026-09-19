@@ -827,9 +827,9 @@ async function salvarApelido() {
 
 // "Importar tópicos" fica sempre minimizado por padrão dentro de
 // Configurações — a pessoa clica pra abrir só quando precisa importar algo.
-function alternarImportarTopicos() {
-    const conteudo = document.getElementById('conteudo-importar-topicos');
-    const seta = document.getElementById('seta-importar-topicos');
+function alternarImportacaoEdital() {
+    const conteudo = document.getElementById('conteudo-importacao-edital');
+    const seta = document.getElementById('seta-importacao-edital');
     if (!conteudo) return;
     const abrindo = conteudo.style.display === 'none';
     conteudo.style.display = abrindo ? 'flex' : 'none';

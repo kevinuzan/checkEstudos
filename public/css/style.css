@@ -1135,6 +1135,11 @@ button:active {
     line-height: 1.4;
 }
 
+.edital-importacao-card {
+    margin-top: 18px;
+    opacity: 0.9;
+}
+
 .planos-checkboxes {
     display: flex;
     flex-wrap: wrap;
