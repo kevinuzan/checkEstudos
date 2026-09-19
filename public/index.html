@@ -829,9 +829,17 @@
 
             <div id="cartao-campos-cloze" style="display:none;">
                 <label class="modal-label">Texto</label>
-                <p class="config-texto-ajuda">Escreva o texto, <strong>selecione</strong> a parte que quer esconder e clique em "🕳️ Omitir" — pode omitir mais de um trecho: cada um vira um cartão diferente (numerados 1, 2, 3...), igual no Anki.</p>
+                <p class="config-texto-ajuda">Escreva o texto, <strong>selecione</strong> um trecho e clique em "🕳️ Omitir" pra escondê-lo no <strong>cartão ativo</strong> (indicado abaixo). Selecione outro trecho e clique em "🕳️ Omitir" de novo pra esconder junto, no MESMO cartão. Só use "🕳️+ Novo cartão" quando quiser que o próximo trecho vire um cartão separado. Clique num trecho já omitido pra desfazer.</p>
+                <div class="cloze-numero-ativo-row">
+                    <span class="cloze-numero-ativo-label">Cartão ativo:</span>
+                    <button type="button" class="cloze-numero-ativo-passo" onmousedown="event.preventDefault()" onclick="definirClozeNumeroAtivo(-1)">−</button>
+                    <span class="cloze-numero-ativo-valor" id="cloze-numero-ativo-valor">1</span>
+                    <button type="button" class="cloze-numero-ativo-passo" onmousedown="event.preventDefault()" onclick="definirClozeNumeroAtivo(1)">+</button>
+                    <span class="cloze-numero-ativo-dica">(pra continuar omitindo num cartão anterior, mude o número aqui antes de selecionar o texto)</span>
+                </div>
                 <div class="editor-toolbar">
-                    <button type="button" class="editor-toolbar-omitir" onmousedown="event.preventDefault()" onclick="omitirSelecaoCloze()" title="Omitir o trecho selecionado">🕳️ Omitir</button>
+                    <button type="button" class="editor-toolbar-omitir" onmousedown="event.preventDefault()" onclick="omitirSelecao()" title="Esconder o trecho selecionado no cartão ativo">🕳️ Omitir</button>
+                    <button type="button" class="editor-toolbar-omitir-novo" onmousedown="event.preventDefault()" onclick="omitirSelecaoNovoCartao()" title="Esconder o trecho selecionado criando um cartão NOVO">🕳️+ Novo cartão</button>
                     <span class="editor-toolbar-separador"></span>
                     <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
                     <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>

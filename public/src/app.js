@@ -2332,7 +2332,42 @@ function proximoNumeroCloze(containerEl) {
     return max + 1;
 }
 
-function omitirSelecaoCloze() {
+// Número do "cartão ativo" — todo trecho marcado com "🕳️ Omitir" vira parte
+// DESSE cartão (podendo ter vários trechos omitidos no mesmo cartão). Só
+// muda quando a pessoa clica em "🕳️+ Novo cartão" ou mexe manualmente no
+// contador acima do editor.
+let clozeNumeroAtivo = 1;
+
+function atualizarIndicadorClozeAtivo() {
+    const el = document.getElementById('cloze-numero-ativo-valor');
+    if (el) el.textContent = String(clozeNumeroAtivo);
+}
+
+function definirClozeNumeroAtivo(delta) {
+    clozeNumeroAtivo = Math.max(1, clozeNumeroAtivo + delta);
+    atualizarIndicadorClozeAtivo();
+}
+
+// Maior número cN encontrado num texto cloze salvo — usado ao reabrir um
+// cartão pra edição, pra já deixar o "cartão ativo" no último número usado
+// (ela pode então diminuir manualmente se quiser editar um cartão anterior).
+function maiorNumeroClozeNoTexto(clozeTexto) {
+    if (!clozeTexto) return 1;
+    let max = 0;
+    const regexNumerado = /\{\{c(\d+)::/g;
+    let m;
+    while ((m = regexNumerado.exec(clozeTexto)) !== null) {
+        const n = Number(m[1]);
+        if (n > max) max = n;
+    }
+    if (max === 0 && /\{\{[^{}:][^{}]*\}\}/.test(clozeTexto)) max = 1;
+    return max > 0 ? max : 1;
+}
+
+// Envolve o trecho selecionado num "cartão-mostrador" de omissão com o
+// número passado — usada tanto por "🕳️ Omitir" (mantém o cartão ativo)
+// quanto por "🕳️+ Novo cartão" (usa um número novo).
+function marcarSelecaoComoCloze(numero) {
     const editor = restaurarSelecaoEditor();
     if (!editor || editor.id !== 'cartao-cloze-input') {
         alert('Clique no campo de texto, selecione o trecho que quer esconder e tente de novo.');
@@ -2344,7 +2379,6 @@ function omitirSelecaoCloze() {
         return;
     }
     const range = selecao.getRangeAt(0);
-    const numero = proximoNumeroCloze(editor);
     const frag = range.cloneContents();
     const div = document.createElement('div');
     div.appendChild(frag);
@@ -2355,6 +2389,8 @@ function omitirSelecaoCloze() {
     span.className = 'cloze-editor-marca';
     span.contentEditable = 'false';
     span.dataset.cloze = String(numero);
+    span.title = 'Clique pra desomitir';
+    span.setAttribute('onclick', 'desomitirMarca(this)');
     span.innerHTML = `${conteudoHtml}<sup class="cloze-editor-numero">${numero}</sup>`;
     range.insertNode(span);
 
@@ -2365,6 +2401,31 @@ function omitirSelecaoCloze() {
     novoRange.collapse(true);
     novaSelecao.removeAllRanges();
     novaSelecao.addRange(novoRange);
+}
+
+// "🕳️ Omitir" — continua omitindo no cartão ativo atual (não muda o número).
+function omitirSelecao() {
+    marcarSelecaoComoCloze(clozeNumeroAtivo);
+}
+
+// "🕳️+ Novo cartão" — o próximo trecho omitido vira um cartão SEPARADO.
+function omitirSelecaoNovoCartao() {
+    const editor = document.getElementById('cartao-cloze-input');
+    clozeNumeroAtivo = proximoNumeroCloze(editor);
+    atualizarIndicadorClozeAtivo();
+    marcarSelecaoComoCloze(clozeNumeroAtivo);
+}
+
+// Clicar num trecho já omitido desfaz a omissão, devolvendo o texto puro
+// (sem o "cartão-mostrador" nem o numerozinho sobrescrito).
+function desomitirMarca(spanEl) {
+    // Usa o innerHTML sem o <sup> pra preservar formatação (negrito/itálico
+    // etc.) que porventura exista dentro do trecho omitido.
+    const clone = spanEl.cloneNode(true);
+    clone.querySelectorAll('.cloze-editor-numero').forEach(b => b.remove());
+    const frag = document.createDocumentFragment();
+    Array.from(clone.childNodes).forEach(n => frag.appendChild(n));
+    spanEl.replaceWith(frag);
 }
 
 // Serializa o editor de omissão pro formato bruto {{cN::conteúdo}} guardado
@@ -2383,10 +2444,10 @@ function converterClozeTextoParaEditorHtml(clozeTexto) {
     if (!clozeTexto) return '';
     let html = clozeTexto.replace(/\{\{c(\d+)::([\s\S]*?)\}\}/g, (m, n, conteudo) => {
         const partes = conteudo.split('::');
-        return `<span class="cloze-editor-marca" contenteditable="false" data-cloze="${n}">${partes[0]}<sup class="cloze-editor-numero">${n}</sup></span>`;
+        return `<span class="cloze-editor-marca" contenteditable="false" data-cloze="${n}" title="Clique pra desomitir" onclick="desomitirMarca(this)">${partes[0]}<sup class="cloze-editor-numero">${n}</sup></span>`;
     });
     // Formato antigo (sem número), de cartões criados antes desse editor.
-    html = html.replace(/\{\{([^{}:][^{}]*)\}\}/g, (m, conteudo) => `<span class="cloze-editor-marca" contenteditable="false" data-cloze="1">${conteudo}<sup class="cloze-editor-numero">1</sup></span>`);
+    html = html.replace(/\{\{([^{}:][^{}]*)\}\}/g, (m, conteudo) => `<span class="cloze-editor-marca" contenteditable="false" data-cloze="1" title="Clique pra desomitir" onclick="desomitirMarca(this)">${conteudo}<sup class="cloze-editor-numero">1</sup></span>`);
     return html;
 }
 
@@ -2417,6 +2478,8 @@ function abrirModalNovoCartao() {
     document.getElementById('cartao-cloze-input').innerHTML = '';
     document.getElementById('cartao-cloze-extra-input').innerHTML = '';
     definirTipoCartao('basico');
+    clozeNumeroAtivo = 1;
+    atualizarIndicadorClozeAtivo();
     document.getElementById('modal-cartao-overlay').style.display = 'flex';
 }
 
@@ -2428,6 +2491,8 @@ function preencherModalCartaoComDados(cartao) {
     document.getElementById('cartao-cloze-input').innerHTML = ehCloze ? converterClozeTextoParaEditorHtml(cartao.clozeTexto) : '';
     document.getElementById('cartao-cloze-extra-input').innerHTML = ehCloze ? (cartao.clozeExtra || '') : '';
     definirTipoCartao(ehCloze ? 'cloze' : 'basico');
+    clozeNumeroAtivo = ehCloze ? maiorNumeroClozeNoTexto(cartao.clozeTexto) : 1;
+    atualizarIndicadorClozeAtivo();
     document.getElementById('modal-cartao-overlay').style.display = 'flex';
 }
 

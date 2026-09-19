@@ -1335,7 +1335,12 @@ async function startServer() {
                 if (typeof flds !== 'string' || !flds) return;
 
                 const nomeCompletoDeck = deckNomePorId[String(did)] || 'Baralho importado';
-                const segmentos = nomeCompletoDeck.split('::').map(s => s.trim()).filter(s => s !== '');
+                // Versões mais novas do Anki guardam o nome do deck com os
+                // níveis separados por "\x1f" (o mesmo separador usado nos
+                // campos das notas) em vez do "::" tradicional exibido na
+                // interface — tenta os dois, na ordem certa.
+                const separadorDeck = nomeCompletoDeck.includes('\x1f') ? '\x1f' : '::';
+                const segmentos = nomeCompletoDeck.split(separadorDeck).map(s => s.trim()).filter(s => s !== '');
                 const nome = segmentos.length > 0 ? segmentos[segmentos.length - 1] : 'Baralho importado';
                 const caminho = segmentos.slice(0, -1);
                 const chave = segmentos.join('::') || 'Baralho importado';
