@@ -683,6 +683,7 @@ async function trocarView(nome) {
     document.getElementById('view-resumo').style.display = nome === 'resumo' ? 'block' : 'none';
     document.getElementById('view-edital').style.display = nome === 'edital' ? 'block' : 'none';
     document.getElementById('view-estudos').style.display = nome === 'estudos' ? 'block' : 'none';
+    document.getElementById('view-flashcards').style.display = nome === 'flashcards' ? 'block' : 'none';
     document.getElementById('view-jogo').style.display = nome === 'jogo' ? 'block' : 'none';
     document.getElementById('view-estatisticas').style.display = nome === 'estatisticas' ? 'block' : 'none';
     document.getElementById('view-conquistas').style.display = nome === 'conquistas' ? 'block' : 'none';
@@ -690,6 +691,7 @@ async function trocarView(nome) {
     document.getElementById('tab-resumo').classList.toggle('ativo', nome === 'resumo');
     document.getElementById('tab-edital').classList.toggle('ativo', nome === 'edital');
     document.getElementById('tab-estudos').classList.toggle('ativo', nome === 'estudos');
+    document.getElementById('tab-flashcards').classList.toggle('ativo', nome === 'flashcards');
     document.getElementById('tab-jogo').classList.toggle('ativo', nome === 'jogo');
     document.getElementById('tab-estatisticas').classList.toggle('ativo', nome === 'estatisticas');
     document.getElementById('tab-conquistas').classList.toggle('ativo', nome === 'conquistas');
@@ -697,6 +699,7 @@ async function trocarView(nome) {
 
     if (nome === 'resumo') await carregarResumo();
     if (nome === 'estudos') await carregarPainelEstudos();
+    if (nome === 'flashcards') await carregarFlashcards();
     if (nome === 'jogo') { mostrarSelecaoJogo(); await carregarPontuacaoJogo(); }
     if (nome === 'estatisticas') await carregarEstatisticas();
     if (nome === 'conquistas') await abrirConquistas();
@@ -1317,6 +1320,375 @@ function renderizarGraficoEstatEvolucao() {
             }
         }
     });
+}
+
+// ==================================================================
+// VIEW: FLASHCARDS (baralhos próprios + importação do Anki + revisão
+// com repetição espaçada, no estilo SM-2/Anki). Baralhos são
+// independentes dos planos de estudo (Edital) — só pertencem ao usuário.
+// ==================================================================
+
+let baralhosCache = [];
+let baralhoAtualId = null; // baralho aberto na tela de detalhe
+let cartoesDoBaralhoCache = [];
+let baralhoEmEdicaoId = null; // null = criando um baralho novo no modal
+
+let filaRevisaoCache = []; // cartões pendentes na sessão de revisão atual
+let cartaoRevisaoAtual = null;
+let respostaRevisaoRevelada = false;
+
+let cartaoEmEdicaoId = null; // null = criando um cartão novo no modal
+
+// Remove tags HTML de um texto (usado só pra montar prévias curtas nas
+// listas — o conteúdo completo, com formatação/imagens, é mostrado sem
+// alterações na tela de revisão).
+function removerTagsHtmlFlashcard(html) {
+    return (html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function carregarFlashcards() {
+    mostrarTelaFlashcards('lista');
+    try {
+        const res = await fetch('/api/flashcards/baralhos');
+        baralhosCache = await res.json();
+    } catch (err) {
+        console.error('Erro ao carregar baralhos:', err);
+        baralhosCache = [];
+    }
+    renderizarBaralhos();
+}
+
+function mostrarTelaFlashcards(tela) {
+    const blocoLista = document.getElementById('flashcards-lista-bloco');
+    const blocoDetalhe = document.getElementById('flashcards-detalhe-bloco');
+    const blocoRevisar = document.getElementById('flashcards-revisar-bloco');
+    if (blocoLista) blocoLista.style.display = tela === 'lista' ? 'block' : 'none';
+    if (blocoDetalhe) blocoDetalhe.style.display = tela === 'detalhe' ? 'block' : 'none';
+    if (blocoRevisar) blocoRevisar.style.display = tela === 'revisar' ? 'block' : 'none';
+}
+
+function renderizarBaralhos() {
+    const grid = document.getElementById('flashcards-baralhos-grid');
+    const vazio = document.getElementById('flashcards-vazio');
+    if (!grid) return;
+
+    if (vazio) vazio.style.display = baralhosCache.length === 0 ? 'block' : 'none';
+
+    grid.innerHTML = baralhosCache.map(b => `
+        <div class="baralho-card">
+            <div class="baralho-card-topo">
+                <span class="baralho-card-nome">${b.nome}</span>
+                ${b.materia ? `<span class="baralho-card-materia">${b.materia}</span>` : ''}
+                ${b.origem === 'anki' ? `<span class="baralho-card-origem-anki">Anki</span>` : ''}
+            </div>
+            <div class="baralho-card-info">
+                <span>${b.totalCartoes} cartão${b.totalCartoes === 1 ? '' : 'ões'}</span>
+                ${b.aRevisar > 0 ? `<span class="baralho-card-badge">${b.aRevisar} pra revisar</span>` : ''}
+            </div>
+            <div class="baralho-card-acoes">
+                <button type="button" class="btn-secundario" onclick="abrirBaralho('${b._id}')">📚 Ver cartões</button>
+                ${b.aRevisar > 0 ? `<button type="button" onclick="iniciarRevisao('${b._id}')">▶ Revisar</button>` : ''}
+                <button type="button" class="baralho-card-excluir" onclick="excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// --- MODAL: CRIAR/EDITAR BARALHO ---
+
+function abrirModalNovoBaralho() {
+    baralhoEmEdicaoId = null;
+    document.getElementById('modal-baralho-titulo').textContent = 'Novo baralho';
+    document.getElementById('baralho-nome-input').value = '';
+    document.getElementById('baralho-materia-input').value = '';
+    document.getElementById('modal-baralho-overlay').style.display = 'flex';
+}
+
+function abrirModalEditarBaralho() {
+    const baralho = baralhosCache.find(b => b._id === baralhoAtualId);
+    if (!baralho) return;
+    baralhoEmEdicaoId = baralhoAtualId;
+    document.getElementById('modal-baralho-titulo').textContent = 'Editar baralho';
+    document.getElementById('baralho-nome-input').value = baralho.nome;
+    document.getElementById('baralho-materia-input').value = baralho.materia || '';
+    document.getElementById('modal-baralho-overlay').style.display = 'flex';
+}
+
+function fecharModalBaralho() {
+    document.getElementById('modal-baralho-overlay').style.display = 'none';
+}
+
+async function salvarBaralho() {
+    const nome = document.getElementById('baralho-nome-input').value.trim();
+    const materia = document.getElementById('baralho-materia-input').value.trim();
+    if (!nome) return;
+
+    try {
+        if (baralhoEmEdicaoId) {
+            await fetch(`/api/flashcards/baralhos/${baralhoEmEdicaoId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nome, materia })
+            });
+            const detalheNome = document.getElementById('flashcards-detalhe-nome');
+            if (detalheNome && baralhoAtualId === baralhoEmEdicaoId) detalheNome.textContent = nome;
+        } else {
+            await fetch('/api/flashcards/baralhos', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nome, materia })
+            });
+        }
+        fecharModalBaralho();
+        await carregarFlashcards();
+    } catch (err) {
+        console.error('Erro ao salvar baralho:', err);
+    }
+}
+
+async function excluirBaralho(id) {
+    if (!confirm('Excluir esse baralho e todos os seus cartões? Essa ação não pode ser desfeita.')) return;
+    try {
+        await fetch(`/api/flashcards/baralhos/${id}`, { method: 'DELETE' });
+        await carregarFlashcards();
+    } catch (err) {
+        console.error('Erro ao excluir baralho:', err);
+    }
+}
+
+// --- MODAL: IMPORTAR DO ANKI ---
+
+function abrirModalImportarAnki() {
+    document.getElementById('importar-anki-nome-input').value = '';
+    document.getElementById('importar-anki-arquivo-input').value = '';
+    document.getElementById('importar-anki-arquivo-nome').textContent = 'Nenhum arquivo selecionado';
+    document.getElementById('modal-importar-anki-overlay').style.display = 'flex';
+}
+
+function fecharModalImportarAnki() {
+    document.getElementById('modal-importar-anki-overlay').style.display = 'none';
+}
+
+function atualizarNomeArquivoAnki(event) {
+    const arquivo = event.target.files && event.target.files[0];
+    document.getElementById('importar-anki-arquivo-nome').textContent = arquivo ? arquivo.name : 'Nenhum arquivo selecionado';
+}
+
+async function confirmarImportarAnki() {
+    const input = document.getElementById('importar-anki-arquivo-input');
+    const arquivo = input.files && input.files[0];
+    if (!arquivo) { alert('Escolha um arquivo .apkg pra importar.'); return; }
+
+    const nome = document.getElementById('importar-anki-nome-input').value.trim();
+    const btn = document.getElementById('btn-confirmar-importar-anki');
+    const textoOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Importando...';
+
+    try {
+        const formData = new FormData();
+        formData.append('arquivo', arquivo);
+        if (nome) formData.append('nome', nome);
+
+        const res = await fetch('/api/flashcards/baralhos/importar-anki', { method: 'POST', body: formData });
+        const dados = await res.json();
+        if (!dados.success) {
+            alert(dados.error || 'Não foi possível importar esse baralho.');
+            return;
+        }
+        fecharModalImportarAnki();
+        await carregarFlashcards();
+        alert(`Baralho importado! ${dados.totalImportado} cartões adicionados.`);
+    } catch (err) {
+        console.error('Erro ao importar baralho do Anki:', err);
+        alert('Não foi possível importar esse baralho.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = textoOriginal;
+    }
+}
+
+// --- DETALHE DO BARALHO (lista de cartões) ---
+
+async function abrirBaralho(id) {
+    baralhoAtualId = id;
+    const baralho = baralhosCache.find(b => b._id === id);
+    document.getElementById('flashcards-detalhe-nome').textContent = baralho ? baralho.nome : 'Baralho';
+
+    mostrarTelaFlashcards('detalhe');
+    try {
+        const res = await fetch(`/api/flashcards/baralhos/${id}/cards`);
+        cartoesDoBaralhoCache = await res.json();
+    } catch (err) {
+        console.error('Erro ao carregar cartões:', err);
+        cartoesDoBaralhoCache = [];
+    }
+    renderizarCartoesDoBaralho();
+}
+
+function voltarListaBaralhos() {
+    baralhoAtualId = null;
+    carregarFlashcards();
+}
+
+function renderizarCartoesDoBaralho() {
+    const lista = document.getElementById('flashcards-cartoes-lista');
+    const vazio = document.getElementById('flashcards-cartoes-vazio');
+    if (!lista) return;
+
+    if (vazio) vazio.style.display = cartoesDoBaralhoCache.length === 0 ? 'block' : 'none';
+
+    lista.innerHTML = cartoesDoBaralhoCache.map(c => `
+        <div class="cartao-item">
+            <div class="cartao-item-conteudo">
+                <div class="cartao-item-frente">${removerTagsHtmlFlashcard(c.frente)}</div>
+                <div class="cartao-item-verso">${removerTagsHtmlFlashcard(c.verso)}</div>
+            </div>
+            <div class="cartao-item-acoes">
+                <button type="button" onclick="abrirModalEditarCartao('${c._id}')" title="Editar">✏️</button>
+                <button type="button" onclick="excluirCartao('${c._id}')" title="Excluir">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// --- MODAL: CRIAR/EDITAR CARTÃO ---
+
+function abrirModalNovoCartao() {
+    cartaoEmEdicaoId = null;
+    document.getElementById('modal-cartao-titulo').textContent = 'Novo cartão';
+    document.getElementById('cartao-frente-input').value = '';
+    document.getElementById('cartao-verso-input').value = '';
+    document.getElementById('modal-cartao-overlay').style.display = 'flex';
+}
+
+function abrirModalEditarCartao(id) {
+    const cartao = cartoesDoBaralhoCache.find(c => c._id === id);
+    if (!cartao) return;
+    cartaoEmEdicaoId = id;
+    document.getElementById('modal-cartao-titulo').textContent = 'Editar cartão';
+    document.getElementById('cartao-frente-input').value = cartao.frente;
+    document.getElementById('cartao-verso-input').value = cartao.verso || '';
+    document.getElementById('modal-cartao-overlay').style.display = 'flex';
+}
+
+function fecharModalCartao() {
+    document.getElementById('modal-cartao-overlay').style.display = 'none';
+}
+
+async function salvarCartao() {
+    const frente = document.getElementById('cartao-frente-input').value.trim();
+    const verso = document.getElementById('cartao-verso-input').value.trim();
+    if (!frente) return;
+
+    try {
+        if (cartaoEmEdicaoId) {
+            await fetch(`/api/flashcards/cards/${cartaoEmEdicaoId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ frente, verso })
+            });
+        } else {
+            await fetch(`/api/flashcards/baralhos/${baralhoAtualId}/cards`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ frente, verso })
+            });
+        }
+        fecharModalCartao();
+        await abrirBaralho(baralhoAtualId);
+    } catch (err) {
+        console.error('Erro ao salvar cartão:', err);
+    }
+}
+
+async function excluirCartao(id) {
+    if (!confirm('Excluir esse cartão?')) return;
+    try {
+        await fetch(`/api/flashcards/cards/${id}`, { method: 'DELETE' });
+        await abrirBaralho(baralhoAtualId);
+    } catch (err) {
+        console.error('Erro ao excluir cartão:', err);
+    }
+}
+
+// --- SESSÃO DE REVISÃO (repetição espaçada, estilo SM-2/Anki) ---
+
+async function iniciarRevisao(id) {
+    try {
+        const res = await fetch(`/api/flashcards/baralhos/${id}/revisar`);
+        filaRevisaoCache = await res.json();
+    } catch (err) {
+        console.error('Erro ao carregar cartões pra revisar:', err);
+        filaRevisaoCache = [];
+    }
+
+    baralhoAtualId = id;
+    if (filaRevisaoCache.length === 0) {
+        alert('Não há cartões pendentes de revisão nesse baralho agora.');
+        return;
+    }
+
+    mostrarTelaFlashcards('revisar');
+    document.getElementById('flashcards-revisao-concluida').style.display = 'none';
+    document.getElementById('flashcards-card-revisao').style.display = 'flex';
+    document.getElementById('flashcards-respostas').style.display = 'none';
+    mostrarProximoCartaoRevisao();
+}
+
+function mostrarProximoCartaoRevisao() {
+    const progresso = document.getElementById('flashcards-revisar-progresso');
+    const totalRestante = filaRevisaoCache.length;
+
+    if (totalRestante === 0) {
+        document.getElementById('flashcards-card-revisao').style.display = 'none';
+        document.getElementById('flashcards-respostas').style.display = 'none';
+        document.getElementById('flashcards-revisao-concluida').style.display = 'flex';
+        if (progresso) progresso.textContent = '';
+        return;
+    }
+
+    cartaoRevisaoAtual = filaRevisaoCache[0];
+    respostaRevisaoRevelada = false;
+
+    if (progresso) progresso.textContent = `${totalRestante} restante${totalRestante === 1 ? '' : 's'}`;
+    document.getElementById('flashcards-card-frente').innerHTML = cartaoRevisaoAtual.frente;
+    document.getElementById('flashcards-card-verso').innerHTML = cartaoRevisaoAtual.verso || '<em>(sem verso)</em>';
+    document.getElementById('flashcards-card-verso').style.display = 'none';
+    document.getElementById('flashcards-card-dica').style.display = 'block';
+    document.getElementById('flashcards-respostas').style.display = 'none';
+}
+
+function mostrarRespostaRevisao() {
+    if (respostaRevisaoRevelada || !cartaoRevisaoAtual) return;
+    respostaRevisaoRevelada = true;
+    document.getElementById('flashcards-card-verso').style.display = 'block';
+    document.getElementById('flashcards-card-dica').style.display = 'none';
+    document.getElementById('flashcards-respostas').style.display = 'grid';
+}
+
+async function responderRevisao(qualidade) {
+    if (!cartaoRevisaoAtual) return;
+    const cartaoRespondido = cartaoRevisaoAtual;
+
+    try {
+        await fetch(`/api/flashcards/cards/${cartaoRespondido._id}/revisar`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ qualidade })
+        });
+    } catch (err) {
+        console.error('Erro ao registrar revisão:', err);
+    }
+
+    filaRevisaoCache = filaRevisaoCache.filter(c => c._id !== cartaoRespondido._id);
+    mostrarProximoCartaoRevisao();
+}
+
+function sairRevisao() {
+    cartaoRevisaoAtual = null;
+    filaRevisaoCache = [];
+    carregarFlashcards();
 }
 
 // ==================================================================

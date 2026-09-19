@@ -15,6 +15,10 @@ import { promisify } from 'util';
 import cookieParser from 'cookie-parser';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
+import multer from 'multer';
+import AdmZip from 'adm-zip';
+import initSqlJs from 'sql.js';
+import { decompress as decompressZstd } from 'fzstd';
 
 // --- CONFIGURAÇÕES BÁSICAS ---
 const app = express();
@@ -162,6 +166,8 @@ const SESSOES_COLLECTION = "sessoes_estudo";
 const MATERIAS_COR_COLLECTION = "materias_cor";
 const JOGO_PONTUACOES_COLLECTION = "jogo_pontuacoes";
 const JOGO_RODADAS_COLLECTION = "jogo_rodadas";
+const FLASHCARDS_BARALHOS_COLLECTION = "flashcards_baralhos";
+const FLASHCARDS_CARTOES_COLLECTION = "flashcards_cartoes";
 const PLANO_PADRAO = "TRT";
 const FORMATO_EDITAL_EXPORTADO = "checkestudos-edital-v1";
 
@@ -196,6 +202,8 @@ async function startServer() {
         const materiasCorColl = db.collection(MATERIAS_COR_COLLECTION);
         const jogoPontuacoesColl = db.collection(JOGO_PONTUACOES_COLLECTION);
         const jogoRodadasColl = db.collection(JOGO_RODADAS_COLLECTION);
+        const flashcardsBaralhosColl = db.collection(FLASHCARDS_BARALHOS_COLLECTION);
+        const flashcardsCartoesColl = db.collection(FLASHCARDS_CARTOES_COLLECTION);
 
         // --- MIGRAÇÃO: garante que todo item tenha um array "planos" ---
         // Itens antigos (de antes de existir o conceito de "plano") são
@@ -890,6 +898,281 @@ async function startServer() {
 
             const doc = await jogoPontuacoesColl.findOne({ tipo, userId: req.userId });
             res.json({ success: true, pontuacao: { acertos: doc.acertos || 0, erros: doc.erros || 0 } });
+        });
+
+        // --- FLASHCARDS (baralhos próprios + importação de baralhos do Anki) ---
+        // Baralhos são independentes dos planos de estudo (Edital) — servem
+        // pra qualquer matéria, vinculados só ao usuário. A revisão usa um
+        // algoritmo de repetição espaçada no estilo SM-2/Anki (facilidade,
+        // intervalo em dias e nº de repetições guardados em cada cartão).
+
+        const uploadApkg = multer({
+            storage: multer.memoryStorage(),
+            limits: { fileSize: 40 * 1024 * 1024 } // 40MB — baralhos com mídia podem ser grandes
+        });
+
+        // Aplica uma resposta de revisão (0=Errei, 1=Difícil, 2=Bom, 3=Fácil) ao
+        // estado de repetição espaçada de um cartão, e devolve o novo estado.
+        function calcularProximaRevisaoCartao(cartao, qualidade) {
+            let facilidade = typeof cartao.facilidade === 'number' ? cartao.facilidade : 2.5;
+            let intervalo = typeof cartao.intervalo === 'number' ? cartao.intervalo : 0;
+            let repeticoes = typeof cartao.repeticoes === 'number' ? cartao.repeticoes : 0;
+
+            if (qualidade === 0) {
+                // Errei: reinicia a contagem de repetições e volta pra revisar em 1 dia.
+                repeticoes = 0;
+                intervalo = 1;
+                facilidade = Math.max(1.3, facilidade - 0.2);
+            } else {
+                repeticoes += 1;
+                if (qualidade === 1) { // Difícil
+                    facilidade = Math.max(1.3, facilidade - 0.15);
+                    intervalo = repeticoes === 1 ? 1 : Math.max(1, Math.round(intervalo * 1.2));
+                } else if (qualidade === 3) { // Fácil
+                    facilidade = facilidade + 0.15;
+                    if (repeticoes === 1) intervalo = 4;
+                    else if (repeticoes === 2) intervalo = 8;
+                    else intervalo = Math.max(1, Math.round(intervalo * facilidade * 1.3));
+                } else { // Bom (2, padrão)
+                    if (repeticoes === 1) intervalo = 1;
+                    else if (repeticoes === 2) intervalo = 6;
+                    else intervalo = Math.max(1, Math.round(intervalo * facilidade));
+                }
+            }
+
+            const dataProximaRevisao = new Date(Date.now() + intervalo * 24 * 60 * 60 * 1000);
+            return {
+                facilidade,
+                intervalo,
+                repeticoes,
+                dataProximaRevisao,
+                estado: repeticoes === 0 ? 'aprendendo' : 'revisao'
+            };
+        }
+
+        // Lê um arquivo .apkg (zip do Anki) e devolve a lista de cartões (frente
+        // e verso) encontrados nele. Não depende dos "note types"/templates do
+        // Anki (que variam muito entre versões) — pega direto o campo 1 das
+        // notas como frente e o campo 2 (se houver) como verso, que cobre bem
+        // os tipos de nota mais comuns (Básico, Básico e invertido etc).
+        async function extrairCartoesDeApkg(buffer) {
+            const zip = new AdmZip(buffer);
+            const entradas = zip.getEntries();
+
+            const acharEntrada = (nome) => entradas.find(e => e.entryName === nome);
+
+            // Anki 2.1.28+ pode gravar o banco já comprimido em zstd
+            // (collection.anki21b); versões mais antigas (ou exportações com
+            // "suportar versões antigas do Anki" marcado) gravam sem compressão
+            // em collection.anki21 ou collection.anki2.
+            let dadosBanco = null;
+            const entradaZstd = acharEntrada('collection.anki21b');
+            const entrada21 = acharEntrada('collection.anki21');
+            const entrada2 = acharEntrada('collection.anki2');
+
+            if (entradaZstd) {
+                dadosBanco = decompressZstd(entradaZstd.getData());
+            } else if (entrada21) {
+                dadosBanco = entrada21.getData();
+            } else if (entrada2) {
+                dadosBanco = entrada2.getData();
+            } else {
+                throw new Error('Não encontramos o banco de dados do baralho dentro do arquivo .apkg');
+            }
+
+            const SQL = await initSqlJs();
+            const db = new SQL.Database(new Uint8Array(dadosBanco));
+
+            let resultado;
+            try {
+                resultado = db.exec('SELECT flds FROM notes');
+            } finally {
+                db.close();
+            }
+
+            if (!resultado || resultado.length === 0) return [];
+
+            const SEPARADOR_CAMPOS = '\x1f';
+            const cartoes = [];
+            for (const linha of resultado[0].values) {
+                const flds = linha[0];
+                if (typeof flds !== 'string' || !flds) continue;
+                const campos = flds.split(SEPARADOR_CAMPOS);
+                const frente = (campos[0] || '').trim();
+                const verso = campos.slice(1).join('<br>').trim();
+                if (!frente && !verso) continue;
+                cartoes.push({ frente: frente || '(sem frente)', verso });
+            }
+            return cartoes;
+        }
+
+        // --- BARALHOS ---
+
+        // Lista os baralhos do usuário, com o total de cartões e quantos já
+        // estão pendentes de revisão hoje.
+        app.get('/api/flashcards/baralhos', requireAuth, async (req, res) => {
+            const baralhos = await flashcardsBaralhosColl.find({ userId: req.userId }).sort({ criadoEm: -1 }).toArray();
+            const agora = new Date();
+
+            const contagens = await flashcardsCartoesColl.aggregate([
+                { $match: { userId: req.userId } },
+                { $group: {
+                    _id: '$baralhoId',
+                    total: { $sum: 1 },
+                    aRevisar: { $sum: { $cond: [{ $lte: ['$dataProximaRevisao', agora] }, 1, 0] } }
+                } }
+            ]).toArray();
+            const contagemPorBaralho = {};
+            contagens.forEach(c => { contagemPorBaralho[c._id] = c; });
+
+            res.json(baralhos.map(b => ({
+                _id: b._id,
+                nome: b.nome,
+                materia: b.materia || '',
+                origem: b.origem || 'manual',
+                criadoEm: b.criadoEm,
+                totalCartoes: (contagemPorBaralho[String(b._id)] || {}).total || 0,
+                aRevisar: (contagemPorBaralho[String(b._id)] || {}).aRevisar || 0
+            })));
+        });
+
+        app.post('/api/flashcards/baralhos', requireAuth, async (req, res) => {
+            const nome = (req.body.nome || '').trim();
+            const materia = (req.body.materia || '').trim();
+            if (!nome) return res.status(400).json({ success: false, error: 'Nome do baralho é obrigatório' });
+
+            const doc = { nome, materia, origem: 'manual', userId: req.userId, criadoEm: new Date() };
+            const resultado = await flashcardsBaralhosColl.insertOne(doc);
+            res.json({ success: true, baralho: { ...doc, _id: resultado.insertedId } });
+        });
+
+        app.put('/api/flashcards/baralhos/:id', requireAuth, async (req, res) => {
+            const nome = (req.body.nome || '').trim();
+            const materia = (req.body.materia || '').trim();
+            if (!nome) return res.status(400).json({ success: false, error: 'Nome do baralho é obrigatório' });
+
+            const resultado = await flashcardsBaralhosColl.updateOne(
+                { _id: new ObjectId(req.params.id), userId: req.userId },
+                { $set: { nome, materia } }
+            );
+            if (resultado.matchedCount === 0) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
+            res.json({ success: true });
+        });
+
+        app.delete('/api/flashcards/baralhos/:id', requireAuth, async (req, res) => {
+            const baralho = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            if (!baralho) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
+
+            await flashcardsCartoesColl.deleteMany({ baralhoId: String(baralho._id), userId: req.userId });
+            await flashcardsBaralhosColl.deleteOne({ _id: baralho._id });
+            res.json({ success: true });
+        });
+
+        // Importa um arquivo .apkg do Anki como um novo baralho.
+        app.post('/api/flashcards/baralhos/importar-anki', requireAuth, uploadApkg.single('arquivo'), async (req, res) => {
+            if (!req.file) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+
+            const nome = (req.body.nome || req.file.originalname.replace(/\.apkg$/i, '')).trim().slice(0, 120) || 'Baralho importado';
+
+            let cartoesExtraidos;
+            try {
+                cartoesExtraidos = await extrairCartoesDeApkg(req.file.buffer);
+            } catch (err) {
+                console.error('Erro ao importar .apkg:', err);
+                return res.status(400).json({ success: false, error: 'Não conseguimos ler esse arquivo .apkg. Verifique se é um baralho exportado do Anki.' });
+            }
+
+            if (cartoesExtraidos.length === 0) {
+                return res.status(400).json({ success: false, error: 'Nenhum cartão foi encontrado nesse baralho.' });
+            }
+
+            const baralhoDoc = { nome, materia: '', origem: 'anki', userId: req.userId, criadoEm: new Date() };
+            const baralhoInserido = await flashcardsBaralhosColl.insertOne(baralhoDoc);
+            const baralhoId = String(baralhoInserido.insertedId);
+
+            const agora = new Date();
+            const docsCartoes = cartoesExtraidos.map(c => ({
+                baralhoId, userId: req.userId,
+                frente: c.frente, verso: c.verso,
+                facilidade: 2.5, intervalo: 0, repeticoes: 0,
+                dataProximaRevisao: agora, estado: 'novo',
+                criadoEm: agora
+            }));
+            await flashcardsCartoesColl.insertMany(docsCartoes);
+
+            res.json({ success: true, baralho: { ...baralhoDoc, _id: baralhoInserido.insertedId }, totalImportado: docsCartoes.length });
+        });
+
+        // --- CARTÕES ---
+
+        app.get('/api/flashcards/baralhos/:id/cards', requireAuth, async (req, res) => {
+            const baralho = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            if (!baralho) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
+
+            const cartoes = await flashcardsCartoesColl.find({ baralhoId: req.params.id, userId: req.userId }).sort({ criadoEm: 1 }).toArray();
+            res.json(cartoes);
+        });
+
+        app.post('/api/flashcards/baralhos/:id/cards', requireAuth, async (req, res) => {
+            const baralho = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            if (!baralho) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
+
+            const frente = (req.body.frente || '').trim();
+            const verso = (req.body.verso || '').trim();
+            if (!frente) return res.status(400).json({ success: false, error: 'A frente do cartão é obrigatória' });
+
+            const agora = new Date();
+            const doc = {
+                baralhoId: req.params.id, userId: req.userId, frente, verso,
+                facilidade: 2.5, intervalo: 0, repeticoes: 0,
+                dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
+            };
+            const resultado = await flashcardsCartoesColl.insertOne(doc);
+            res.json({ success: true, cartao: { ...doc, _id: resultado.insertedId } });
+        });
+
+        app.put('/api/flashcards/cards/:id', requireAuth, async (req, res) => {
+            const frente = (req.body.frente || '').trim();
+            const verso = (req.body.verso || '').trim();
+            if (!frente) return res.status(400).json({ success: false, error: 'A frente do cartão é obrigatória' });
+
+            const resultado = await flashcardsCartoesColl.updateOne(
+                { _id: new ObjectId(req.params.id), userId: req.userId },
+                { $set: { frente, verso } }
+            );
+            if (resultado.matchedCount === 0) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
+            res.json({ success: true });
+        });
+
+        app.delete('/api/flashcards/cards/:id', requireAuth, async (req, res) => {
+            const resultado = await flashcardsCartoesColl.deleteOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            if (resultado.deletedCount === 0) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
+            res.json({ success: true });
+        });
+
+        // --- REVISÃO (repetição espaçada) ---
+
+        // Cartões pendentes de revisão nesse baralho agora (novos + atrasados).
+        app.get('/api/flashcards/baralhos/:id/revisar', requireAuth, async (req, res) => {
+            const baralho = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            if (!baralho) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
+
+            const cartoes = await flashcardsCartoesColl.find({
+                baralhoId: req.params.id, userId: req.userId, dataProximaRevisao: { $lte: new Date() }
+            }).sort({ dataProximaRevisao: 1 }).limit(200).toArray();
+            res.json(cartoes);
+        });
+
+        app.post('/api/flashcards/cards/:id/revisar', requireAuth, async (req, res) => {
+            const qualidade = Number(req.body.qualidade);
+            if (![0, 1, 2, 3].includes(qualidade)) return res.status(400).json({ success: false, error: 'Qualidade inválida' });
+
+            const cartao = await flashcardsCartoesColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            if (!cartao) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
+
+            const novoEstado = calcularProximaRevisaoCartao(cartao, qualidade);
+            await flashcardsCartoesColl.updateOne({ _id: cartao._id }, { $set: novoEstado });
+            res.json({ success: true, cartao: { ...cartao, ...novoEstado } });
         });
 
         httpServer.listen(PORT, () => console.log(`Rodando em http://localhost:${PORT}`));

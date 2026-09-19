@@ -92,6 +92,9 @@
                 <button class="view-tab" id="tab-estudos" onclick="trocarView('estudos')">
                     <span class="view-tab-icone">🕒</span> Estudos
                 </button>
+                <button class="view-tab" id="tab-flashcards" onclick="trocarView('flashcards')">
+                    <span class="view-tab-icone">🃏</span> Flashcards
+                </button>
                 <button class="view-tab" id="tab-jogo" onclick="trocarView('jogo')">
                     <span class="view-tab-icone">🎮</span> Jogo
                 </button>
@@ -291,6 +294,75 @@
                         <!-- itens de histórico inseridos via JS -->
                     </div>
                 </section>
+
+            </div>
+
+            <!-- ===================== VIEW: FLASHCARDS ===================== -->
+            <div id="view-flashcards" style="display:none;">
+
+                <!-- Tela 1: lista de baralhos -->
+                <div id="flashcards-lista-bloco">
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header">
+                            <h2>🃏 Seus baralhos</h2>
+                            <div class="flashcards-acoes-topo">
+                                <button type="button" class="btn-secundario" onclick="abrirModalImportarAnki()">📥 Importar do Anki</button>
+                                <button type="button" class="btn-secundario" onclick="abrirModalNovoBaralho()">+ Novo baralho</button>
+                            </div>
+                        </div>
+                        <div class="flashcards-baralhos-grid" id="flashcards-baralhos-grid">
+                            <!-- cards de baralho inseridos via JS -->
+                        </div>
+                        <div class="flashcards-vazio" id="flashcards-vazio" style="display:none;">
+                            Você ainda não tem nenhum baralho. Crie um do zero ou importe um baralho do Anki (.apkg) pra começar!
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Tela 2: detalhe de um baralho (lista de cartões) -->
+                <div id="flashcards-detalhe-bloco" style="display:none;">
+                    <button type="button" class="btn-secundario" onclick="voltarListaBaralhos()">← Voltar aos baralhos</button>
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header">
+                            <h2 id="flashcards-detalhe-nome">Baralho</h2>
+                            <div class="flashcards-acoes-topo">
+                                <button type="button" class="btn-secundario" onclick="abrirModalEditarBaralho()">✏️ Editar</button>
+                                <button type="button" class="btn-secundario" onclick="abrirModalNovoCartao()">+ Novo cartão</button>
+                                <button type="button" id="btn-revisar-baralho-atual" onclick="iniciarRevisao(baralhoAtualId)">▶ Revisar</button>
+                            </div>
+                        </div>
+                        <div class="flashcards-cartoes-lista" id="flashcards-cartoes-lista">
+                            <!-- cartões do baralho inseridos via JS -->
+                        </div>
+                        <div class="flashcards-vazio" id="flashcards-cartoes-vazio" style="display:none;">
+                            Esse baralho ainda não tem cartões. Clique em "+ Novo cartão" pra adicionar o primeiro.
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Tela 3: sessão de revisão (repetição espaçada) -->
+                <div id="flashcards-revisar-bloco" style="display:none;">
+                    <div class="flashcards-revisar-topo">
+                        <button type="button" class="btn-secundario" onclick="sairRevisao()">← Sair da revisão</button>
+                        <span class="flashcards-revisar-progresso" id="flashcards-revisar-progresso">0/0</span>
+                    </div>
+                    <div class="flashcards-card-revisao" id="flashcards-card-revisao" onclick="mostrarRespostaRevisao()">
+                        <div class="flashcards-card-face" id="flashcards-card-frente"></div>
+                        <div class="flashcards-card-face flashcards-card-verso" id="flashcards-card-verso" style="display:none;"></div>
+                        <div class="flashcards-card-dica" id="flashcards-card-dica">Toque no cartão pra ver a resposta</div>
+                    </div>
+                    <div class="flashcards-respostas" id="flashcards-respostas" style="display:none;">
+                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-errei" onclick="responderRevisao(0)">Errei</button>
+                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-dificil" onclick="responderRevisao(1)">Difícil</button>
+                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-bom" onclick="responderRevisao(2)">Bom</button>
+                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-facil" onclick="responderRevisao(3)">Fácil</button>
+                    </div>
+                    <div class="flashcards-revisao-concluida" id="flashcards-revisao-concluida" style="display:none;">
+                        <span class="flashcards-revisao-concluida-emoji">🎉</span>
+                        <p>Sessão concluída! Você revisou todos os cartões pendentes desse baralho.</p>
+                        <button type="button" onclick="sairRevisao()">Voltar aos baralhos</button>
+                    </div>
+                </div>
 
             </div>
 
@@ -610,6 +682,58 @@
             <div class="modal-actions">
                 <button class="btn-cancelar" onclick="confirmarCronometroJogo(false)">Não, só jogar</button>
                 <button onclick="confirmarCronometroJogo(true)">Sim, iniciar cronômetro</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: criar/editar baralho de flashcards -->
+    <div id="modal-baralho-overlay" class="modal-overlay" style="display:none;">
+        <div class="modal">
+            <h3 id="modal-baralho-titulo">Novo baralho</h3>
+            <label class="modal-label">Nome do baralho</label>
+            <input type="text" id="baralho-nome-input" placeholder="Ex: Direito Constitucional" maxlength="120">
+            <label class="modal-label">Matéria (opcional)</label>
+            <input type="text" id="baralho-materia-input" placeholder="Ex: Português" maxlength="80">
+            <div class="modal-actions">
+                <button class="btn-cancelar" onclick="fecharModalBaralho()">Cancelar</button>
+                <button onclick="salvarBaralho()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: importar baralho do Anki (.apkg) -->
+    <div id="modal-importar-anki-overlay" class="modal-overlay" style="display:none;">
+        <div class="modal">
+            <h3>Importar do Anki</h3>
+            <p class="modal-confirm-texto">Selecione um arquivo .apkg exportado do Anki. Cada nota vira um cartão (frente/verso).</p>
+            <label class="modal-label">Nome do baralho (opcional)</label>
+            <input type="text" id="importar-anki-nome-input" placeholder="Padrão: nome do arquivo" maxlength="120">
+            <label class="arquivo-botao-bonito" for="importar-anki-arquivo-input">
+                <span class="arquivo-botao-icone">📁</span>
+                <span class="arquivo-botao-textos">
+                    <span class="arquivo-botao-titulo">Escolher arquivo .apkg</span>
+                    <span class="arquivo-botao-nome" id="importar-anki-arquivo-nome">Nenhum arquivo selecionado</span>
+                </span>
+            </label>
+            <input type="file" id="importar-anki-arquivo-input" class="arquivo-input-oculto" accept=".apkg" onchange="atualizarNomeArquivoAnki(event)">
+            <div class="modal-actions">
+                <button class="btn-cancelar" onclick="fecharModalImportarAnki()">Cancelar</button>
+                <button id="btn-confirmar-importar-anki" onclick="confirmarImportarAnki()">Importar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: criar/editar cartão de flashcard -->
+    <div id="modal-cartao-overlay" class="modal-overlay" style="display:none;">
+        <div class="modal">
+            <h3 id="modal-cartao-titulo">Novo cartão</h3>
+            <label class="modal-label">Frente</label>
+            <textarea id="cartao-frente-input" placeholder="Pergunta ou termo"></textarea>
+            <label class="modal-label">Verso</label>
+            <textarea id="cartao-verso-input" placeholder="Resposta ou explicação"></textarea>
+            <div class="modal-actions">
+                <button class="btn-cancelar" onclick="fecharModalCartao()">Cancelar</button>
+                <button onclick="salvarCartao()">Salvar</button>
             </div>
         </div>
     </div>
