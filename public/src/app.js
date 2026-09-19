@@ -1929,7 +1929,9 @@ async function carregarFlashcards() {
 // é a própria matéria informada na criação. Cada raiz vira 1 pílula.
 function raizDoBaralho(b) {
     if ((b.caminho || []).length > 0) return b.caminho[0];
-    return (b.materia || '').trim();
+    // Baralho avulso (sem "::" no nome) é raiz dele mesmo — igual a um
+    // deck de primeiro nível no Anki — e ganha sua própria pílula.
+    return (b.materia || '').trim() || b.nome;
 }
 
 // Monta as pílulas "🌐 Geral" + cada baralho inteiro (raiz) existente no
@@ -2064,6 +2066,7 @@ function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
                         ${cont.revisar > 0 || cont.novos > 0 || cont.aprender > 0
                             ? `<button type="button" class="baralho-arvore-revisar-pasta" onclick="event.stopPropagation(); revisarPasta('${chaveEscapada}')" title="Revisar tudo em &quot;${filho.nome.replace(/"/g, '&quot;')}&quot;">▶</button>`
                             : ''}
+                        <button type="button" class="baralho-arvore-add-sub" onclick="event.stopPropagation(); abrirModalNovoBaralho('${chaveEscapada}')" title="Novo baralho dentro de &quot;${filho.nome.replace(/"/g, '&quot;')}&quot;">+</button>
                     </span>
                 </div>
                 ${expandido ? renderizarNodoArvoreBaralhos(filho, caminhoFilho, profundidade + 1) : ''}
@@ -2150,13 +2153,29 @@ function renderizarBaralhos() {
 }
 
 // --- MODAL: CRIAR/EDITAR BARALHO ---
+// O campo "Nome do baralho" aceita caminho com "::" igual ao Anki — o
+// último pedaço é o nome do baralho em si, e os anteriores são as pastas
+// (matéria/tópico/subtópico) onde ele vai morar na árvore.
 
-function abrirModalNovoBaralho() {
+// Separa "ENAM::Direito Civil::Contratos" em caminho=["ENAM","Direito Civil"]
+// e nome="Contratos".
+function separarCaminhoENomeBaralho(textoCompleto) {
+    const segmentos = textoCompleto.split('::').map(s => s.trim()).filter(s => s !== '');
+    if (segmentos.length === 0) return { caminho: [], nome: '' };
+    return { caminho: segmentos.slice(0, -1), nome: segmentos[segmentos.length - 1] };
+}
+
+// Chamada tanto pelo botão geral "+ Novo baralho" (sem prefixo, ou com o
+// baralho raiz atualmente selecionado no filtro) quanto pelo botão "+" de
+// cada pasta da árvore (com o caminho daquela pasta já pré-preenchido, pra
+// só faltar digitar o nome do novo subbaralho).
+function abrirModalNovoBaralho(prefixoCaminho) {
     baralhoEmEdicaoId = null;
     document.getElementById('modal-baralho-titulo').textContent = 'Novo baralho';
-    document.getElementById('baralho-nome-input').value = '';
-    document.getElementById('baralho-materia-input').value = '';
+    const prefixo = prefixoCaminho || (flashcardsFiltroMateria !== 'geral' ? flashcardsFiltroMateria : '');
+    document.getElementById('baralho-nome-input').value = prefixo ? `${prefixo}::` : '';
     document.getElementById('modal-baralho-overlay').style.display = 'flex';
+    document.getElementById('baralho-nome-input').focus();
 }
 
 function abrirModalEditarBaralho() {
@@ -2164,8 +2183,7 @@ function abrirModalEditarBaralho() {
     if (!baralho) return;
     baralhoEmEdicaoId = baralhoAtualId;
     document.getElementById('modal-baralho-titulo').textContent = 'Editar baralho';
-    document.getElementById('baralho-nome-input').value = baralho.nome;
-    document.getElementById('baralho-materia-input').value = baralho.materia || '';
+    document.getElementById('baralho-nome-input').value = [...(baralho.caminho || []), baralho.nome].join('::');
     document.getElementById('modal-baralho-overlay').style.display = 'flex';
 }
 
@@ -2174,8 +2192,8 @@ function fecharModalBaralho() {
 }
 
 async function salvarBaralho() {
-    const nome = document.getElementById('baralho-nome-input').value.trim();
-    const materia = document.getElementById('baralho-materia-input').value.trim();
+    const textoCompleto = document.getElementById('baralho-nome-input').value.trim();
+    const { caminho, nome } = separarCaminhoENomeBaralho(textoCompleto);
     if (!nome) return;
 
     try {
@@ -2183,7 +2201,7 @@ async function salvarBaralho() {
             await fetch(`/api/flashcards/baralhos/${baralhoEmEdicaoId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nome, materia })
+                body: JSON.stringify({ nome, caminho })
             });
             const detalheNome = document.getElementById('flashcards-detalhe-nome');
             if (detalheNome && baralhoAtualId === baralhoEmEdicaoId) detalheNome.textContent = nome;
@@ -2191,7 +2209,7 @@ async function salvarBaralho() {
             await fetch('/api/flashcards/baralhos', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nome, materia })
+                body: JSON.stringify({ nome, caminho })
             });
         }
         fecharModalBaralho();
@@ -2651,6 +2669,8 @@ async function iniciarRevisao(idOuIds) {
     document.getElementById('flashcards-revisao-concluida').style.display = 'none';
     document.getElementById('flashcards-card-revisao').style.display = 'flex';
     document.getElementById('flashcards-respostas').style.display = 'none';
+    const ultimaRespostaEl = document.getElementById('flashcards-revisar-ultima-resposta');
+    if (ultimaRespostaEl) { ultimaRespostaEl.style.display = 'none'; ultimaRespostaEl.textContent = ''; }
     mostrarProximoCartaoRevisao();
 }
 
@@ -2683,6 +2703,14 @@ function mostrarProximoCartaoRevisao() {
         const el = document.getElementById(`flashcards-preview-${q}`);
         if (el) el.textContent = previews[q] || '';
     });
+
+    // Mostra de qual baralho/tópico esse cartão é — útil sobretudo revisando
+    // um tópico inteiro (vários baralhos de uma vez), pra saber onde está.
+    const origemEl = document.getElementById('flashcards-revisar-origem');
+    if (origemEl) {
+        const baralho = baralhosCache.find(b => b._id === cartaoRevisaoAtual.baralhoId);
+        origemEl.textContent = baralho ? '📘 ' + [...(baralho.caminho || []), baralho.nome].join(' › ') : '';
+    }
 }
 
 function mostrarRespostaRevisao() {
@@ -2692,6 +2720,8 @@ function mostrarRespostaRevisao() {
     document.getElementById('flashcards-card-dica').style.display = 'none';
     document.getElementById('flashcards-respostas').style.display = 'grid';
 }
+
+const RESPOSTA_REVISAO_ROTULOS = ['❌ Errei', '😓 Difícil', '👍 Bom', '😄 Fácil'];
 
 async function responderRevisao(qualidade) {
     if (!cartaoRevisaoAtual) return;
@@ -2705,6 +2735,16 @@ async function responderRevisao(qualidade) {
         });
     } catch (err) {
         console.error('Erro ao registrar revisão:', err);
+    }
+
+    // Mostra o resultado da resposta que acabou de ser dada (fica visível
+    // até a próxima resposta) — usa o preview que já veio junto com o
+    // cartão, calculado com o estado de ANTES de responder.
+    const ultimaRespostaEl = document.getElementById('flashcards-revisar-ultima-resposta');
+    if (ultimaRespostaEl) {
+        const previewTexto = (cartaoRespondido.previews || {})[qualidade];
+        ultimaRespostaEl.textContent = `${RESPOSTA_REVISAO_ROTULOS[qualidade]} — próxima revisão em ${previewTexto || '...'}`;
+        ultimaRespostaEl.style.display = 'block';
     }
 
     filaRevisaoCache = filaRevisaoCache.filter(c => c._id !== cartaoRespondido._id);

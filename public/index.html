@@ -413,6 +413,8 @@
                         <span class="flashcards-revisar-progresso" id="flashcards-revisar-progresso">0/0</span>
                         <button type="button" class="btn-secundario" onclick="editarCartaoDuranteRevisao()" title="Editar esse cartão agora, sem sair da revisão">✏️ Editar cartão</button>
                     </div>
+                    <div class="flashcards-revisar-origem" id="flashcards-revisar-origem"></div>
+                    <div class="flashcards-revisar-ultima-resposta" id="flashcards-revisar-ultima-resposta" style="display:none;"></div>
                     <div class="flashcards-card-revisao" id="flashcards-card-revisao" onclick="mostrarRespostaRevisao()">
                         <div class="flashcards-card-face" id="flashcards-card-frente"></div>
                         <div class="flashcards-card-face flashcards-card-verso" id="flashcards-card-verso" style="display:none;"></div>
@@ -765,10 +767,8 @@
         <div class="modal">
             <h3 id="modal-baralho-titulo">Novo baralho</h3>
             <label class="modal-label">Nome do baralho</label>
-            <input type="text" id="baralho-nome-input" placeholder="Ex: Direito Constitucional" maxlength="120">
-            <label class="modal-label">Matéria (opcional)</label>
-            <input type="text" id="baralho-materia-input" placeholder="Ex: Português" maxlength="80">
-            <p class="config-texto-ajuda">Vincule a uma matéria pra esse baralho aparecer no filtro dela, ou deixe em branco pra ele ficar em "🌐 Geral".</p>
+            <input type="text" id="baralho-nome-input" placeholder="Ex: ENAM::Direito Civil::Contratos" maxlength="200">
+            <p class="config-texto-ajuda">Use "::" pra criar (ou mover) o baralho dentro de outro, igual no Anki — "ENAM::Direito Civil" cria "Direito Civil" dentro de "ENAM". Sem "::", ele vira um baralho raiz novo, com sua própria pílula no menu de cima.</p>
             <div class="modal-actions">
                 <button class="btn-cancelar" onclick="fecharModalBaralho()">Cancelar</button>
                 <button onclick="salvarBaralho()">Salvar</button>

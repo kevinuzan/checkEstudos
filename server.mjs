@@ -1443,22 +1443,26 @@ async function startServer() {
 
         app.post('/api/flashcards/baralhos', requireAuth, async (req, res) => {
             const nome = (req.body.nome || '').trim();
-            const materia = (req.body.materia || '').trim();
+            const caminho = Array.isArray(req.body.caminho) ? req.body.caminho.map(s => String(s).trim()).filter(s => s !== '') : [];
+            // "materia" continua preenchida automaticamente (último nível do
+            // caminho) só pra compatibilidade com telas antigas que ainda a leem.
+            const materia = caminho.length > 0 ? caminho[caminho.length - 1] : (req.body.materia || '').trim();
             if (!nome) return res.status(400).json({ success: false, error: 'Nome do baralho é obrigatório' });
 
-            const doc = { nome, materia, origem: 'manual', userId: req.userId, criadoEm: new Date() };
+            const doc = { nome, caminho, materia, origem: 'manual', userId: req.userId, criadoEm: new Date() };
             const resultado = await flashcardsBaralhosColl.insertOne(doc);
             res.json({ success: true, baralho: { ...doc, _id: resultado.insertedId } });
         });
 
         app.put('/api/flashcards/baralhos/:id', requireAuth, async (req, res) => {
             const nome = (req.body.nome || '').trim();
-            const materia = (req.body.materia || '').trim();
+            const caminho = Array.isArray(req.body.caminho) ? req.body.caminho.map(s => String(s).trim()).filter(s => s !== '') : [];
+            const materia = caminho.length > 0 ? caminho[caminho.length - 1] : (req.body.materia || '').trim();
             if (!nome) return res.status(400).json({ success: false, error: 'Nome do baralho é obrigatório' });
 
             const resultado = await flashcardsBaralhosColl.updateOne(
                 { _id: new ObjectId(req.params.id), userId: req.userId },
-                { $set: { nome, materia } }
+                { $set: { nome, caminho, materia } }
             );
             if (resultado.matchedCount === 0) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
             res.json({ success: true });

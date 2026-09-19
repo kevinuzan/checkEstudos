@@ -2847,6 +2847,29 @@ input[type="checkbox"] {
     color: #fff;
 }
 
+.baralho-arvore-add-sub {
+    width: 26px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 15px;
+    font-weight: 800;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    flex-shrink: 0;
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--text-muted);
+}
+
+.baralho-arvore-add-sub:hover {
+    border-color: var(--primary);
+    color: var(--primary-dark);
+    background: var(--surface-muted);
+}
+
 .baralho-card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -3252,7 +3275,26 @@ input[type="checkbox"] {
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    margin-bottom: 14px;
+    margin-bottom: 8px;
+}
+
+.flashcards-revisar-origem {
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+
+.flashcards-revisar-ultima-resposta {
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--primary-dark);
+    background: var(--primary-light);
+    border-radius: var(--radius-sm);
+    padding: 6px 10px;
+    margin-bottom: 10px;
 }
 
 .flashcards-revisar-progresso {
