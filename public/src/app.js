@@ -3054,19 +3054,43 @@ async function compartilharConquista(id, botaoEl) {
         ctx.fillStyle = 'rgba(255,255,255,0.7)';
         ctx.fillText('Rumo à aprovação 🎯', 540, 1830);
 
-        await new Promise(resolve => {
-            canvas.toBlob(blob => {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `conquista-${def.id}.png`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                setTimeout(() => URL.revokeObjectURL(url), 4000);
-                resolve();
-            }, 'image/png');
-        });
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        const nomeArquivo = `conquista-${def.id}.png`;
+
+        // No celular, tenta abrir a folha de compartilhamento nativa do
+        // sistema (Web Share API) — é ali que o Instagram Stories aparece
+        // como opção, junto com WhatsApp e outros apps. Não existe uma forma
+        // confiável de pular essa folha e abrir direto no Stories a partir
+        // de um site (isso só é possível para apps nativos registrados no
+        // Meta for Developers). Em navegadores/computadores sem suporte,
+        // cai no comportamento antigo de baixar a imagem.
+        const arquivo = new File([blob], nomeArquivo, { type: 'image/png' });
+        const podeCompartilhar = navigator.canShare && navigator.canShare({ files: [arquivo] });
+
+        if (podeCompartilhar) {
+            try {
+                await navigator.share({
+                    files: [arquivo],
+                    title: def.nome,
+                    text: `Desbloqueei a conquista "${def.nome}" no Direto à Posse! 🎯`
+                });
+            } catch (err) {
+                // AbortError = a pessoa cancelou a folha de compartilhamento
+                // de propósito — não é um erro de verdade, não faz nada.
+                if (err && err.name !== 'AbortError') {
+                    console.error('Erro ao compartilhar conquista:', err);
+                }
+            }
+        } else {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nomeArquivo;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 4000);
+        }
     } catch (err) {
         console.error('Erro ao gerar imagem da conquista:', err);
     } finally {
