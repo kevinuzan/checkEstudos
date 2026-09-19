@@ -376,6 +376,8 @@
                             <h2>🃏 Seus baralhos</h2>
                             <div class="flashcards-acoes-topo">
                                 <button type="button" class="btn-secundario" onclick="abrirModalImportarAnki()">📥 Importar do Anki</button>
+                                <label class="btn-secundario" for="importar-baralho-json-input" title="Importar um baralho exportado do checkEstudos (arquivo .json)">📥 Importar arquivo</label>
+                                <input type="file" id="importar-baralho-json-input" class="arquivo-input-oculto" accept="application/json" onchange="importarArquivoBaralho(event)">
                                 <button type="button" class="btn-secundario" onclick="abrirModalNovoBaralho()">+ Novo baralho</button>
                             </div>
                         </div>
@@ -396,6 +398,7 @@
                             <h2 id="flashcards-detalhe-nome">Baralho</h2>
                             <div class="flashcards-acoes-topo">
                                 <button type="button" class="btn-secundario" onclick="abrirModalEditarBaralho()">✏️ Editar</button>
+                                <button type="button" class="btn-secundario" onclick="exportarBaralhoAtual()" title="Baixar esse baralho como arquivo, pra importar em outra conta ou mandar pra alguém">⬇ Exportar</button>
                                 <button type="button" class="btn-secundario" onclick="abrirModalNovoCartao()">+ Novo cartão</button>
                                 <button type="button" id="btn-revisar-baralho-atual" onclick="iniciarRevisao(baralhoAtualId)">▶ Revisar</button>
                             </div>
@@ -639,7 +642,7 @@
     <div id="modal-sugestao-edital-overlay" class="modal-overlay" style="display:none;">
         <div class="modal modal-grande">
             <h3>Sugestão de edital (revise antes de importar)</h3>
-            <p class="config-texto-ajuda">A IA pode errar — confira e ajuste os nomes das matérias e os tópicos abaixo antes de confirmar. Nada é salvo até você clicar em "Confirmar importação".</p>
+            <p class="config-texto-ajuda">A IA pode errar — confira e ajuste os nomes das matérias e os tópicos abaixo antes de confirmar. Nada é salvo até você clicar em "Confirmar importação". Cada tópico já vem quebrado em partes menores: a linha sem recuo é o tópico principal, e as linhas recuadas logo abaixo são os subtópicos dele — vão virar itens marcáveis separados, pra facilitar a leitura.</p>
             <label class="modal-label">Importar para o plano</label>
             <input type="text" id="sugestao-plano-input" placeholder="Nome do plano (ex: TRT)">
             <label class="modal-label">Matérias e tópicos sugeridos</label>
@@ -769,9 +772,12 @@
     <div id="modal-baralho-overlay" class="modal-overlay" style="display:none;">
         <div class="modal">
             <h3 id="modal-baralho-titulo">Novo baralho</h3>
+            <label class="modal-label">Pasta (opcional)</label>
+            <input type="text" id="baralho-pasta-input" list="baralho-pastas-datalist" placeholder="Ex: ENAM › Direito Civil" autocomplete="off">
+            <datalist id="baralho-pastas-datalist"></datalist>
+            <p class="config-texto-ajuda">Escolha uma pasta já existente na lista, ou digite um nome novo pra criar uma pasta nova. Deixe em branco pra criar um baralho raiz, com sua própria pílula no menu de cima.</p>
             <label class="modal-label">Nome do baralho</label>
-            <input type="text" id="baralho-nome-input" placeholder="Ex: ENAM::Direito Civil::Contratos" maxlength="200">
-            <p class="config-texto-ajuda">Use "::" pra criar (ou mover) o baralho dentro de outro, igual no Anki — "ENAM::Direito Civil" cria "Direito Civil" dentro de "ENAM". Sem "::", ele vira um baralho raiz novo, com sua própria pílula no menu de cima.</p>
+            <input type="text" id="baralho-nome-input" placeholder="Ex: Contratos" maxlength="120">
             <div class="modal-actions">
                 <button class="btn-cancelar" onclick="fecharModalBaralho()">Cancelar</button>
                 <button onclick="salvarBaralho()">Salvar</button>
@@ -874,6 +880,21 @@
             <div class="modal-actions">
                 <button class="btn-cancelar" onclick="fecharModalCartao()">Cancelar</button>
                 <button onclick="salvarCartao()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: mover/copiar cartão pra outro baralho -->
+    <div id="modal-mover-cartao-overlay" class="modal-overlay" style="display:none;">
+        <div class="modal">
+            <h3>Mover ou copiar cartão</h3>
+            <label class="modal-label">Baralho de destino</label>
+            <select id="mover-cartao-destino-select"></select>
+            <p class="config-texto-ajuda">"Mover" tira o cartão daqui e leva o progresso de revisão junto. "Copiar" deixa o original aqui e cria uma cópia nova (começando do zero) no destino.</p>
+            <div class="modal-actions">
+                <button class="btn-cancelar" onclick="fecharModalMoverCartao()">Cancelar</button>
+                <button class="btn-secundario" onclick="confirmarMoverCopiarCartao(false)">📄 Copiar</button>
+                <button onclick="confirmarMoverCopiarCartao(true)">↗️ Mover</button>
             </div>
         </div>
     </div>

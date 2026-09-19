@@ -171,6 +171,7 @@ const FLASHCARDS_BARALHOS_COLLECTION = "flashcards_baralhos";
 const FLASHCARDS_CARTOES_COLLECTION = "flashcards_cartoes";
 const PLANO_PADRAO = "TRT";
 const FORMATO_EDITAL_EXPORTADO = "checkestudos-edital-v1";
+const FORMATO_BARALHO_EXPORTADO = "checkestudos-baralho-v1";
 
 // Tipos de estudo padrão, criados automaticamente para cada usuário novo.
 // campoExtra define qual campo adicional aparece ao finalizar uma sessão:
@@ -710,8 +711,17 @@ async function startServer() {
                 const materia = (bloco.materia || '').trim();
                 if (!materia || !Array.isArray(bloco.topicos)) continue;
                 for (const topicoBruto of bloco.topicos) {
-                    const topico = (topicoBruto || '').trim();
+                    // Cada item aceita tanto o formato antigo (string simples)
+                    // quanto o formato enriquecido {topico, subtopicos} — usado
+                    // pela sugestão de edital via PDF, pra não importar um
+                    // parágrafo gigante como tópico único.
+                    const ehObjeto = topicoBruto && typeof topicoBruto === 'object';
+                    const topico = ((ehObjeto ? topicoBruto.topico : topicoBruto) || '').trim();
                     if (!topico) continue;
+                    const subtopicosBrutos = ehObjeto && Array.isArray(topicoBruto.subtopicos)
+                        ? topicoBruto.subtopicos.map(s => (s || '').trim()).filter(s => s !== '')
+                        : [];
+
                     const existente = await editalColl.findOne({ materia, topico, userId: req.userId });
                     if (existente) {
                         await editalColl.updateOne(
@@ -720,8 +730,10 @@ async function startServer() {
                         );
                         vinculados++;
                     } else {
+                        const subtopicos = subtopicosBrutos.map(texto => ({ id: crypto.randomUUID(), texto, concluido: false }));
                         await editalColl.insertOne({
                             materia, topico, concluido: false,
+                            ...(subtopicos.length > 0 ? { subtopicos } : {}),
                             planos: [nomePlano], userId: req.userId, dataCriacao: new Date()
                         });
                         criados++;
@@ -795,7 +807,25 @@ async function startServer() {
                                     type: 'object',
                                     properties: {
                                         materia: { type: 'string' },
-                                        topicos: { type: 'array', items: { type: 'string' } }
+                                        topicos: {
+                                            type: 'array',
+                                            items: {
+                                                type: 'object',
+                                                description: 'Um tópico numerado do edital, dividido em um título curto (topico) e as partes originais que o compõem (subtopicos) — cada uma virando um item marcável separado, em vez de um único parágrafo denso.',
+                                                properties: {
+                                                    topico: {
+                                                        type: 'string',
+                                                        description: 'Título curto do tópico — normalmente só a primeira parte/frase do item numerado do edital (ex: "Teoria da Constituição e do Direito Constitucional"), NUNCA o parágrafo inteiro.'
+                                                    },
+                                                    subtopicos: {
+                                                        type: 'array',
+                                                        items: { type: 'string' },
+                                                        description: 'As demais partes/frases/conceitos do mesmo item numerado do edital, um por elemento, na ordem original e com a redação original fiel (sem resumir). Se o item numerado já é curto e trata de uma coisa só, pode vir vazio.'
+                                                    }
+                                                },
+                                                required: ['topico']
+                                            }
+                                        }
                                     },
                                     required: ['materia', 'topicos']
                                 }
@@ -822,7 +852,7 @@ async function startServer() {
                         // e o servidor então não conseguia interpretar o retorno
                         // — daí o erro de "não conseguiu identificar matérias".
                         max_tokens: 32000,
-                        system: 'Você extrai o conteúdo programático (matérias e tópicos) de editais de concurso público brasileiro. Ignore capa, regras de inscrição, cronograma, vagas, remuneração, rodapés e numeração de página — foque só na seção de "conteúdo programático" / "objeto de avaliação" / "programa". Cada matéria/disciplina deve virar uma entrada, com os tópicos dela como itens de texto separados, mantendo a redação original o mais fiel possível (sem resumir/reescrever o conteúdo). Não invente nada que não esteja no texto. Se não conseguir identificar o nome do concurso/cargo, deixe nomeEdital em branco.',
+                        system: 'Você extrai o conteúdo programático (matérias e tópicos) de editais de concurso público brasileiro. Ignore capa, regras de inscrição, cronograma, vagas, remuneração, rodapés e numeração de página — foque só na seção de "conteúdo programático" / "objeto de avaliação" / "programa". Cada matéria/disciplina deve virar uma entrada. Cada item numerado do edital (ex: "1. Teoria da Constituição... Conceito e características. A Constituição em perspectiva histórico-evolutiva. Constitucionalismo contemporâneo...") normalmente reúne VÁRIOS assuntos numa frase só, separados por pontos ou ponto-e-vírgula — isso não pode virar um único tópico com um parágrafo gigante, porque fica ilegível pra quem for estudar. Em vez disso, quebre cada item numerado em: um "topico" curto (só a primeira parte/assunto principal, como um título) e um array "subtopicos" com as demais partes, cada uma virando um elemento separado do array, na ordem em que aparecem. É uma divisão/segmentação do texto original — mantenha a redação original fiel em cada pedaço, sem resumir, reescrever ou juntar assuntos diferentes num só subtópico. Só deixe subtopicos vazio quando o item numerado já for curto e tratar de uma coisa só. Não invente nada que não esteja no texto. Se não conseguir identificar o nome do concurso/cargo, deixe nomeEdital em branco.',
                         messages: [
                             { role: 'user', content: `Aqui está o texto extraído de um edital em PDF. Extraia a lista de matérias e tópicos do conteúdo programático:\n\n${texto}` }
                         ],
@@ -855,10 +885,22 @@ async function startServer() {
                     return res.status(502).json({ success: false, error: 'A IA não conseguiu identificar matérias e tópicos nesse PDF.' });
                 }
 
+                // Cada tópico vem como {topico, subtopicos} — normaliza aceitando
+                // também string solta (defensivo, caso a IA ignore o schema),
+                // tratando esse caso como um tópico sem subtópicos.
                 const materiasSugeridas = blocoFerramenta.input.materias
                     .map(b => ({
                         materia: (b.materia || '').trim(),
-                        topicos: Array.isArray(b.topicos) ? b.topicos.map(t => (t || '').trim()).filter(t => t !== '') : []
+                        topicos: Array.isArray(b.topicos) ? b.topicos
+                            .map(t => {
+                                if (typeof t === 'string') return { topico: t.trim(), subtopicos: [] };
+                                const topico = (t?.topico || '').trim();
+                                const subtopicos = Array.isArray(t?.subtopicos)
+                                    ? t.subtopicos.map(s => (s || '').trim()).filter(s => s !== '')
+                                    : [];
+                                return { topico, subtopicos };
+                            })
+                            .filter(t => t.topico !== '') : []
                     }))
                     .filter(b => b.materia !== '' && b.topicos.length > 0);
 
@@ -1677,6 +1719,146 @@ async function startServer() {
             const resultado = await flashcardsCartoesColl.deleteOne({ _id: new ObjectId(req.params.id), userId: req.userId });
             if (resultado.deletedCount === 0) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
             res.json({ success: true });
+        });
+
+        // Move um cartão pra outro baralho — some do de origem, aparece no de
+        // destino, mantendo o progresso de repetição espaçada (não é um cartão
+        // novo). Se ele fizer parte de um grupo de omissão (origemClozeId),
+        // sai do grupo, já que os irmãos continuam no baralho de origem.
+        app.put('/api/flashcards/cards/:id/mover', requireAuth, async (req, res) => {
+            const baralhoDestinoId = (req.body.baralhoId || '').trim();
+            if (!baralhoDestinoId) return res.status(400).json({ success: false, error: 'Escolha o baralho de destino' });
+
+            const destino = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(baralhoDestinoId), userId: req.userId });
+            if (!destino) return res.status(404).json({ success: false, error: 'Baralho de destino não encontrado' });
+
+            const resultado = await flashcardsCartoesColl.updateOne(
+                { _id: new ObjectId(req.params.id), userId: req.userId },
+                { $set: { baralhoId: baralhoDestinoId }, $unset: { origemClozeId: '' } }
+            );
+            if (resultado.matchedCount === 0) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
+            res.json({ success: true });
+        });
+
+        // Copia um cartão pra outro baralho — o original continua onde estava,
+        // e a cópia nasce como um cartão NOVO (zera o progresso de repetição
+        // espaçada), já que ela ainda não foi estudada nesse baralho.
+        app.post('/api/flashcards/cards/:id/copiar', requireAuth, async (req, res) => {
+            const baralhoDestinoId = (req.body.baralhoId || '').trim();
+            if (!baralhoDestinoId) return res.status(400).json({ success: false, error: 'Escolha o baralho de destino' });
+
+            const destino = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(baralhoDestinoId), userId: req.userId });
+            if (!destino) return res.status(404).json({ success: false, error: 'Baralho de destino não encontrado' });
+
+            const original = await flashcardsCartoesColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            if (!original) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
+
+            const copia = {
+                ...original,
+                _id: undefined,
+                baralhoId: baralhoDestinoId,
+                origemClozeId: undefined,
+                estado: 'novo',
+                etapaAprendizado: 0,
+                facilidade: 2.5,
+                intervalo: 0,
+                repeticoes: 0,
+                dataProximaRevisao: new Date(),
+                vezesErrei: undefined, vezesDificil: undefined, vezesBom: undefined, vezesFacil: undefined, vezesRespondido: undefined,
+                criadoEm: new Date()
+            };
+            delete copia._id;
+            const resultado = await flashcardsCartoesColl.insertOne(copia);
+            res.json({ success: true, cartaoId: resultado.insertedId });
+        });
+
+        // --- EXPORTAR / IMPORTAR BARALHO ---
+        // Formato "checkestudos-baralho-v1": um JSON com o baralho e seus
+        // cartões (só o conteúdo — frente/verso/cloze — sem progresso de
+        // revisão nem dados do dono), pensado pra divulgar/compartilhar um
+        // baralho pronto com outras pessoas.
+
+        // Exporta um baralho (e, se ele tiver subbaralhos na árvore, cada um
+        // deles também — nome incluído, sem duplicar os que não são desse
+        // baralho) como um arquivo pra baixar.
+        app.get('/api/flashcards/baralhos/:id/exportar', requireAuth, async (req, res) => {
+            const baralho = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            if (!baralho) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
+
+            // Inclui o próprio baralho + todo mundo que tem ele no caminho
+            // (subbaralhos), pra exportar a árvore inteira de uma vez.
+            const caminhoCompletoBase = [...(baralho.caminho || []), baralho.nome];
+            const todos = await flashcardsBaralhosColl.find({ userId: req.userId }).toArray();
+            const relacionados = todos.filter(b => {
+                const caminho = [...(b.caminho || []), b.nome];
+                if (String(b._id) === String(baralho._id)) return true;
+                return caminhoCompletoBase.every((parte, i) => caminho[i] === parte) && caminho.length > caminhoCompletoBase.length;
+            });
+
+            const baralhosExportados = [];
+            for (const b of relacionados) {
+                const cartoes = await flashcardsCartoesColl.find({ baralhoId: String(b._id), userId: req.userId }).sort({ criadoEm: 1 }).toArray();
+                // Caminho relativo ao baralho exportado (raiz do arquivo vira o
+                // próprio baralho escolhido), pra quem importar não herdar a
+                // organização de pastas de quem exportou.
+                const caminhoRelativo = [...(b.caminho || []), b.nome].slice(caminhoCompletoBase.length - 1);
+                baralhosExportados.push({
+                    caminho: caminhoRelativo.slice(0, -1),
+                    nome: caminhoRelativo[caminhoRelativo.length - 1],
+                    cartoes: cartoes.map(c => ({
+                        tipo: c.tipo, frente: c.frente, verso: c.verso,
+                        ...(c.tipo === 'cloze' ? { clozeTexto: c.clozeTexto, clozeExtra: c.clozeExtra, clozeIndice: c.clozeIndice, origemClozeId: c.origemClozeId } : {})
+                    }))
+                });
+            }
+
+            const dados = { formato: FORMATO_BARALHO_EXPORTADO, baralhos: baralhosExportados };
+            const nomeArquivo = `baralho-${baralho.nome.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`;
+            res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo}"`);
+            res.json(dados);
+        });
+
+        // Importa um arquivo no formato checkestudos-baralho-v1 — cria os
+        // baralhos (dentro de uma pasta opcional escolhida na hora de
+        // importar) e os cartões, todos como novos (sem progresso de revisão).
+        app.post('/api/flashcards/baralhos/importar-json', requireAuth, async (req, res) => {
+            const { dados, pastaDestino } = req.body;
+            if (!dados || dados.formato !== FORMATO_BARALHO_EXPORTADO || !Array.isArray(dados.baralhos)) {
+                return res.status(400).json({ success: false, error: 'Arquivo em formato inválido. Use um arquivo exportado pelo checkEstudos.' });
+            }
+            const prefixo = Array.isArray(pastaDestino) ? pastaDestino.filter(p => (p || '').trim() !== '') : [];
+
+            let baralhosCriados = 0;
+            let cartoesCriados = 0;
+            for (const bloco of dados.baralhos) {
+                const nome = (bloco.nome || '').trim();
+                if (!nome) continue;
+                const caminho = [...prefixo, ...(Array.isArray(bloco.caminho) ? bloco.caminho.map(p => (p || '').trim()).filter(p => p !== '') : [])];
+
+                const agora = new Date();
+                const resultadoBaralho = await flashcardsBaralhosColl.insertOne({
+                    nome, caminho, origem: 'importado', userId: req.userId, criadoEm: agora
+                });
+                baralhosCriados++;
+
+                const cartoes = Array.isArray(bloco.cartoes) ? bloco.cartoes : [];
+                if (cartoes.length === 0) continue;
+                const docsCartoes = cartoes
+                    .filter(c => (c.frente || '').trim() !== '')
+                    .map(c => ({
+                        baralhoId: String(resultadoBaralho.insertedId), userId: req.userId,
+                        tipo: c.tipo === 'cloze' ? 'cloze' : 'basico',
+                        frente: c.frente, verso: c.verso || '',
+                        ...(c.tipo === 'cloze' ? { clozeTexto: c.clozeTexto, clozeExtra: c.clozeExtra, clozeIndice: c.clozeIndice, origemClozeId: c.origemClozeId } : {}),
+                        facilidade: 2.5, intervalo: 0, repeticoes: 0, etapaAprendizado: 0,
+                        dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
+                    }));
+                if (docsCartoes.length > 0) {
+                    await flashcardsCartoesColl.insertMany(docsCartoes);
+                    cartoesCriados += docsCartoes.length;
+                }
+            }
+            res.json({ success: true, baralhosCriados, cartoesCriados });
         });
 
         // --- REVISÃO (repetição espaçada) ---

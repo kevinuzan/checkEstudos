@@ -1104,6 +1104,38 @@ function fecharModalSugestaoEdital() {
     document.getElementById('modal-sugestao-edital-overlay').style.display = 'none';
 }
 
+// Um tópico sugerido pode vir como string solta (formato antigo/manual) ou
+// como {topico, subtopicos} (formato novo, usado pela sugestão via PDF —
+// já divide o parágrafo denso do edital em partes menores e legíveis). Pra
+// continuar editável como texto simples (igual sempre foi), cada subtópico
+// vira uma linha indentada logo abaixo do tópico principal.
+function formatarTopicosParaTextarea(topicos) {
+    return (topicos || []).map(t => {
+        if (typeof t === 'string') return t;
+        const linhas = [(t.topico || '').trim()];
+        (t.subtopicos || []).forEach(s => { if ((s || '').trim()) linhas.push(`    - ${s.trim()}`); });
+        return linhas.join('\n');
+    }).filter(bloco => bloco.trim() !== '').join('\n');
+}
+
+// Lê de volta o texto editado: uma linha sem indentação é um novo tópico;
+// uma linha indentada (começando com espaços/tab, com ou sem "-") vira
+// subtópico do tópico anterior.
+function lerTopicosDoTextarea(texto) {
+    const topicos = [];
+    for (const linhaBruta of texto.split('\n')) {
+        if (linhaBruta.trim() === '') continue;
+        const ehSubtopico = /^\s+/.test(linhaBruta) && topicos.length > 0;
+        if (ehSubtopico) {
+            const conteudo = linhaBruta.replace(/^\s+[-•]?\s*/, '').trim();
+            if (conteudo) topicos[topicos.length - 1].subtopicos.push(conteudo);
+        } else {
+            topicos.push({ topico: linhaBruta.trim(), subtopicos: [] });
+        }
+    }
+    return topicos;
+}
+
 function renderizarBlocosMateriaSugestao() {
     const container = document.getElementById('sugestao-materias-lista');
     if (!container || !sugestaoEditalAtual) return;
@@ -1113,7 +1145,7 @@ function renderizarBlocosMateriaSugestao() {
                 <input type="text" class="sugestao-materia-nome" data-indice="${i}" value="${(bloco.materia || '').replace(/"/g, '&quot;')}" placeholder="Nome da matéria">
                 <button type="button" class="btn-remover-materia-sugestao" onclick="removerBlocoMateriaSugestao(${i})" title="Remover matéria">🗑️</button>
             </div>
-            <textarea class="sugestao-materia-topicos" data-indice="${i}" placeholder="Um tópico por linha">${(bloco.topicos || []).join('\n')}</textarea>
+            <textarea class="sugestao-materia-topicos" data-indice="${i}" placeholder="Um tópico por linha. Linhas indentadas (com espaço/tab antes) viram subtópicos do tópico logo acima.">${formatarTopicosParaTextarea(bloco.topicos)}</textarea>
         </div>
     `).join('');
 }
@@ -1144,7 +1176,7 @@ function sincronizarBlocosMateriaSugestao() {
     document.querySelectorAll('.sugestao-materia-topicos').forEach(textarea => {
         const i = Number(textarea.dataset.indice);
         if (sugestaoEditalAtual.materias[i]) {
-            sugestaoEditalAtual.materias[i].topicos = textarea.value.split('\n').map(t => t.trim()).filter(t => t !== '');
+            sugestaoEditalAtual.materias[i].topicos = lerTopicosDoTextarea(textarea.value);
         }
     });
 }
@@ -1157,7 +1189,10 @@ async function confirmarImportacaoSugestaoEdital() {
     if (!plano) return alert('Informe o nome do plano para importar.');
 
     const materiasValidas = sugestaoEditalAtual.materias
-        .map(b => ({ materia: (b.materia || '').trim(), topicos: (b.topicos || []).filter(t => t.trim() !== '') }))
+        .map(b => ({
+            materia: (b.materia || '').trim(),
+            topicos: (b.topicos || []).filter(t => (typeof t === 'string' ? t.trim() : (t.topico || '').trim()) !== '')
+        }))
         .filter(b => b.materia !== '' && b.topicos.length > 0);
 
     if (materiasValidas.length === 0) return alert('Adicione ao menos uma matéria com tópicos antes de importar.');
@@ -2040,22 +2075,34 @@ function mostrarTelaFlashcards(tela) {
 // do "caminho" de cada baralho importado) expansíveis, com Novo/Aprender/
 // Revisar somados por pasta, e os baralhos-folha com seus próprios números.
 
+// Cada NÓ da árvore mora numa posição de caminho completo (matéria/tópico/
+// subtópico/nome) e pode, ao mesmo tempo, ter cartões PRÓPRIOS (nodo.baralho
+// preenchido) e ter filhos (subbaralhos dentro dele) — exatamente como um
+// deck no Anki, que pode ter cartas e subdecks ao mesmo tempo. Não existe
+// mais uma separação rígida entre "pasta" e "baralho-folha": um baralho que
+// já tem cartões vira automaticamente um "baralho-pai" assim que alguém cria
+// outro baralho com o caminho dele como prefixo — sem precisar converter nada.
 function construirArvoreBaralhos(baralhos) {
-    const raiz = { nome: null, filhos: new Map(), baralhos: [] };
+    const raiz = { nome: null, filhos: new Map(), baralho: null };
     baralhos.forEach(b => {
+        const caminhoCompleto = [...(b.caminho || []), b.nome];
         let nodo = raiz;
-        (b.caminho || []).forEach(segmento => {
-            if (!nodo.filhos.has(segmento)) nodo.filhos.set(segmento, { nome: segmento, filhos: new Map(), baralhos: [] });
+        caminhoCompleto.forEach(segmento => {
+            if (!nodo.filhos.has(segmento)) nodo.filhos.set(segmento, { nome: segmento, filhos: new Map(), baralho: null });
             nodo = nodo.filhos.get(segmento);
         });
-        nodo.baralhos.push(b);
+        nodo.baralho = b;
     });
     return raiz;
 }
 
 function agregarContagensArvore(nodo) {
     let novos = 0, aprender = 0, revisar = 0;
-    nodo.baralhos.forEach(b => { novos += b.novos || 0; aprender += b.aprender || 0; revisar += b.revisar || 0; });
+    if (nodo.baralho) {
+        novos += nodo.baralho.novos || 0;
+        aprender += nodo.baralho.aprender || 0;
+        revisar += nodo.baralho.revisar || 0;
+    }
     nodo.filhos.forEach(filho => {
         const sub = agregarContagensArvore(filho);
         novos += sub.novos; aprender += sub.aprender; revisar += sub.revisar;
@@ -2073,25 +2120,6 @@ function renderizarContagensArvore(cont) {
     `;
 }
 
-function renderizarLinhaBaralhoArvore(b) {
-    const profundidade = (b.caminho || []).length;
-    const temPendente = (b.novos || 0) > 0 || (b.aprender || 0) > 0 || (b.revisar || 0) > 0;
-    return `
-        <div class="baralho-arvore-linha" style="--profundidade:${profundidade}">
-            <span class="baralho-arvore-linha-nome" onclick="abrirBaralho('${b._id}')" title="Ver cartões">
-                📘 ${b.nome}${b.origem === 'anki' ? ' <span class="baralho-card-origem-anki">Anki</span>' : ''}
-            </span>
-            ${renderizarContagensArvore(b)}
-            <span class="baralho-arvore-acoes">
-                ${temPendente
-                    ? `<button type="button" class="baralho-arvore-revisar-pasta" onclick="event.stopPropagation(); iniciarRevisao('${b._id}')" title="Revisar esse baralho">▶</button>`
-                    : ''}
-                <button type="button" class="baralho-arvore-excluir" onclick="event.stopPropagation(); excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>
-            </span>
-        </div>
-    `;
-}
-
 function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
     let html = '';
 
@@ -2099,30 +2127,34 @@ function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
     filhosOrdenados.forEach(filho => {
         const caminhoFilho = [...caminhoAtual, filho.nome];
         const chave = caminhoFilho.join('::');
-        const expandido = flashcardsPastasExpandidas.has(chave);
-        const cont = agregarContagensArvore(filho);
-
         const chaveEscapada = chave.replace(/'/g, "\\'");
+        const nomeEscapado = filho.nome.replace(/"/g, '&quot;');
+        const temFilhos = filho.filhos.size > 0;
+        const expandido = temFilhos && flashcardsPastasExpandidas.has(chave);
+        const cont = agregarContagensArvore(filho);
+        const temPendente = cont.revisar > 0 || cont.novos > 0 || cont.aprender > 0;
+        const b = filho.baralho; // preenchido quando esse nó também é um baralho com cartões próprios
+
         html += `
             <div class="baralho-arvore-pasta">
-                <div class="baralho-arvore-pasta-header" style="--profundidade:${profundidade}" onclick="toggleFlashcardsPasta('${chaveEscapada}')">
-                    <span class="seta-subtopicos">${expandido ? '▾' : '▸'}</span>
-                    <span class="baralho-arvore-pasta-nome">${filho.nome}</span>
+                <div class="baralho-arvore-pasta-header" style="--profundidade:${profundidade}" onclick="${temFilhos ? `toggleFlashcardsPasta('${chaveEscapada}')` : (b ? `abrirBaralho('${b._id}')` : '')}">
+                    <span class="seta-subtopicos">${temFilhos ? (expandido ? '▾' : '▸') : ''}</span>
+                    <span class="baralho-arvore-pasta-nome" ${b && temFilhos ? `onclick="event.stopPropagation(); abrirBaralho('${b._id}')" title="Ver cartões"` : ''}>
+                        ${b ? '📘 ' : ''}${filho.nome}${b && b.origem === 'anki' ? ' <span class="baralho-card-origem-anki">Anki</span>' : ''}
+                    </span>
                     ${renderizarContagensArvore(cont)}
                     <span class="baralho-arvore-acoes">
-                        ${cont.revisar > 0 || cont.novos > 0 || cont.aprender > 0
-                            ? `<button type="button" class="baralho-arvore-revisar-pasta" onclick="event.stopPropagation(); revisarPasta('${chaveEscapada}')" title="Revisar tudo em &quot;${filho.nome.replace(/"/g, '&quot;')}&quot;">▶</button>`
+                        ${temPendente
+                            ? `<button type="button" class="baralho-arvore-revisar-pasta" onclick="event.stopPropagation(); revisarPasta('${chaveEscapada}')" title="Revisar tudo em &quot;${nomeEscapado}&quot;">▶</button>`
                             : ''}
-                        <button type="button" class="baralho-arvore-add-sub" onclick="event.stopPropagation(); abrirModalNovoBaralho('${chaveEscapada}')" title="Novo baralho dentro de &quot;${filho.nome.replace(/"/g, '&quot;')}&quot;">+</button>
+                        <button type="button" class="baralho-arvore-add-sub" onclick="event.stopPropagation(); abrirModalNovoBaralho('${chaveEscapada}')" title="Novo baralho dentro de &quot;${nomeEscapado}&quot;">+</button>
+                        ${b ? `<button type="button" class="baralho-arvore-excluir" onclick="event.stopPropagation(); excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>` : ''}
                     </span>
                 </div>
                 ${expandido ? renderizarNodoArvoreBaralhos(filho, caminhoFilho, profundidade + 1) : ''}
             </div>
         `;
     });
-
-    const baralhosOrdenados = [...nodo.baralhos].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-    baralhosOrdenados.forEach(b => { html += renderizarLinhaBaralhoArvore(b); });
 
     return html;
 }
@@ -2133,20 +2165,21 @@ function toggleFlashcardsPasta(chave) {
     renderizarBaralhos();
 }
 
-// Baralhos que ficam dentro de uma pasta (matéria/tópico/subtópico) —
-// qualquer baralho cujo caminho comece exatamente com os segmentos da pasta.
+// Baralhos que ficam dentro (ou exatamente na raiz) de um nó da árvore —
+// tanto os cartões do próprio baralho daquele nó (se ele tiver) quanto os
+// de todo subbaralho aninhado nele.
 function baralhosDaPasta(chave) {
     const segmentos = chave.split('::');
     return baralhosCache.filter(b => {
-        const c = b.caminho || [];
-        if (c.length < segmentos.length) return false;
-        return segmentos.every((seg, i) => c[i] === seg);
+        const caminhoCompleto = [...(b.caminho || []), b.nome];
+        if (caminhoCompleto.length < segmentos.length) return false;
+        return segmentos.every((seg, i) => caminhoCompleto[i] === seg);
     });
 }
 
-// "▶" no cabeçalho de uma pasta — revisa TODOS os cartões pendentes de
-// TODOS os baralhos daquele tópico/subtópico de uma vez, não só um baralho
-// específico.
+// "▶" no cabeçalho de um nó — revisa TODOS os cartões pendentes daquele nó
+// (incluindo os dele mesmo, se for um baralho-pai) e de tudo que está
+// aninhado dentro, de uma vez só.
 function revisarPasta(chave) {
     const ids = baralhosDaPasta(chave).map(b => b._id);
     if (ids.length === 0) return;
@@ -2204,23 +2237,51 @@ function renderizarBaralhos() {
 // último pedaço é o nome do baralho em si, e os anteriores são as pastas
 // (matéria/tópico/subtópico) onde ele vai morar na árvore.
 
-// Separa "ENAM::Direito Civil::Contratos" em caminho=["ENAM","Direito Civil"]
-// e nome="Contratos".
-function separarCaminhoENomeBaralho(textoCompleto) {
-    const segmentos = textoCompleto.split('::').map(s => s.trim()).filter(s => s !== '');
-    if (segmentos.length === 0) return { caminho: [], nome: '' };
-    return { caminho: segmentos.slice(0, -1), nome: segmentos[segmentos.length - 1] };
+// Separador visual usado só no campo "Pasta" do modal — bem mais amigável
+// que pedir pra pessoa digitar "::" toda vez (o "::" continua existindo só
+// como identificador interno da árvore, nunca aparece pra quem usa o app).
+const SEPARADOR_PASTA_EXIBICAO = ' › ';
+
+// Lê o campo "Pasta" (aceita o separador bonito " › ", mas também aceita
+// "/" ou ">" soltos, pra ser tolerante com quem digitar diferente) e devolve
+// o array de segmentos do caminho.
+function lerCaminhoDoCampoPasta(texto) {
+    return texto.split(/\s*[›/>]\s*|::/).map(s => s.trim()).filter(s => s !== '');
+}
+
+// Todas as pastas já existentes (cada prefixo do caminho de cada baralho),
+// pra alimentar o autocomplete do campo "Pasta" — assim a pessoa escolhe
+// entre as que já existem em vez de ter que lembrar/digitar tudo de novo.
+function todasAsPastasConhecidas() {
+    const caminhos = new Set();
+    baralhosCache.forEach(b => {
+        const completo = [...(b.caminho || []), b.nome];
+        // Cada prefixo do caminho completo é uma pasta navegável (o próprio
+        // baralho incluso, já que ele pode virar pai de outros a qualquer momento).
+        for (let i = 1; i <= completo.length; i++) {
+            caminhos.add(completo.slice(0, i).join(SEPARADOR_PASTA_EXIBICAO));
+        }
+    });
+    return [...caminhos].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+function atualizarDatalistPastas() {
+    const datalist = document.getElementById('baralho-pastas-datalist');
+    if (!datalist) return;
+    datalist.innerHTML = todasAsPastasConhecidas().map(p => `<option value="${p.replace(/"/g, '&quot;')}"></option>`).join('');
 }
 
 // Chamada tanto pelo botão geral "+ Novo baralho" (sem prefixo, ou com o
 // baralho raiz atualmente selecionado no filtro) quanto pelo botão "+" de
-// cada pasta da árvore (com o caminho daquela pasta já pré-preenchido, pra
-// só faltar digitar o nome do novo subbaralho).
+// cada nó da árvore (com o caminho daquele nó já pré-preenchido no campo
+// "Pasta", pra só faltar digitar o nome do novo subbaralho).
 function abrirModalNovoBaralho(prefixoCaminho) {
     baralhoEmEdicaoId = null;
     document.getElementById('modal-baralho-titulo').textContent = 'Novo baralho';
+    atualizarDatalistPastas();
     const prefixo = prefixoCaminho || (flashcardsFiltroMateria !== 'geral' ? flashcardsFiltroMateria : '');
-    document.getElementById('baralho-nome-input').value = prefixo ? `${prefixo}::` : '';
+    document.getElementById('baralho-pasta-input').value = prefixo ? prefixo.split('::').join(SEPARADOR_PASTA_EXIBICAO) : '';
+    document.getElementById('baralho-nome-input').value = '';
     document.getElementById('modal-baralho-overlay').style.display = 'flex';
     document.getElementById('baralho-nome-input').focus();
 }
@@ -2230,7 +2291,9 @@ function abrirModalEditarBaralho() {
     if (!baralho) return;
     baralhoEmEdicaoId = baralhoAtualId;
     document.getElementById('modal-baralho-titulo').textContent = 'Editar baralho';
-    document.getElementById('baralho-nome-input').value = [...(baralho.caminho || []), baralho.nome].join('::');
+    atualizarDatalistPastas();
+    document.getElementById('baralho-pasta-input').value = (baralho.caminho || []).join(SEPARADOR_PASTA_EXIBICAO);
+    document.getElementById('baralho-nome-input').value = baralho.nome;
     document.getElementById('modal-baralho-overlay').style.display = 'flex';
 }
 
@@ -2239,8 +2302,8 @@ function fecharModalBaralho() {
 }
 
 async function salvarBaralho() {
-    const textoCompleto = document.getElementById('baralho-nome-input').value.trim();
-    const { caminho, nome } = separarCaminhoENomeBaralho(textoCompleto);
+    const caminho = lerCaminhoDoCampoPasta(document.getElementById('baralho-pasta-input').value.trim());
+    const nome = document.getElementById('baralho-nome-input').value.trim();
     if (!nome) return;
 
     try {
@@ -2370,6 +2433,7 @@ function renderizarCartoesDoBaralho() {
             </div>
             <div class="cartao-item-acoes">
                 <button type="button" onclick="abrirModalEditarCartao('${c._id}')" title="Editar">✏️</button>
+                <button type="button" onclick="abrirModalMoverCartao('${c._id}')" title="Mover ou copiar pra outro baralho">↗️</button>
                 <button type="button" onclick="excluirCartao('${c._id}')" title="Excluir">🗑️</button>
             </div>
         </div>
@@ -2676,6 +2740,102 @@ async function excluirCartao(id) {
         await abrirBaralho(baralhoAtualId);
     } catch (err) {
         console.error('Erro ao excluir cartão:', err);
+    }
+}
+
+// --- MODAL: MOVER/COPIAR CARTÃO PRA OUTRO BARALHO ---
+
+let cartaoParaMoverId = null;
+
+function abrirModalMoverCartao(id) {
+    cartaoParaMoverId = id;
+    const select = document.getElementById('mover-cartao-destino-select');
+    if (select) {
+        const opcoes = baralhosCache
+            .map(b => ({ id: b._id, rotulo: [...(b.caminho || []), b.nome].join(' › ') }))
+            .filter(o => o.id !== baralhoAtualId)
+            .sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR'));
+        select.innerHTML = opcoes.map(o => `<option value="${o.id}">${o.rotulo}</option>`).join('');
+    }
+    document.getElementById('modal-mover-cartao-overlay').style.display = 'flex';
+}
+
+function fecharModalMoverCartao() {
+    cartaoParaMoverId = null;
+    document.getElementById('modal-mover-cartao-overlay').style.display = 'none';
+}
+
+async function confirmarMoverCopiarCartao(mover) {
+    const destinoId = document.getElementById('mover-cartao-destino-select').value;
+    if (!cartaoParaMoverId || !destinoId) return;
+
+    try {
+        const res = await fetch(`/api/flashcards/cards/${cartaoParaMoverId}/${mover ? 'mover' : 'copiar'}`, {
+            method: mover ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ baralhoId: destinoId })
+        });
+        const dados = await res.json();
+        if (!dados.success) {
+            alert(dados.error || 'Não foi possível concluir a ação.');
+            return;
+        }
+        fecharModalMoverCartao();
+        await abrirBaralho(baralhoAtualId);
+    } catch (err) {
+        console.error('Erro ao mover/copiar cartão:', err);
+    }
+}
+
+// --- EXPORTAR / IMPORTAR BARALHO (JSON, pra compartilhar com outras pessoas) ---
+
+async function exportarBaralhoAtual() {
+    if (!baralhoAtualId) return;
+    try {
+        const res = await fetch(`/api/flashcards/baralhos/${baralhoAtualId}/exportar`);
+        if (!res.ok) throw new Error('Falha ao exportar');
+        const dados = await res.json();
+        const baralho = baralhosCache.find(b => b._id === baralhoAtualId);
+        const nomeArquivo = `baralho-${(baralho?.nome || 'checkestudos').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`;
+        baixarArquivoJson(dados, nomeArquivo);
+    } catch (err) {
+        console.error('Erro ao exportar baralho:', err);
+        alert('Não foi possível exportar esse baralho agora.');
+    }
+}
+
+async function importarArquivoBaralho(event) {
+    const arquivo = event.target.files[0];
+    if (!arquivo) return;
+
+    try {
+        const texto = await arquivo.text();
+        const dados = JSON.parse(texto);
+
+        const pastaTexto = prompt('Importar dentro de qual pasta? (opcional — deixe em branco pra criar como baralho(s) raiz)', '');
+        event.target.value = '';
+        if (pastaTexto === null) return; // cancelou
+
+        const pastaDestino = lerCaminhoDoCampoPasta(pastaTexto);
+
+        const res = await fetch('/api/flashcards/baralhos/importar-json', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dados, pastaDestino })
+        });
+        const resultado = await res.json();
+
+        if (!resultado.success) {
+            alert(resultado.error || 'Não foi possível importar o arquivo.');
+            return;
+        }
+
+        alert(`Importado! ${resultado.baralhosCriados} baralho(s) e ${resultado.cartoesCriados} cartão(ões) criados.`);
+        await carregarFlashcards();
+    } catch (err) {
+        console.error('Erro ao importar baralho:', err);
+        event.target.value = '';
+        alert('Não foi possível importar esse arquivo — confira se é um JSON exportado pelo checkEstudos.');
     }
 }
 
