@@ -380,10 +380,15 @@ async function carregarPlanos() {
     atualizarBarraSelecaoEdital();
 }
 
+// Visual igual ao das pílulas do Resumo (escopo-pill) — só que aqui é sempre
+// um plano por vez (sem "Geral"). O botão de renomear (✎) só aparece na aba
+// Edital, que é onde faz sentido editar o edital em si.
 function renderizarTabsPlanos() {
     const nav = document.getElementById('planos-tabs');
     if (!nav) return;
     nav.innerHTML = '';
+
+    const mostrarRenomear = viewAtual === 'edital';
 
     planosDisponiveis.forEach(plano => {
         const wrap = document.createElement('div');
@@ -391,25 +396,27 @@ function renderizarTabsPlanos() {
 
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'plano-tab' + (plano.nome === planoAtual ? ' ativo' : '');
-        btn.textContent = plano.nome;
+        btn.className = 'escopo-pill' + (plano.nome === planoAtual ? ' ativo' : '');
+        btn.innerHTML = `<span class="escopo-pill-icone">📘</span> ${plano.nome}`;
         btn.onclick = () => trocarPlano(plano.nome);
         wrap.appendChild(btn);
 
-        const btnRenomear = document.createElement('button');
-        btnRenomear.type = 'button';
-        btnRenomear.className = 'plano-tab-renomear';
-        btnRenomear.textContent = '✎';
-        btnRenomear.title = `Renomear "${plano.nome}"`;
-        btnRenomear.onclick = (ev) => { ev.stopPropagation(); renomearPlano(plano.nome); };
-        wrap.appendChild(btnRenomear);
+        if (mostrarRenomear) {
+            const btnRenomear = document.createElement('button');
+            btnRenomear.type = 'button';
+            btnRenomear.className = 'plano-tab-renomear';
+            btnRenomear.textContent = '✎';
+            btnRenomear.title = `Renomear "${plano.nome}"`;
+            btnRenomear.onclick = (ev) => { ev.stopPropagation(); renomearPlano(plano.nome); };
+            wrap.appendChild(btnRenomear);
+        }
 
         nav.appendChild(wrap);
     });
 
     const btnNovo = document.createElement('button');
     btnNovo.type = 'button';
-    btnNovo.className = 'plano-tab plano-tab-novo';
+    btnNovo.className = 'escopo-pill plano-tab-novo';
     btnNovo.textContent = '+ Novo plano';
     btnNovo.onclick = criarPlano;
     nav.appendChild(btnNovo);
