@@ -437,8 +437,16 @@ async function startServer() {
         // apenas vinculado ao(s) novo(s) plano(s) em vez de duplicado — assim
         // o "concluido" fica automaticamente compartilhado entre os planos.
         app.post('/api/edital/bulk', requireAuth, async (req, res) => {
-            const { materia, textoBruto } = req.body;
+            // Normaliza a matéria (trim) mesmo já validando/selecionando no
+            // front-end: defesa extra contra duplicidade de matéria causada
+            // por espaços em branco (ex: "Direito Administrativo " x
+            // "Direito Administrativo" viravam matérias diferentes).
+            const materia = (req.body.materia || '').trim();
+            const { textoBruto } = req.body;
             let { planos } = req.body;
+            if (!materia || !textoBruto) {
+                return res.status(400).json({ success: false, error: 'Preencha a matéria e os tópicos.' });
+            }
             if (!planos || !Array.isArray(planos) || planos.length === 0) {
                 planos = [PLANO_PADRAO];
             }

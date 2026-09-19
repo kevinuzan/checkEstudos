@@ -1128,6 +1128,13 @@ button:active {
     letter-spacing: 0.03em;
 }
 
+.config-texto-ajuda {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+    line-height: 1.4;
+}
+
 .planos-checkboxes {
     display: flex;
     flex-wrap: wrap;
@@ -1193,6 +1200,22 @@ button:active {
 .materia-title {
     font-size: 0.95rem;
     color: var(--text);
+}
+
+.btn-add-topico-materia {
+    background: transparent;
+    color: var(--primary);
+    border: 1px solid var(--border);
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+}
+
+.btn-add-topico-materia:hover {
+    background: var(--primary);
+    color: white;
 }
 
 .stats-label {

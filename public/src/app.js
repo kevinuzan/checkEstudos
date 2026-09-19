@@ -488,6 +488,8 @@ function renderizar(itens) {
                     <strong class="materia-title">${materia}</strong>
                     <span class="stats-label">(${concluidosMat}/${totalMat}) - ${percMat}%</span>
                 </div>
+                <button type="button" class="btn-add-topico-materia" title="Adicionar tópico em ${materia}"
+                    onclick="event.stopPropagation(); abrirModalNovoTopico('${materia.replace(/'/g, "\\'")}')">+ Tópico</button>
             </div>
             <div class="materia-content" style="display: ${estaMinimizado ? 'none' : 'block'}">
                 ${grupos[materia].map(item => `
@@ -655,12 +657,80 @@ async function adicionarSelecionadosAoPlano(nomePlano) {
     await carregarEdital();
 }
 
-async function importarEdital() {
-    const materia = document.getElementById('materia-input').value;
-    const textoBruto = document.getElementById('bulk-input').value;
-    let planos = lerPlanosMarcados('planos-checkboxes-import');
+// --- ADICIONAR TÓPICO(S) A UMA MATÉRIA (existente, via seletor, ou nova) ---
+// Substitui o antigo formulário de "Importar Tópicos" (texto livre sem
+// seleção), que causava duplicidade de matéria quando o nome digitado não
+// batia exatamente (espaços, maiúsculas etc.) com uma matéria já existente.
 
-    if (!materia || !textoBruto) return alert("Preencha a matéria e os tópicos!");
+let materiasExistentesCache = [];
+
+// Busca TODAS as matérias do usuário (não só as do plano selecionado no
+// momento), já que o seletor precisa oferecer qualquer matéria existente,
+// independente de qual aba/plano estava ativo ao abrir o modal.
+async function carregarMateriasExistentes() {
+    try {
+        const res = await fetch('/api/edital');
+        const todos = await res.json();
+        const nomes = Array.from(new Set(
+            todos.map(i => (i.materia || '').trim()).filter(m => m !== '')
+        ));
+        materiasExistentesCache = nomes.sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    } catch (err) {
+        console.error('Erro ao carregar matérias existentes:', err);
+        materiasExistentesCache = [];
+    }
+}
+
+async function abrirModalNovoTopico(materiaPreSelecionada) {
+    await carregarMateriasExistentes();
+
+    const select = document.getElementById('novo-topico-materia-select');
+    const inputNova = document.getElementById('novo-topico-materia-nova');
+
+    const opcoesExistentes = materiasExistentesCache.map(m =>
+        `<option value="${m.replace(/"/g, '&quot;')}">${m}</option>`
+    ).join('');
+    select.innerHTML = opcoesExistentes + `<option value="__nova__">+ Nova matéria...</option>`;
+
+    inputNova.style.display = 'none';
+    inputNova.value = '';
+
+    if (materiaPreSelecionada && materiasExistentesCache.includes(materiaPreSelecionada)) {
+        select.value = materiaPreSelecionada;
+    } else if (materiaPreSelecionada) {
+        select.value = '__nova__';
+        inputNova.style.display = 'block';
+        inputNova.value = materiaPreSelecionada;
+    } else if (materiasExistentesCache.length === 0) {
+        select.value = '__nova__';
+        inputNova.style.display = 'block';
+    }
+
+    document.getElementById('novo-topico-bulk-input').value = '';
+    renderPlanosCheckboxes('planos-checkboxes-novo-topico', [planoAtual]);
+    document.getElementById('modal-novo-topico-overlay').style.display = 'flex';
+}
+
+function onMudarMateriaNovoTopico() {
+    const select = document.getElementById('novo-topico-materia-select');
+    const inputNova = document.getElementById('novo-topico-materia-nova');
+    inputNova.style.display = select.value === '__nova__' ? 'block' : 'none';
+}
+
+function fecharModalNovoTopico() {
+    document.getElementById('modal-novo-topico-overlay').style.display = 'none';
+}
+
+async function salvarNovoTopico() {
+    const select = document.getElementById('novo-topico-materia-select');
+    let materia = select.value;
+    if (materia === '__nova__') {
+        materia = document.getElementById('novo-topico-materia-nova').value.trim();
+    }
+    const textoBruto = document.getElementById('novo-topico-bulk-input').value;
+    let planos = lerPlanosMarcados('planos-checkboxes-novo-topico');
+
+    if (!materia || !textoBruto.trim()) return alert("Selecione (ou digite) a matéria e preencha ao menos um tópico!");
     if (planos.length === 0) planos = [planoAtual];
 
     await fetch('/api/edital/bulk', {
@@ -669,9 +739,10 @@ async function importarEdital() {
         body: JSON.stringify({ materia, textoBruto, planos })
     });
 
-    document.getElementById('materia-input').value = '';
-    document.getElementById('bulk-input').value = '';
-    carregarEdital();
+    fecharModalNovoTopico();
+    await carregarEdital();
+    if (viewAtual === 'estudos') await carregarPainelEstudos();
+    if (viewAtual === 'resumo') await carregarResumo();
 }
 
 // ==================================================================
@@ -1081,12 +1152,19 @@ function renderizarGraficoEstatMaterias() {
     if (subEl) subEl.textContent = `Distribuição do tempo estudado — ${textoPeriodoFiltroEstatisticas()}`;
 
     const porMateria = {};
+    let semMateriaSegundos = 0;
     sessoesEstatisticasFiltradas().forEach(s => {
         const partes = distribuirSegundosPorMateria(s);
-        Object.keys(partes).forEach(m => { porMateria[m] = (porMateria[m] || 0) + partes[m]; });
+        const materias = Object.keys(partes);
+        if (materias.length === 0) {
+            semMateriaSegundos += s.duracaoSegundos;
+        } else {
+            materias.forEach(m => { porMateria[m] = (porMateria[m] || 0) + partes[m]; });
+        }
     });
 
     const entradas = Object.entries(porMateria).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    if (semMateriaSegundos > 0) entradas.push(['Sem matéria vinculada', semMateriaSegundos]);
     const corTexto = corCssVar('--text-muted', '#64748b');
 
     graficosEstatisticas.materias = new Chart(canvas, {
@@ -1095,7 +1173,7 @@ function renderizarGraficoEstatMaterias() {
             labels: entradas.map(([m]) => m),
             datasets: [{
                 data: entradas.map(([, seg]) => Math.round(seg / 60)),
-                backgroundColor: entradas.map(([m]) => corDaMateria(m)),
+                backgroundColor: entradas.map(([m]) => m === 'Sem matéria vinculada' ? '#cbd5e1' : corDaMateria(m)),
                 borderColor: corCssVar('--card', '#fff'),
                 borderWidth: 2
             }]
@@ -3328,11 +3406,17 @@ function renderizarIndicadoresMaterias() {
     if (!container) return;
 
     const segundosPorMateria = {};
+    let semMateriaSegundos = 0;
     sessoesCache.forEach(s => {
         const partes = distribuirSegundosPorMateria(s);
-        Object.entries(partes).forEach(([m, seg]) => {
-            segundosPorMateria[m] = (segundosPorMateria[m] || 0) + seg;
-        });
+        const materiasDaSessao = Object.keys(partes);
+        if (materiasDaSessao.length === 0) {
+            semMateriaSegundos += s.duracaoSegundos;
+        } else {
+            materiasDaSessao.forEach(m => {
+                segundosPorMateria[m] = (segundosPorMateria[m] || 0) + partes[m];
+            });
+        }
     });
 
     // Garante que matérias do edital sem tempo registrado ainda apareçam na lista
@@ -3340,6 +3424,7 @@ function renderizarIndicadoresMaterias() {
     materiasEdital.forEach(m => { if (!(m in segundosPorMateria)) segundosPorMateria[m] = 0; });
 
     const materiasOrdenadas = Object.entries(segundosPorMateria).sort((a, b) => b[1] - a[1]);
+    if (semMateriaSegundos > 0) materiasOrdenadas.push(['__sem_materia__', semMateriaSegundos]);
 
     if (materiasOrdenadas.length === 0) {
         container.innerHTML = `<div class="lista-vazia">Cadastre matérias no Edital para ver os indicadores aqui.</div>`;
@@ -3350,12 +3435,31 @@ function renderizarIndicadoresMaterias() {
     const { segundos: segundosPorTopico, info: infoTopico } = construirSegundosPorTopico();
 
     container.innerHTML = materiasOrdenadas.map(([materia, segundos]) => {
-        const cor = corDaMateria(materia);
+        const isSemMateria = materia === '__sem_materia__';
+        const nomeExibido = isSemMateria ? 'Sem matéria vinculada' : materia;
+        const cor = isSemMateria ? '#cbd5e1' : corDaMateria(materia);
         const perc = Math.round((segundos / maxSegundos) * 100);
         const materiaEscapada = materia.replace(/'/g, "\\'");
-        const expandida = materiasExpandidasIndicador.has(materia);
+        const expandida = !isSemMateria && materiasExpandidasIndicador.has(materia);
         const topicosDaMateria = expandida ? obterTopicosDaMateriaParaIndicador(materia, segundosPorTopico, infoTopico) : [];
         const maxSegundosTopico = Math.max(...topicosDaMateria.map(t => t.segundos), 1);
+
+        if (isSemMateria) {
+            return `
+                <div class="materia-indicador">
+                    <div class="materia-cor-swatch" style="background:${cor}" title="${nomeExibido}"></div>
+                    <div class="materia-indicador-corpo">
+                        <div class="materia-indicador-topo">
+                            <span class="materia-indicador-nome">${nomeExibido}</span>
+                            <span class="materia-indicador-tempo">${segundos > 0 ? formatarDuracaoCurta(segundos) : '—'}</span>
+                        </div>
+                        <div class="materia-indicador-barra-fundo">
+                            <div class="materia-indicador-barra" style="width:${perc}%; background:${cor}"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
 
         return `
             <div class="materia-indicador">

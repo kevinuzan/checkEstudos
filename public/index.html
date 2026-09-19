@@ -260,6 +260,7 @@
                 </section>
 
                 <div class="edital-selecao-barra">
+                    <button type="button" id="btn-adicionar-topico-edital" onclick="abrirModalNovoTopico()">+ Adicionar tópico</button>
                     <button type="button" class="btn-secundario" id="btn-toggle-selecao-edital" onclick="alternarModoSelecaoEdital()">☑️ Selecionar vários</button>
                     <div class="edital-selecao-acoes" id="edital-selecao-acoes" style="display:none;">
                         <span class="edital-selecao-contador" id="edital-selecao-contador">0 selecionados</span>
@@ -528,13 +529,8 @@
                             <span class="toggle-secao-seta" id="seta-importar-topicos">▸</span>
                         </button>
                         <div class="toggle-secao-conteudo" id="conteudo-importar-topicos" style="display:none;">
-                            <input type="text" id="materia-input" placeholder="Matéria (ex: Português)">
-                            <textarea id="bulk-input" placeholder="Cole os tópicos do edital aqui (um por linha)"></textarea>
-                            <div class="planos-check-label">Vincular aos planos:</div>
-                            <div class="planos-checkboxes" id="planos-checkboxes-import">
-                                <!-- checkboxes dos planos inseridos via JS -->
-                            </div>
-                            <button onclick="importarEdital()">Importar Tópicos</button>
+                            <p class="config-texto-ajuda">Para adicionar tópicos a uma matéria (existente ou nova), use o botão "+ Adicionar tópico" na aba Edital, ou clique abaixo.</p>
+                            <button type="button" onclick="abrirModalNovoTopico()">+ Adicionar tópico</button>
 
                             <div class="edital-arquivo-box">
                                 <div class="edital-arquivo-linha">
@@ -574,6 +570,28 @@
             <div class="modal-actions">
                 <button class="btn-cancelar" onclick="fecharModalEdicao()">Cancelar</button>
                 <button onclick="salvarEdicaoTopico()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de adicionar tópico(s) a uma matéria (existente ou nova) -->
+    <div id="modal-novo-topico-overlay" class="modal-overlay" style="display:none;">
+        <div class="modal">
+            <h3>Adicionar tópico(s)</h3>
+            <label class="modal-label">Matéria</label>
+            <select id="novo-topico-materia-select" onchange="onMudarMateriaNovoTopico()">
+                <!-- opções inseridas via JS: matérias existentes + "Nova matéria" -->
+            </select>
+            <input type="text" id="novo-topico-materia-nova" placeholder="Nome da nova matéria (ex: Português)" style="display:none; margin-top:8px;">
+            <label class="modal-label">Tópicos (um por linha)</label>
+            <textarea id="novo-topico-bulk-input" placeholder="Cole ou digite os tópicos aqui (um por linha)"></textarea>
+            <label class="modal-label">Planos (compartilhe entre planos marcando mais de um)</label>
+            <div class="planos-checkboxes" id="planos-checkboxes-novo-topico">
+                <!-- checkboxes dos planos inseridos via JS -->
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancelar" onclick="fecharModalNovoTopico()">Cancelar</button>
+                <button onclick="salvarNovoTopico()">Adicionar</button>
             </div>
         </div>
     </div>
