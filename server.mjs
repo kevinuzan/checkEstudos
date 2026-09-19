@@ -478,6 +478,34 @@ async function startServer() {
             res.json({ success: true, criados, vinculados });
         });
 
+        // Renomeia uma matéria em TODOS os tópicos do usuário que a usam —
+        // como matéria não é uma entidade própria (é só o texto do campo
+        // "materia" em cada tópico), renomear precisa atualizar todos os
+        // documentos de uma vez. Vale pra todos os planos que compartilham
+        // essa matéria, não só o plano selecionado no momento. Também migra
+        // a cor customizada da matéria (se houver) pro novo nome.
+        app.put('/api/edital/materia', requireAuth, async (req, res) => {
+            const materiaAtual = (req.body.materiaAtual || '').trim();
+            const novoNome = (req.body.novoNome || '').trim();
+            if (!materiaAtual || !novoNome) {
+                return res.status(400).json({ success: false, error: 'Informe o nome atual e o novo nome da matéria.' });
+            }
+            if (materiaAtual === novoNome) {
+                return res.json({ success: true, atualizados: 0 });
+            }
+
+            const resultado = await editalColl.updateMany(
+                { materia: materiaAtual, userId: req.userId },
+                { $set: { materia: novoNome } }
+            );
+            await materiasCorColl.updateOne(
+                { materia: materiaAtual, userId: req.userId },
+                { $set: { materia: novoNome } }
+            );
+
+            res.json({ success: true, atualizados: resultado.modifiedCount });
+        });
+
         // Editar o texto de um tópico, a matéria e/ou os planos aos quais pertence
         app.put('/api/edital/item/:id', requireAuth, async (req, res) => {
             const { id } = req.params;
@@ -513,6 +541,67 @@ async function startServer() {
         app.delete('/api/edital/item/:id', requireAuth, async (req, res) => {
             const { id } = req.params;
             await editalColl.deleteOne({ _id: new ObjectId(id), userId: req.userId });
+            res.json({ success: true });
+        });
+
+        // --- SUBTÓPICOS ---
+        // Um tópico pode ser "quebrado" em vários subtópicos (útil quando um
+        // item do edital junta várias coisas num texto só, tipo "Coesão e
+        // coerência; mecanismos de referenciação; conectores..."). Cada
+        // subtópico tem seu próprio check e conta separado pro progresso da
+        // matéria — quando um tópico tem subtópicos, ele deixa de ter check
+        // próprio (vira só um "container").
+
+        // Adiciona um ou mais subtópicos a um tópico (bulk: um item de texto
+        // por linha, igual o resto do app).
+        app.post('/api/edital/item/:id/subtopicos', requireAuth, async (req, res) => {
+            const { id } = req.params;
+            const textos = Array.isArray(req.body.textos) ? req.body.textos : [];
+            const novos = textos
+                .map(t => (t || '').trim())
+                .filter(t => t !== '')
+                .map(texto => ({ id: crypto.randomUUID(), texto, concluido: false }));
+
+            if (novos.length === 0) {
+                return res.status(400).json({ success: false, error: 'Informe ao menos um subtópico.' });
+            }
+
+            await editalColl.updateOne(
+                { _id: new ObjectId(id), userId: req.userId },
+                { $push: { subtopicos: { $each: novos } } }
+            );
+            res.json({ success: true, adicionados: novos.length });
+        });
+
+        // Atualiza um subtópico específico (texto e/ou concluído)
+        app.put('/api/edital/item/:id/subtopicos/:subId', requireAuth, async (req, res) => {
+            const { id, subId } = req.params;
+            const { texto, concluido } = req.body;
+
+            const item = await editalColl.findOne({ _id: new ObjectId(id), userId: req.userId });
+            if (!item || !Array.isArray(item.subtopicos)) {
+                return res.status(404).json({ success: false, error: 'Tópico não encontrado.' });
+            }
+
+            const set = {};
+            if (texto !== undefined) set['subtopicos.$[elem].texto'] = texto;
+            if (concluido !== undefined) set['subtopicos.$[elem].concluido'] = concluido;
+
+            await editalColl.updateOne(
+                { _id: new ObjectId(id), userId: req.userId },
+                { $set: set },
+                { arrayFilters: [{ 'elem.id': subId }] }
+            );
+            res.json({ success: true });
+        });
+
+        // Remove um subtópico específico
+        app.delete('/api/edital/item/:id/subtopicos/:subId', requireAuth, async (req, res) => {
+            const { id, subId } = req.params;
+            await editalColl.updateOne(
+                { _id: new ObjectId(id), userId: req.userId },
+                { $pull: { subtopicos: { id: subId } } }
+            );
             res.json({ success: true });
         });
 
@@ -1053,6 +1142,22 @@ async function startServer() {
             limits: { fileSize: 40 * 1024 * 1024 } // 40MB — baralhos com mídia podem ser grandes
         });
 
+        // Cartão estilo "cloze" do Anki (omissão de termo): a pessoa escreve um
+        // texto único marcando a(s) parte(s) a esconder entre {{chaves duplas}}.
+        // A partir desse texto, geramos a "frente" (com a lacuna escondida) e o
+        // "verso" (com a resposta revelada em destaque) — reaproveitando, sem
+        // nenhuma mudança, o mesmo fluxo de revisão (revelar ao tocar) já usado
+        // pelos cartões básicos. Suporta mais de uma omissão no mesmo cartão.
+        function processarCartaoCloze(clozeTexto) {
+            const texto = (clozeTexto || '').trim();
+            const regexCloze = /\{\{([^{}]+)\}\}/g;
+            if (!regexCloze.test(texto)) return null;
+
+            const frente = texto.replace(/\{\{([^{}]+)\}\}/g, '<span class="cloze-lacuna">[...]</span>');
+            const verso = texto.replace(/\{\{([^{}]+)\}\}/g, '<span class="cloze-resposta">$1</span>');
+            return { frente, verso };
+        }
+
         // Aplica uma resposta de revisão (0=Errei, 1=Difícil, 2=Bom, 3=Fácil) ao
         // estado de repetição espaçada de um cartão, e devolve o novo estado.
         function calcularProximaRevisaoCartao(cartao, qualidade) {
@@ -1259,13 +1364,25 @@ async function startServer() {
             const baralho = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
             if (!baralho) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
 
-            const frente = (req.body.frente || '').trim();
-            const verso = (req.body.verso || '').trim();
-            if (!frente) return res.status(400).json({ success: false, error: 'A frente do cartão é obrigatória' });
+            const tipo = req.body.tipo === 'cloze' ? 'cloze' : 'basico';
+            let frente, verso, clozeTexto;
+
+            if (tipo === 'cloze') {
+                clozeTexto = (req.body.clozeTexto || '').trim();
+                const processado = processarCartaoCloze(clozeTexto);
+                if (!processado) return res.status(400).json({ success: false, error: 'Escreva o texto e marque ao menos um trecho a omitir entre {{chaves duplas}}.' });
+                frente = processado.frente;
+                verso = processado.verso;
+            } else {
+                frente = (req.body.frente || '').trim();
+                verso = (req.body.verso || '').trim();
+                if (!frente) return res.status(400).json({ success: false, error: 'A frente do cartão é obrigatória' });
+            }
 
             const agora = new Date();
             const doc = {
-                baralhoId: req.params.id, userId: req.userId, frente, verso,
+                baralhoId: req.params.id, userId: req.userId, tipo, frente, verso,
+                ...(tipo === 'cloze' ? { clozeTexto } : {}),
                 facilidade: 2.5, intervalo: 0, repeticoes: 0,
                 dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
             };
@@ -1274,13 +1391,24 @@ async function startServer() {
         });
 
         app.put('/api/flashcards/cards/:id', requireAuth, async (req, res) => {
-            const frente = (req.body.frente || '').trim();
-            const verso = (req.body.verso || '').trim();
-            if (!frente) return res.status(400).json({ success: false, error: 'A frente do cartão é obrigatória' });
+            const tipo = req.body.tipo === 'cloze' ? 'cloze' : 'basico';
+            let frente, verso, clozeTexto;
+
+            if (tipo === 'cloze') {
+                clozeTexto = (req.body.clozeTexto || '').trim();
+                const processado = processarCartaoCloze(clozeTexto);
+                if (!processado) return res.status(400).json({ success: false, error: 'Escreva o texto e marque ao menos um trecho a omitir entre {{chaves duplas}}.' });
+                frente = processado.frente;
+                verso = processado.verso;
+            } else {
+                frente = (req.body.frente || '').trim();
+                verso = (req.body.verso || '').trim();
+                if (!frente) return res.status(400).json({ success: false, error: 'A frente do cartão é obrigatória' });
+            }
 
             const resultado = await flashcardsCartoesColl.updateOne(
                 { _id: new ObjectId(req.params.id), userId: req.userId },
-                { $set: { frente, verso } }
+                { $set: { tipo, frente, verso, clozeTexto: tipo === 'cloze' ? clozeTexto : '' } }
             );
             if (resultado.matchedCount === 0) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
             res.json({ success: true });

@@ -14,12 +14,23 @@ let idEmEdicao = null;
 let modoSelecaoEdital = false;
 let itensSelecionadosEdital = new Set();
 
+// Tópicos com subtópicos expandidos no Edital (não persiste — some ao recarregar a página)
+let topicosExpandidosEdital = new Set();
+
 // View ativa: "resumo", "edital" ou "estudos"
 let viewAtual = 'resumo';
 
 // Jogo escolhido na tela de seleção, aguardando a resposta do modal
 // "iniciar o cronômetro?" antes de efetivamente abrir o iframe.
 let jogoTipoPendente = null;
+
+// Filtro de jogos por plano ("geral" ou o nome de um plano específico),
+// mostrado no cabeçalho da aba Jogo. Persiste entre sessões.
+let jogoFiltroPlano = localStorage.getItem('jogo_filtro_plano') || 'geral';
+
+// Filtro de baralhos por matéria ("geral" ou o nome de uma matéria específica),
+// mostrado no cabeçalho da aba Flashcards. Persiste entre sessões.
+let flashcardsFiltroMateria = localStorage.getItem('flashcards_filtro_materia') || 'geral';
 
 async function iniciar() {
     renderizarSeletorTema();
@@ -375,12 +386,25 @@ function renderizarTabsPlanos() {
     nav.innerHTML = '';
 
     planosDisponiveis.forEach(plano => {
+        const wrap = document.createElement('div');
+        wrap.className = 'plano-tab-wrap';
+
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'plano-tab' + (plano.nome === planoAtual ? ' ativo' : '');
         btn.textContent = plano.nome;
         btn.onclick = () => trocarPlano(plano.nome);
-        nav.appendChild(btn);
+        wrap.appendChild(btn);
+
+        const btnRenomear = document.createElement('button');
+        btnRenomear.type = 'button';
+        btnRenomear.className = 'plano-tab-renomear';
+        btnRenomear.textContent = '✎';
+        btnRenomear.title = `Renomear "${plano.nome}"`;
+        btnRenomear.onclick = (ev) => { ev.stopPropagation(); renomearPlano(plano.nome); };
+        wrap.appendChild(btnRenomear);
+
+        nav.appendChild(wrap);
     });
 
     const btnNovo = document.createElement('button');
@@ -391,6 +415,37 @@ function renderizarTabsPlanos() {
     nav.appendChild(btnNovo);
 }
 
+// Renomeia um plano (edital) já existente — o backend já cuida de atualizar
+// o nome em todos os tópicos que referenciam esse plano, então aqui é só
+// recarregar tudo depois de confirmar.
+async function renomearPlano(nomeAtual) {
+    const novoNome = prompt('Novo nome para este plano/edital:', nomeAtual);
+    if (!novoNome || !novoNome.trim() || novoNome.trim() === nomeAtual) return;
+    const nomeFinal = novoNome.trim();
+
+    if (planosDisponiveis.some(p => p.nome === nomeFinal)) {
+        return alert(`Já existe um plano chamado "${nomeFinal}".`);
+    }
+
+    const res = await fetch(`/api/planos/${encodeURIComponent(nomeAtual)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: nomeFinal })
+    });
+    const resultado = await res.json();
+    if (!resultado.success) return alert(resultado.error || 'Não foi possível renomear o plano.');
+
+    if (planoAtual === nomeAtual) {
+        planoAtual = nomeFinal;
+        localStorage.setItem('edital_plano_atual', planoAtual);
+    }
+
+    await carregarPlanos();
+    await carregarEdital();
+    if (viewAtual === 'estudos') await carregarPainelEstudos();
+    if (viewAtual === 'resumo') await carregarResumo();
+}
+
 async function trocarPlano(nome) {
     if (nome === planoAtual) return;
     planoAtual = nome;
@@ -399,6 +454,7 @@ async function trocarPlano(nome) {
     itensSelecionadosEdital.clear();
     atualizarBarraSelecaoEdital();
     renderizarTabsPlanos();
+    atualizarCabecalhoPlanoAtual();
     renderPlanosCheckboxes('planos-checkboxes-import', [planoAtual]);
     await carregarEdital();
     if (viewAtual === 'estudos') await carregarPainelEstudos();
@@ -452,6 +508,17 @@ async function carregarEdital() {
     }
 }
 
+// Conta quantas "unidades" de progresso um tópico representa e quantas já
+// foram concluídas — um tópico normal vale 1 unidade (seu próprio check);
+// um tópico com subtópicos vale um pra cada subtópico (o check do tópico em
+// si deixa de existir, ele vira só um container).
+function contarProgressoItem(item) {
+    if (Array.isArray(item.subtopicos) && item.subtopicos.length > 0) {
+        return { total: item.subtopicos.length, concluidos: item.subtopicos.filter(s => s.concluido).length };
+    }
+    return { total: 1, concluidos: item.concluido ? 1 : 0 };
+}
+
 function renderizar(itens) {
     const lista = document.getElementById('lista-edital');
     lista.innerHTML = '';
@@ -464,16 +531,26 @@ function renderizar(itens) {
     }, {});
 
     // Progresso Geral para o Header do App (apenas do plano selecionado)
-    let totalGeral = itens.length;
-    let concluidosGeral = itens.filter(i => i.concluido).length;
+    let totalGeral = 0;
+    let concluidosGeral = 0;
+    itens.forEach(item => {
+        const { total, concluidos } = contarProgressoItem(item);
+        totalGeral += total;
+        concluidosGeral += concluidos;
+    });
 
     for (const materia in grupos) {
         // Por padrão as matérias começam fechadas (menos poluição visual ao
         // abrir a aba) — só ficam abertas se a pessoa já clicou pra expandir
         // antes (fica salvo por matéria no localStorage).
         const estaMinimizado = materia in estadosMinimizados ? estadosMinimizados[materia] : true;
-        const totalMat = grupos[materia].length;
-        const concluidosMat = grupos[materia].filter(i => i.concluido).length;
+        let totalMat = 0;
+        let concluidosMat = 0;
+        grupos[materia].forEach(item => {
+            const { total, concluidos } = contarProgressoItem(item);
+            totalMat += total;
+            concluidosMat += concluidos;
+        });
 
         // CÁLCULO DA PORCENTAGEM DA MATÉRIA
         const percMat = totalMat > 0 ? Math.round((concluidosMat / totalMat) * 100) : 0;
@@ -486,33 +563,15 @@ function renderizar(itens) {
                 <div class="materia-info">
                     <span class="seta">${estaMinimizado ? '▶' : '▼'}</span>
                     <strong class="materia-title">${materia}</strong>
+                    <button type="button" class="btn-renomear-materia" title="Renomear matéria &quot;${materia}&quot;"
+                        onclick="event.stopPropagation(); renomearMateria('${materia.replace(/'/g, "\\'")}')">✎</button>
                     <span class="stats-label">(${concluidosMat}/${totalMat}) - ${percMat}%</span>
                 </div>
                 <button type="button" class="btn-add-topico-materia" title="Adicionar tópico em ${materia}"
                     onclick="event.stopPropagation(); abrirModalNovoTopico('${materia.replace(/'/g, "\\'")}')">+ Tópico</button>
             </div>
             <div class="materia-content" style="display: ${estaMinimizado ? 'none' : 'block'}">
-                ${grupos[materia].map(item => `
-                    <div class="item-check ${item.concluido ? 'done' : ''} ${modoSelecaoEdital && itensSelecionadosEdital.has(item._id) ? 'selecionado' : ''}">
-                        ${modoSelecaoEdital ? `
-                            <input type="checkbox" class="checkbox-selecao-item" ${itensSelecionadosEdital.has(item._id) ? 'checked' : ''}
-                                onchange="toggleSelecaoItemEdital('${item._id}', this.checked)">
-                        ` : `
-                            <input type="checkbox" ${item.concluido ? 'checked' : ''}
-                                onchange="toggleCheck('${item._id}', this.checked)">
-                        `}
-                        <span class="topico-texto" onclick="${modoSelecaoEdital ? `toggleSelecaoItemEdital('${item._id}', !itensSelecionadosEdital.has('${item._id}'))` : `abrirModalEdicao('${item._id}')`}">
-                            ${item.topico}
-                            ${item.planos && item.planos.length > 1 ? `<span class="badge-compartilhado" title="Compartilhado entre: ${item.planos.join(', ')}">⇄ ${item.planos.join(' + ')}</span>` : ''}
-                        </span>
-                        ${modoSelecaoEdital ? '' : `
-                            <div class="actions">
-                                <button class="btn-edit" onclick="abrirModalEdicao('${item._id}')">✎</button>
-                                <button class="btn-delete" onclick="deletarTopico('${item._id}')">🗑️</button>
-                            </div>
-                        `}
-                    </div>
-                `).join('')}
+                ${grupos[materia].map(item => renderizarItemEdital(item)).join('')}
             </div>
         `;
         lista.appendChild(divMateria);
@@ -525,6 +584,82 @@ function renderizar(itens) {
 
     const progressText = document.getElementById('progress-text');
     if (progressText) progressText.innerText = `${concluidosGeral}/${totalGeral} (${percGeral}%)`;
+}
+
+// Renderiza uma linha de tópico do Edital — com subtópicos (container
+// expansível, sem check próprio) ou sem (item normal, como sempre foi).
+function renderizarItemEdital(item) {
+    const temSubtopicos = Array.isArray(item.subtopicos) && item.subtopicos.length > 0;
+    const badgePlanos = item.planos && item.planos.length > 1
+        ? `<span class="badge-compartilhado" title="Compartilhado entre: ${item.planos.join(', ')}">⇄ ${item.planos.join(' + ')}</span>`
+        : '';
+
+    if (temSubtopicos) {
+        const concluidosSub = item.subtopicos.filter(s => s.concluido).length;
+        const totalSub = item.subtopicos.length;
+        const expandido = topicosExpandidosEdital.has(item._id);
+
+        return `
+            <div class="item-check item-com-subtopicos ${modoSelecaoEdital && itensSelecionadosEdital.has(item._id) ? 'selecionado' : ''}">
+                <div class="topico-com-subtopicos-header" onclick="${modoSelecaoEdital ? `toggleSelecaoItemEdital('${item._id}', !itensSelecionadosEdital.has('${item._id}'))` : `toggleSubtopicosExpandido('${item._id}')`}">
+                    ${modoSelecaoEdital ? `
+                        <input type="checkbox" class="checkbox-selecao-item" ${itensSelecionadosEdital.has(item._id) ? 'checked' : ''}
+                            onclick="event.stopPropagation()" onchange="toggleSelecaoItemEdital('${item._id}', this.checked)">
+                    ` : `<span class="seta-subtopicos">${expandido ? '▾' : '▸'}</span>`}
+                    <span class="topico-texto">
+                        ${item.topico}
+                        <span class="subtopicos-contador">(${concluidosSub}/${totalSub})</span>
+                        ${badgePlanos}
+                    </span>
+                    ${modoSelecaoEdital ? '' : `
+                        <div class="actions">
+                            <button class="btn-edit" onclick="event.stopPropagation(); abrirModalEdicao('${item._id}')">✎</button>
+                            <button class="btn-delete" onclick="event.stopPropagation(); deletarTopico('${item._id}')">🗑️</button>
+                        </div>
+                    `}
+                </div>
+                ${expandido && !modoSelecaoEdital ? `
+                    <div class="subtopicos-lista">
+                        ${item.subtopicos.map(sub => `
+                            <div class="subtopico-item ${sub.concluido ? 'done' : ''}">
+                                <input type="checkbox" ${sub.concluido ? 'checked' : ''}
+                                    onchange="toggleCheckSubtopico('${item._id}', '${sub.id}', this.checked)">
+                                <span class="subtopico-texto">${sub.texto}</span>
+                                <button type="button" class="btn-delete-subtopico" onclick="removerSubtopico('${item._id}', '${sub.id}')" title="Remover subtópico">✕</button>
+                            </div>
+                        `).join('')}
+                        <div class="subtopico-add-linha">
+                            <textarea id="novo-subtopico-${item._id}" placeholder="Novo(s) subtópico(s) — um por linha" rows="2"></textarea>
+                            <button type="button" class="btn-secundario" onclick="adicionarSubtopicos('${item._id}')">+ Adicionar</button>
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    return `
+        <div class="item-check ${item.concluido ? 'done' : ''} ${modoSelecaoEdital && itensSelecionadosEdital.has(item._id) ? 'selecionado' : ''}">
+            ${modoSelecaoEdital ? `
+                <input type="checkbox" class="checkbox-selecao-item" ${itensSelecionadosEdital.has(item._id) ? 'checked' : ''}
+                    onchange="toggleSelecaoItemEdital('${item._id}', this.checked)">
+            ` : `
+                <input type="checkbox" ${item.concluido ? 'checked' : ''}
+                    onchange="toggleCheck('${item._id}', this.checked)">
+            `}
+            <span class="topico-texto" onclick="${modoSelecaoEdital ? `toggleSelecaoItemEdital('${item._id}', !itensSelecionadosEdital.has('${item._id}'))` : `abrirModalEdicao('${item._id}')`}">
+                ${item.topico}
+                ${badgePlanos}
+            </span>
+            ${modoSelecaoEdital ? '' : `
+                <div class="actions">
+                    <button class="btn-quebrar" onclick="quebrarEmSubtopicos('${item._id}')" title="Dividir esse tópico em vários subtópicos (separados por ;)">⋮≡</button>
+                    <button class="btn-edit" onclick="abrirModalEdicao('${item._id}')">✎</button>
+                    <button class="btn-delete" onclick="deletarTopico('${item._id}')">🗑️</button>
+                </div>
+            `}
+        </div>
+    `;
 }
 
 // --- FUNÇÕES DE INTERAÇÃO ---
@@ -584,6 +719,75 @@ async function deletarTopico(id) {
     }
 }
 
+// --- SUBTÓPICOS ---
+// Um tópico com texto corrido demais (várias coisas separadas por ";")
+// pode ser dividido em vários subtópicos, cada um com seu próprio check.
+
+function toggleSubtopicosExpandido(id) {
+    if (topicosExpandidosEdital.has(id)) topicosExpandidosEdital.delete(id);
+    else topicosExpandidosEdital.add(id);
+    carregarEdital();
+}
+
+async function toggleCheckSubtopico(topicoId, subId, concluido) {
+    await fetch(`/api/edital/item/${topicoId}/subtopicos/${subId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ concluido })
+    });
+    carregarEdital();
+}
+
+async function adicionarSubtopicos(topicoId) {
+    const textarea = document.getElementById(`novo-subtopico-${topicoId}`);
+    if (!textarea) return;
+    const textos = textarea.value.split('\n').map(t => t.trim()).filter(t => t !== '');
+    if (textos.length === 0) return;
+
+    await fetch(`/api/edital/item/${topicoId}/subtopicos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ textos })
+    });
+    topicosExpandidosEdital.add(topicoId);
+    carregarEdital();
+}
+
+async function removerSubtopico(topicoId, subId) {
+    if (!confirm('Remover esse subtópico?')) return;
+    await fetch(`/api/edital/item/${topicoId}/subtopicos/${subId}`, { method: 'DELETE' });
+    topicosExpandidosEdital.add(topicoId);
+    carregarEdital();
+}
+
+// Divide o texto atual do tópico em vários subtópicos, separando por ";" —
+// pensado pra casos tipo "Coesão e coerência textuais; mecanismos de
+// referenciação, substituição e retomada; conectores e sequenciação
+// textual; tempos e modos verbais". O texto do tópico principal continua o
+// mesmo depois (pode ser encurtado depois, editando pelo ✎), só os
+// subtópicos são criados.
+async function quebrarEmSubtopicos(id) {
+    const item = itensAtuais.find(i => i._id === id);
+    if (!item) return;
+
+    const partes = (item.topico || '').split(';').map(p => p.trim()).filter(p => p !== '');
+    if (partes.length < 2) {
+        return alert('Não encontrei pelo menos 2 partes separadas por ";" no texto desse tópico. Se quiser, edite o texto do tópico (✎) separando as partes por ";" e tente de novo.');
+    }
+
+    if (!confirm(`Isso vai criar ${partes.length} subtópicos a partir desse texto:\n\n${partes.map(p => `• ${p}`).join('\n')}\n\nO texto do tópico principal continua o mesmo (você pode encurtar depois, editando com o ✎). Continuar?`)) {
+        return;
+    }
+
+    await fetch(`/api/edital/item/${id}/subtopicos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ textos: partes })
+    });
+    topicosExpandidosEdital.add(id);
+    carregarEdital();
+}
+
 function toggleMateria(materia) {
     // Mesma regra de "fechado por padrão" usada na renderização — sem isso,
     // o primeiro clique numa matéria nova (que já aparece fechada, mas nunca
@@ -593,6 +797,35 @@ function toggleMateria(materia) {
     estadosMinimizados[materia] = !estaMinimizadoAtual;
     localStorage.setItem('editais_minimizados', JSON.stringify(estadosMinimizados));
     carregarEdital();
+}
+
+// Renomeia uma matéria — vale pra TODOS os planos que compartilham essa
+// matéria (ela não é vinculada a um plano só), já que é só um texto comum a
+// vários tópicos. A cor customizada da matéria (se tiver) migra junto.
+async function renomearMateria(materiaAtual) {
+    const novoNome = prompt(`Novo nome para a matéria "${materiaAtual}" (isso muda o nome em todos os planos que usam essa matéria):`, materiaAtual);
+    if (!novoNome || !novoNome.trim() || novoNome.trim() === materiaAtual) return;
+    const nomeFinal = novoNome.trim();
+
+    const res = await fetch('/api/edital/materia', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materiaAtual, novoNome: nomeFinal })
+    });
+    const resultado = await res.json();
+    if (!resultado.success) return alert(resultado.error || 'Não foi possível renomear a matéria.');
+
+    // Preserva o estado de aberta/fechada da matéria com o novo nome
+    if (materiaAtual in estadosMinimizados) {
+        estadosMinimizados[nomeFinal] = estadosMinimizados[materiaAtual];
+        delete estadosMinimizados[materiaAtual];
+        localStorage.setItem('editais_minimizados', JSON.stringify(estadosMinimizados));
+    }
+
+    await carregarMateriasCores();
+    await carregarEdital();
+    if (viewAtual === 'estudos') await carregarPainelEstudos();
+    if (viewAtual === 'resumo') await carregarResumo();
 }
 
 // --- SELEÇÃO EM MASSA (migrar vários tópicos de uma vez para outro plano) ---
@@ -910,6 +1143,21 @@ async function trocarView(nome) {
     document.getElementById('tab-conquistas').classList.toggle('ativo', nome === 'conquistas');
     document.getElementById('tab-configuracoes').classList.toggle('ativo', nome === 'configuracoes');
 
+    // Cabeçalhos contextuais: mostram, bem visível no topo da aba, qual
+    // plano/edital (Edital e Estudos) ou qual filtro (Jogo e Flashcards)
+    // está em foco no momento.
+    const cabecalhoPlanos = document.getElementById('cabecalho-planos-edital-estudos');
+    const cabecalhoJogo = document.getElementById('cabecalho-filtro-jogo');
+    const cabecalhoFlashcards = document.getElementById('cabecalho-filtro-flashcards');
+    if (cabecalhoPlanos) cabecalhoPlanos.style.display = (nome === 'edital' || nome === 'estudos') ? 'flex' : 'none';
+    if (cabecalhoJogo) cabecalhoJogo.style.display = nome === 'jogo' ? 'flex' : 'none';
+    if (cabecalhoFlashcards) cabecalhoFlashcards.style.display = nome === 'flashcards' ? 'flex' : 'none';
+    if (nome === 'edital' || nome === 'estudos') {
+        renderizarTabsPlanos();
+        atualizarCabecalhoPlanoAtual();
+    }
+    if (nome === 'jogo') renderizarFiltroJogo();
+
     if (nome === 'resumo') await carregarResumo();
     if (nome === 'estudos') await carregarPainelEstudos();
     if (nome === 'flashcards') await carregarFlashcards();
@@ -917,6 +1165,12 @@ async function trocarView(nome) {
     if (nome === 'estatisticas') await carregarEstatisticas();
     if (nome === 'conquistas') await abrirConquistas();
     if (nome === 'configuracoes') await abrirConfiguracoes();
+}
+
+// Atualiza o texto "Você está vendo: <plano>" do cabeçalho de Edital/Estudos.
+function atualizarCabecalhoPlanoAtual() {
+    const el = document.getElementById('cabecalho-plano-atual-nome');
+    if (el) el.textContent = planoAtual || '—';
 }
 
 // ==================================================================
@@ -998,6 +1252,7 @@ function mostrarSelecaoJogo() {
     if (selecao) selecao.style.display = 'grid';
     if (frameWrap) frameWrap.style.display = 'none';
     if (btnVoltar) btnVoltar.style.display = 'none';
+    aplicarFiltroJogoNaTela();
 }
 
 function selecionarJogo(tipo) {
@@ -1050,6 +1305,68 @@ function voltarSelecaoJogo() {
 
 const NOMES_JOGO_CHECKESTUDOS = { mnemonicos: 'Mnemônicos', competencias: 'Competências', lacunas: 'Lacunas' };
 const ICONES_JOGO_CHECKESTUDOS = { mnemonicos: '🧠', competencias: '⚖️', lacunas: '📜' };
+
+// Catálogo de jogos: cada jogo pode, opcionalmente, ficar restrito a um ou
+// mais planos específicos (lista de nomes de plano em "planos"). Quando
+// "planos" é null/vazio o jogo é universal e aparece em qualquer filtro,
+// inclusive "🌐 Geral" — que sempre mostra todos os jogos, sem exceção. Por
+// enquanto, todos os jogos existentes são universais (aparecem em TRT, ENAM
+// e em qualquer outro plano que for criado); no futuro um jogo novo pode já
+// nascer restrito a um plano específico, bastando listar o nome dele aqui.
+const CATALOGO_JOGOS = {
+    mnemonicos: { planos: null },
+    competencias: { planos: null },
+    lacunas: { planos: null },
+};
+
+function jogoVisivelNoFiltro(tipo, filtro) {
+    if (!filtro || filtro === 'geral') return true;
+    const info = CATALOGO_JOGOS[tipo];
+    if (!info || !info.planos || info.planos.length === 0) return true;
+    return info.planos.includes(filtro);
+}
+
+// Monta as pílulas "🌐 Geral" + cada plano no cabeçalho da aba Jogo, e
+// aplica o filtro escolhido aos cartões de seleção de jogo já na tela.
+function renderizarFiltroJogo() {
+    const row = document.getElementById('jogo-escopo-row');
+    if (!row) return;
+    row.innerHTML = '';
+
+    const btnGeral = document.createElement('button');
+    btnGeral.type = 'button';
+    btnGeral.className = 'escopo-pill' + (jogoFiltroPlano === 'geral' ? ' ativo' : '');
+    btnGeral.innerHTML = '<span class="escopo-pill-icone">🌐</span> Geral';
+    btnGeral.onclick = () => definirFiltroJogo('geral');
+    row.appendChild(btnGeral);
+
+    planosDisponiveis.forEach(plano => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'escopo-pill' + (jogoFiltroPlano === plano.nome ? ' ativo' : '');
+        btn.textContent = plano.nome;
+        btn.onclick = () => definirFiltroJogo(plano.nome);
+        row.appendChild(btn);
+    });
+
+    const nomeEl = document.getElementById('cabecalho-jogo-filtro-nome');
+    if (nomeEl) nomeEl.textContent = jogoFiltroPlano === 'geral' ? 'Geral' : jogoFiltroPlano;
+
+    aplicarFiltroJogoNaTela();
+}
+
+function definirFiltroJogo(nome) {
+    jogoFiltroPlano = nome;
+    localStorage.setItem('jogo_filtro_plano', jogoFiltroPlano);
+    renderizarFiltroJogo();
+}
+
+function aplicarFiltroJogoNaTela() {
+    document.querySelectorAll('#jogo-selecao-bloco .jogo-selecao-card').forEach(card => {
+        const tipo = card.getAttribute('data-jogo');
+        card.style.display = jogoVisivelNoFiltro(tipo, jogoFiltroPlano) ? '' : 'none';
+    });
+}
 
 async function obterPontuacaoJogoPorTipo() {
     try {
@@ -1575,6 +1892,51 @@ async function carregarFlashcards() {
         console.error('Erro ao carregar baralhos:', err);
         baralhosCache = [];
     }
+    renderizarFiltroFlashcards();
+    renderizarBaralhos();
+}
+
+// Monta as pílulas "🌐 Geral" + cada matéria (derivada dos baralhos existentes)
+// no cabeçalho da aba Flashcards — clicar em "Geral" mostra todos os baralhos,
+// vinculados a uma matéria ou não.
+function renderizarFiltroFlashcards() {
+    const row = document.getElementById('flashcards-escopo-row');
+    if (!row) return;
+
+    const materias = [...new Set(baralhosCache.map(b => (b.materia || '').trim()).filter(m => m !== ''))]
+        .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+    // Se a matéria escolhida no filtro não existe mais em nenhum baralho, volta pra Geral.
+    if (flashcardsFiltroMateria !== 'geral' && !materias.includes(flashcardsFiltroMateria)) {
+        flashcardsFiltroMateria = 'geral';
+        localStorage.setItem('flashcards_filtro_materia', flashcardsFiltroMateria);
+    }
+
+    row.innerHTML = '';
+    const btnGeral = document.createElement('button');
+    btnGeral.type = 'button';
+    btnGeral.className = 'escopo-pill' + (flashcardsFiltroMateria === 'geral' ? ' ativo' : '');
+    btnGeral.innerHTML = '<span class="escopo-pill-icone">🌐</span> Geral';
+    btnGeral.onclick = () => definirFiltroFlashcards('geral');
+    row.appendChild(btnGeral);
+
+    materias.forEach(materia => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'escopo-pill' + (flashcardsFiltroMateria === materia ? ' ativo' : '');
+        btn.textContent = materia;
+        btn.onclick = () => definirFiltroFlashcards(materia);
+        row.appendChild(btn);
+    });
+
+    const nomeEl = document.getElementById('cabecalho-flashcards-filtro-nome');
+    if (nomeEl) nomeEl.textContent = flashcardsFiltroMateria === 'geral' ? 'Geral' : flashcardsFiltroMateria;
+}
+
+function definirFiltroFlashcards(materia) {
+    flashcardsFiltroMateria = materia;
+    localStorage.setItem('flashcards_filtro_materia', flashcardsFiltroMateria);
+    renderizarFiltroFlashcards();
     renderizarBaralhos();
 }
 
@@ -1592,9 +1954,18 @@ function renderizarBaralhos() {
     const vazio = document.getElementById('flashcards-vazio');
     if (!grid) return;
 
-    if (vazio) vazio.style.display = baralhosCache.length === 0 ? 'block' : 'none';
+    const baralhosFiltrados = flashcardsFiltroMateria === 'geral'
+        ? baralhosCache
+        : baralhosCache.filter(b => (b.materia || '').trim() === flashcardsFiltroMateria);
 
-    grid.innerHTML = baralhosCache.map(b => `
+    if (vazio) {
+        vazio.style.display = baralhosFiltrados.length === 0 ? 'block' : 'none';
+        vazio.textContent = baralhosCache.length === 0
+            ? 'Você ainda não tem nenhum baralho. Crie um do zero ou importe um baralho do Anki (.apkg) pra começar!'
+            : `Nenhum baralho em "${flashcardsFiltroMateria}" ainda.`;
+    }
+
+    grid.innerHTML = baralhosFiltrados.map(b => `
         <div class="baralho-card">
             <div class="baralho-card-topo">
                 <span class="baralho-card-nome">${b.nome}</span>
@@ -1761,6 +2132,7 @@ function renderizarCartoesDoBaralho() {
     lista.innerHTML = cartoesDoBaralhoCache.map(c => `
         <div class="cartao-item">
             <div class="cartao-item-conteudo">
+                ${c.tipo === 'cloze' ? `<span class="cartao-item-tipo-badge">🕳️ Omissão</span>` : ''}
                 <div class="cartao-item-frente">${removerTagsHtmlFlashcard(c.frente)}</div>
                 <div class="cartao-item-verso">${removerTagsHtmlFlashcard(c.verso)}</div>
             </div>
@@ -1774,11 +2146,25 @@ function renderizarCartoesDoBaralho() {
 
 // --- MODAL: CRIAR/EDITAR CARTÃO ---
 
+// Tipo de cartão selecionado no momento no modal: "basico" (frente/verso
+// normais) ou "cloze" (texto único com trecho(s) omitidos entre {{chaves}}).
+let cartaoTipoAtual = 'basico';
+
+function definirTipoCartao(tipo) {
+    cartaoTipoAtual = tipo === 'cloze' ? 'cloze' : 'basico';
+    document.getElementById('btn-tipo-basico').classList.toggle('ativo', cartaoTipoAtual === 'basico');
+    document.getElementById('btn-tipo-cloze').classList.toggle('ativo', cartaoTipoAtual === 'cloze');
+    document.getElementById('cartao-campos-basico').style.display = cartaoTipoAtual === 'basico' ? 'block' : 'none';
+    document.getElementById('cartao-campos-cloze').style.display = cartaoTipoAtual === 'cloze' ? 'block' : 'none';
+}
+
 function abrirModalNovoCartao() {
     cartaoEmEdicaoId = null;
     document.getElementById('modal-cartao-titulo').textContent = 'Novo cartão';
     document.getElementById('cartao-frente-input').value = '';
     document.getElementById('cartao-verso-input').value = '';
+    document.getElementById('cartao-cloze-input').value = '';
+    definirTipoCartao('basico');
     document.getElementById('modal-cartao-overlay').style.display = 'flex';
 }
 
@@ -1786,9 +2172,12 @@ function abrirModalEditarCartao(id) {
     const cartao = cartoesDoBaralhoCache.find(c => c._id === id);
     if (!cartao) return;
     cartaoEmEdicaoId = id;
+    const ehCloze = cartao.tipo === 'cloze';
     document.getElementById('modal-cartao-titulo').textContent = 'Editar cartão';
-    document.getElementById('cartao-frente-input').value = cartao.frente;
-    document.getElementById('cartao-verso-input').value = cartao.verso || '';
+    document.getElementById('cartao-frente-input').value = ehCloze ? '' : cartao.frente;
+    document.getElementById('cartao-verso-input').value = ehCloze ? '' : (cartao.verso || '');
+    document.getElementById('cartao-cloze-input').value = ehCloze ? (cartao.clozeTexto || '') : '';
+    definirTipoCartao(ehCloze ? 'cloze' : 'basico');
     document.getElementById('modal-cartao-overlay').style.display = 'flex';
 }
 
@@ -1797,23 +2186,42 @@ function fecharModalCartao() {
 }
 
 async function salvarCartao() {
-    const frente = document.getElementById('cartao-frente-input').value.trim();
-    const verso = document.getElementById('cartao-verso-input').value.trim();
-    if (!frente) return;
+    const corpo = { tipo: cartaoTipoAtual };
+
+    if (cartaoTipoAtual === 'cloze') {
+        const clozeTexto = document.getElementById('cartao-cloze-input').value.trim();
+        if (!clozeTexto || !/\{\{[^{}]+\}\}/.test(clozeTexto)) {
+            alert('Escreva o texto e marque ao menos um trecho a omitir entre {{chaves duplas}}.');
+            return;
+        }
+        corpo.clozeTexto = clozeTexto;
+    } else {
+        const frente = document.getElementById('cartao-frente-input').value.trim();
+        const verso = document.getElementById('cartao-verso-input').value.trim();
+        if (!frente) return;
+        corpo.frente = frente;
+        corpo.verso = verso;
+    }
 
     try {
+        let res;
         if (cartaoEmEdicaoId) {
-            await fetch(`/api/flashcards/cards/${cartaoEmEdicaoId}`, {
+            res = await fetch(`/api/flashcards/cards/${cartaoEmEdicaoId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ frente, verso })
+                body: JSON.stringify(corpo)
             });
         } else {
-            await fetch(`/api/flashcards/baralhos/${baralhoAtualId}/cards`, {
+            res = await fetch(`/api/flashcards/baralhos/${baralhoAtualId}/cards`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ frente, verso })
+                body: JSON.stringify(corpo)
             });
+        }
+        const dados = await res.json();
+        if (!dados.success) {
+            alert(dados.error || 'Não foi possível salvar esse cartão.');
+            return;
         }
         fecharModalCartao();
         await abrirBaralho(baralhoAtualId);
@@ -2448,12 +2856,25 @@ async function excluirTipoEstudo(id) {
 // MODAL: CRIAR / EDITAR SESSÃO DE ESTUDO
 // ==================================================================
 
+// Chaves de seleção: o id do tópico (quando ele não tem subtópicos), ou
+// "topicoId::subtopicoId" (quando a pessoa marcou um subtópico específico).
 let topicosSelecionadosSessao = new Set();
 // Id da sessão em edição (null quando o modal está criando uma sessão nova)
 let idSessaoEmEdicao = null;
-// Tópicos da sessão em edição que não existem mais no edital do plano atual
-// (matéria/tópico apagados ou desvinculados) — preservados ao salvar.
+// Tópicos/subtópicos da sessão em edição que não existem mais no plano
+// selecionado no modal (apagados ou desvinculados) — preservados ao salvar.
 let topicosExtrasSessaoEmEdicao = [];
+// Tópicos disponíveis pro plano selecionado NO MODAL — independente do
+// plano/aba aberta no resto do app, já que a pessoa pode finalizar uma
+// sessão de um plano diferente do que está vendo no momento.
+let sessaoTopicosDisponiveis = [];
+// Guarda qual plano está carregado no momento no modal (pra poder reverter o
+// <select> se a pessoa cancelar a troca por ter seleção em andamento).
+let sessaoPlanoCarregadoAtual = null;
+// Estado (só de tela, reseta a cada abertura do modal) de quais matérias e
+// tópicos-com-subtópicos estão expandidos na árvore de seleção.
+let sessaoMateriasExpandidas = new Set();
+let sessaoTopicosExpandidos = new Set();
 
 function obterDuracaoSegundosInputs() {
     const h = parseInt(document.getElementById('sessao-duracao-horas').value) || 0;
@@ -2467,6 +2888,19 @@ function construirFimAPartirDoInput() {
     if (!dataStr) return agora;
     const [y, m, d] = dataStr.split('-').map(Number);
     return new Date(y, m - 1, d, agora.getHours(), agora.getMinutes(), agora.getSeconds());
+}
+
+// Preenche o seletor "Edital (plano)" do modal de sessão com os planos
+// disponíveis, selecionando o nome informado (se existir na lista).
+function preencherSeletorPlanoSessao(nomeSelecionado) {
+    const select = document.getElementById('sessao-plano-select');
+    if (!select) return;
+    select.innerHTML = planosDisponiveis.map(p =>
+        `<option value="${p.nome.replace(/"/g, '&quot;')}">${p.nome}</option>`
+    ).join('');
+    if (nomeSelecionado && planosDisponiveis.some(p => p.nome === nomeSelecionado)) {
+        select.value = nomeSelecionado;
+    }
 }
 
 function abrirModalSessao() {
@@ -2490,7 +2924,16 @@ function abrirModalSessao() {
     document.getElementById('sessao-duracao-minutos').value = Math.round((elapsedMs % 3600000) / 60000);
     document.getElementById('sessao-data').value = formatarDataISO(new Date());
 
+    // Por padrão sugere o plano/edital que está aberto na tela agora, mas a
+    // pessoa pode trocar — útil quando ela quer registrar horas de um plano
+    // diferente do que está vendo no momento.
+    preencherSeletorPlanoSessao(planoAtual);
+    sessaoPlanoCarregadoAtual = planoAtual;
+    sessaoTopicosDisponiveis = itensAtuais.slice();
     topicosSelecionadosSessao = new Set();
+    sessaoMateriasExpandidas = new Set();
+    sessaoTopicosExpandidos = new Set();
+
     tipoEstudoSelecionadoId = null;
     renderizarChipsTipos();
     atualizarCampoExtra();
@@ -2512,9 +2955,42 @@ function abrirModalSessao() {
     document.getElementById('modal-sessao-overlay').style.display = 'flex';
 }
 
+// Chamado quando a pessoa troca o plano/edital no select do modal — busca os
+// tópicos daquele plano (sem afetar a aba de Edital aberta no resto do app)
+// e limpa a seleção de tópicos, já que ela é específica de cada plano.
+async function trocarPlanoSessaoModal() {
+    const select = document.getElementById('sessao-plano-select');
+    if (!select) return;
+    const novoPlano = select.value;
+
+    if (topicosSelecionadosSessao.size > 0) {
+        if (!confirm('Trocar o plano/edital vai limpar os tópicos selecionados até agora. Continuar?')) {
+            select.value = sessaoPlanoCarregadoAtual || novoPlano;
+            return;
+        }
+    }
+
+    try {
+        const res = await fetch(`/api/edital?plano=${encodeURIComponent(novoPlano)}`);
+        sessaoTopicosDisponiveis = await res.json();
+    } catch (err) {
+        console.error('Erro ao carregar tópicos do plano selecionado:', err);
+        sessaoTopicosDisponiveis = [];
+    }
+
+    sessaoPlanoCarregadoAtual = novoPlano;
+    topicosSelecionadosSessao = new Set();
+    topicosExtrasSessaoEmEdicao = [];
+    sessaoMateriasExpandidas = new Set();
+    sessaoTopicosExpandidos = new Set();
+    renderizarTopicosSessao(document.getElementById('sessao-busca-topicos').value);
+}
+
 // Abre o mesmo modal, mas pré-preenchido para editar uma sessão já registrada
-// (usada pelo botão de editar no histórico de sessões).
-function abrirModalEdicaoSessao(id) {
+// (usada pelo botão de editar no histórico de sessões). É assíncrona porque
+// busca os tópicos do plano AO QUAL A SESSÃO PERTENCE (que pode não ser o
+// plano/aba aberto no momento no resto do app).
+async function abrirModalEdicaoSessao(id) {
     const sessao = sessoesCache.find(s => s._id === id);
     if (!sessao) return;
 
@@ -2528,10 +3004,50 @@ function abrirModalEdicaoSessao(id) {
     document.getElementById('sessao-duracao-minutos').value = m;
     document.getElementById('sessao-data').value = formatarDataISO(new Date(sessao.fim));
 
+    // Sugere o plano ao qual a sessão pertence (não necessariamente o que
+    // está aberto na tela agora) — se ele não existir mais, cai pro atual.
+    const planoDaSessao = planosDisponiveis.some(p => p.nome === sessao.plano) ? sessao.plano : planoAtual;
+    preencherSeletorPlanoSessao(planoDaSessao);
+    sessaoPlanoCarregadoAtual = planoDaSessao;
+    try {
+        const res = await fetch(`/api/edital?plano=${encodeURIComponent(planoDaSessao)}`);
+        sessaoTopicosDisponiveis = await res.json();
+    } catch (err) {
+        console.error('Erro ao carregar tópicos do plano da sessão:', err);
+        sessaoTopicosDisponiveis = [];
+    }
+
     const topicosDaSessao = sessao.topicos || [];
-    topicosSelecionadosSessao = new Set(topicosDaSessao.map(t => t.topicoId));
-    // Preserva tópicos que já não existem mais no edital atual, para não perdê-los ao salvar
-    topicosExtrasSessaoEmEdicao = topicosDaSessao.filter(t => !itensAtuais.find(i => i._id === t.topicoId));
+    topicosSelecionadosSessao = new Set(
+        topicosDaSessao.map(t => t.subtopicoId ? `${t.topicoId}::${t.subtopicoId}` : t.topicoId)
+    );
+
+    // Preserva tópicos/subtópicos que já não existem mais no plano da sessão
+    // (apagados ou desvinculados), pra não perdê-los ao salvar.
+    topicosExtrasSessaoEmEdicao = topicosDaSessao.filter(t => {
+        const item = sessaoTopicosDisponiveis.find(i => i._id === t.topicoId);
+        if (!item) return true;
+        if (t.subtopicoId) {
+            return !(Array.isArray(item.subtopicos) && item.subtopicos.some(s => s.id === t.subtopicoId));
+        }
+        // Selecionado como tópico inteiro na época, mas hoje esse tópico virou
+        // um container de subtópicos — preserva como estava, em vez de sumir.
+        return Array.isArray(item.subtopicos) && item.subtopicos.length > 0;
+    });
+
+    // Já abre expandido nas matérias/tópicos que tiverem algo selecionado,
+    // pra pessoa ver de cara o que estava marcado antes.
+    sessaoMateriasExpandidas = new Set();
+    sessaoTopicosExpandidos = new Set();
+    sessaoTopicosDisponiveis.forEach(item => {
+        const selecionadoInteiro = topicosSelecionadosSessao.has(item._id);
+        const temSubSelecionado = Array.isArray(item.subtopicos) &&
+            item.subtopicos.some(s => topicosSelecionadosSessao.has(`${item._id}::${s.id}`));
+        if (selecionadoInteiro || temSubSelecionado) {
+            sessaoMateriasExpandidas.add(item.materia);
+            if (temSubSelecionado) sessaoTopicosExpandidos.add(item._id);
+        }
+    });
 
     tipoEstudoSelecionadoId = sessao.tipoEstudoId;
     renderizarChipsTipos();
@@ -2558,48 +3074,115 @@ function fecharModalSessao() {
     document.getElementById('modal-sessao-overlay').style.display = 'none';
 }
 
+// Conta quantos itens marcáveis (o tópico inteiro, ou seus subtópicos um a
+// um) estão selecionados dentro de um tópico — usado pro contador ao lado
+// do nome da matéria/tópico na árvore.
+function contarSelecionadosItemSessao(item) {
+    if (Array.isArray(item.subtopicos) && item.subtopicos.length > 0) {
+        return item.subtopicos.filter(s => topicosSelecionadosSessao.has(`${item._id}::${s.id}`)).length;
+    }
+    return topicosSelecionadosSessao.has(item._id) ? 1 : 0;
+}
+
+// Renderiza um tópico dentro da árvore de seleção — como um checkbox simples
+// (sem subtópicos) ou como um nó expansível com um checkbox por subtópico
+// (mesma lógica de "quem tem subtópicos não tem check próprio" do Edital).
+function renderizarItemTopicoSessao(item, forcarExpandido) {
+    const temSubtopicos = Array.isArray(item.subtopicos) && item.subtopicos.length > 0;
+
+    if (!temSubtopicos) {
+        return `
+            <label class="sessao-topico-item">
+                <input type="checkbox" value="${item._id}" ${topicosSelecionadosSessao.has(item._id) ? 'checked' : ''}
+                    onchange="toggleTopicoSessao('${item._id}')">
+                ${item.topico}
+            </label>
+        `;
+    }
+
+    const expandido = forcarExpandido || sessaoTopicosExpandidos.has(item._id);
+    const selecionados = item.subtopicos.filter(s => topicosSelecionadosSessao.has(`${item._id}::${s.id}`)).length;
+
+    return `
+        <div class="sessao-topico-com-subtopicos">
+            <div class="sessao-topico-titulo" onclick="toggleTopicoSessaoExpandido('${item._id}')">
+                <span class="seta-sessao">${expandido ? '▾' : '▸'}</span>
+                <span class="sessao-topico-titulo-texto">${item.topico}</span>
+                <span class="sessao-subtopicos-contador">${selecionados}/${item.subtopicos.length}</span>
+            </div>
+            ${expandido ? `
+                <div class="sessao-subtopicos-lista">
+                    ${item.subtopicos.map(sub => `
+                        <label class="sessao-topico-item sessao-subtopico-item">
+                            <input type="checkbox" value="${sub.id}" ${topicosSelecionadosSessao.has(`${item._id}::${sub.id}`) ? 'checked' : ''}
+                                onchange="toggleSubtopicoSessao('${item._id}', '${sub.id}')">
+                            ${sub.texto}
+                        </label>
+                    `).join('')}
+                </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+// Árvore de seleção: Matéria → Tópico → Subtópico, cada nível expansível —
+// com busca ativa, tudo fica forçado expandido pra não esconder resultados.
 function renderizarTopicosSessao(filtro) {
     const container = document.getElementById('sessao-topicos-lista');
     if (!container) return;
 
     const termo = (filtro || '').toLowerCase();
-    const grupos = itensAtuais.reduce((acc, item) => {
-        const combina = !termo || item.materia.toLowerCase().includes(termo) || item.topico.toLowerCase().includes(termo);
+    const grupos = sessaoTopicosDisponiveis.reduce((acc, item) => {
+        const combinaSubtopico = Array.isArray(item.subtopicos) && item.subtopicos.some(s => s.texto.toLowerCase().includes(termo));
+        const combina = !termo || item.materia.toLowerCase().includes(termo) || item.topico.toLowerCase().includes(termo) || combinaSubtopico;
         if (!combina) return acc;
         acc[item.materia] = acc[item.materia] || [];
         acc[item.materia].push(item);
         return acc;
     }, {});
 
-    const materias = Object.keys(grupos);
+    const materias = Object.keys(grupos).sort((a, b) => a.localeCompare(b, 'pt-BR'));
     let html = '';
 
     if (materias.length === 0 && topicosExtrasSessaoEmEdicao.length === 0) {
         html = `<div class="sessao-topicos-vazio">Nenhum tópico encontrado. Cadastre tópicos na aba Edital.</div>`;
     } else {
-        html = materias.map(materia => `
-            <div class="sessao-materia-grupo">
-                <div class="sessao-materia-titulo">${materia}</div>
-                ${grupos[materia].map(item => `
-                    <label class="sessao-topico-item">
-                        <input type="checkbox" value="${item._id}" ${topicosSelecionadosSessao.has(item._id) ? 'checked' : ''}
-                            onchange="toggleTopicoSessao('${item._id}')">
-                        ${item.topico}
-                    </label>
-                `).join('')}
-            </div>
-        `).join('');
+        const forcarExpandido = !!termo;
+
+        html = materias.map(materia => {
+            const expandida = forcarExpandido || sessaoMateriasExpandidas.has(materia);
+            const totalSelecionados = grupos[materia].reduce((n, item) => n + contarSelecionadosItemSessao(item), 0);
+            const materiaEscapada = materia.replace(/'/g, "\\'");
+
+            return `
+                <div class="sessao-materia-grupo">
+                    <div class="sessao-materia-titulo" onclick="toggleMateriaSessaoExpandida('${materiaEscapada}')">
+                        <span class="seta-sessao">${expandida ? '▾' : '▸'}</span>
+                        <span>${materia}</span>
+                        ${totalSelecionados > 0 ? `<span class="sessao-selecionados-badge">${totalSelecionados}</span>` : ''}
+                    </div>
+                    ${expandida ? `
+                        <div class="sessao-materia-topicos">
+                            ${grupos[materia].map(item => renderizarItemTopicoSessao(item, forcarExpandido)).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }).join('');
 
         if (topicosExtrasSessaoEmEdicao.length > 0) {
             html += `
                 <div class="sessao-materia-grupo">
-                    <div class="sessao-materia-titulo">Outros (fora do edital atual)</div>
-                    ${topicosExtrasSessaoEmEdicao.map(t => `
-                        <label class="sessao-topico-item sessao-topico-item-fixo">
-                            <input type="checkbox" checked disabled>
-                            ${t.topico} <span class="sessao-topico-materia-extra">(${t.materia})</span>
-                        </label>
-                    `).join('')}
+                    <div class="sessao-materia-titulo sessao-materia-titulo-fixa">Outros (fora do edital atual)</div>
+                    <div class="sessao-materia-topicos">
+                        ${topicosExtrasSessaoEmEdicao.map(t => `
+                            <label class="sessao-topico-item sessao-topico-item-fixo">
+                                <input type="checkbox" checked disabled>
+                                ${t.subtopicoId ? (t.subtopico || t.topico) : t.topico}
+                                <span class="sessao-topico-materia-extra">(${t.materia}${t.subtopicoId ? ` → ${t.topico}` : ''})</span>
+                            </label>
+                        `).join('')}
+                    </div>
                 </div>
             `;
         }
@@ -2612,9 +3195,29 @@ function filtrarTopicosSessao() {
     renderizarTopicosSessao(document.getElementById('sessao-busca-topicos').value);
 }
 
+function toggleMateriaSessaoExpandida(materia) {
+    if (sessaoMateriasExpandidas.has(materia)) sessaoMateriasExpandidas.delete(materia);
+    else sessaoMateriasExpandidas.add(materia);
+    renderizarTopicosSessao(document.getElementById('sessao-busca-topicos').value);
+}
+
+function toggleTopicoSessaoExpandido(topicoId) {
+    if (sessaoTopicosExpandidos.has(topicoId)) sessaoTopicosExpandidos.delete(topicoId);
+    else sessaoTopicosExpandidos.add(topicoId);
+    renderizarTopicosSessao(document.getElementById('sessao-busca-topicos').value);
+}
+
 function toggleTopicoSessao(id) {
     if (topicosSelecionadosSessao.has(id)) topicosSelecionadosSessao.delete(id);
     else topicosSelecionadosSessao.add(id);
+    renderizarTopicosSessao(document.getElementById('sessao-busca-topicos').value);
+}
+
+function toggleSubtopicoSessao(topicoId, subId) {
+    const chave = `${topicoId}::${subId}`;
+    if (topicosSelecionadosSessao.has(chave)) topicosSelecionadosSessao.delete(chave);
+    else topicosSelecionadosSessao.add(chave);
+    renderizarTopicosSessao(document.getElementById('sessao-busca-topicos').value);
 }
 
 function atualizarPreviewRevisao() {
@@ -2638,21 +3241,39 @@ async function salvarSessao() {
     const fim = construirFimAPartirDoInput();
     const inicio = new Date(fim.getTime() - duracaoSegundos * 1000);
 
-    const topicos = itensAtuais
-        .filter(i => topicosSelecionadosSessao.has(i._id))
-        .map(i => ({ topicoId: i._id, materia: i.materia, topico: i.topico }));
+    // Monta a lista de tópicos/subtópicos selecionados: um tópico sem
+    // subtópicos entra inteiro (topicoId), um tópico com subtópicos entra
+    // um item por subtópico marcado (topicoId + subtopicoId).
+    const topicos = [];
+    sessaoTopicosDisponiveis.forEach(item => {
+        if (Array.isArray(item.subtopicos) && item.subtopicos.length > 0) {
+            item.subtopicos.forEach(sub => {
+                if (topicosSelecionadosSessao.has(`${item._id}::${sub.id}`)) {
+                    topicos.push({
+                        topicoId: item._id, materia: item.materia, topico: item.topico,
+                        subtopicoId: sub.id, subtopico: sub.texto
+                    });
+                }
+            });
+        } else if (topicosSelecionadosSessao.has(item._id)) {
+            topicos.push({ topicoId: item._id, materia: item.materia, topico: item.topico });
+        }
+    });
     topicosExtrasSessaoEmEdicao.forEach(t => {
-        if (!topicos.find(x => x.topicoId === t.topicoId)) topicos.push(t);
+        const jaExiste = topicos.find(x => x.topicoId === t.topicoId && x.subtopicoId === t.subtopicoId);
+        if (!jaExiste) topicos.push(t);
     });
 
     const revisaoMarcada = document.getElementById('sessao-revisao-check').checked;
     const revisaoDias = parseInt(document.getElementById('sessao-revisao-dias').value) || 7;
 
+    const planoSelecionadoModal = document.getElementById('sessao-plano-select').value || planoAtual;
+
     const corpo = {
         inicio: inicio.toISOString(),
         fim: fim.toISOString(),
         duracaoSegundos,
-        plano: planoAtual,
+        plano: planoSelecionadoModal,
         tipoEstudoId: tipo._id,
         tipoEstudoNome: tipo.nome,
         topicos,
@@ -3034,8 +3655,13 @@ function calcularEstatisticasConquistas() {
     const streakEl = document.getElementById('streak-numero');
     const streak = streakEl ? parseInt(streakEl.textContent) || 0 : 0;
 
-    const totalItens = itensAtuais.length;
-    const concluidos = itensAtuais.filter(i => i.concluido).length;
+    let totalItens = 0;
+    let concluidos = 0;
+    itensAtuais.forEach(item => {
+        const { total, concluidos: c } = contarProgressoItem(item);
+        totalItens += total;
+        concluidos += c;
+    });
     const percEdital = totalItens > 0 ? (concluidos / totalItens) * 100 : 0;
 
     return {

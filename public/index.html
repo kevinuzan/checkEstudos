@@ -109,11 +109,6 @@
                 </button>
             </nav>
 
-            <div class="sidebar-planos-label">Plano de estudos</div>
-            <nav class="planos-tabs" id="planos-tabs">
-                <!-- abas dos planos (ex: TRT, ENAM) inseridas via JS -->
-            </nav>
-
             <div class="sidebar-usuario" id="sidebar-usuario" style="display:none;">
                 <img id="usuario-foto" class="usuario-foto" src="" alt="">
                 <div class="usuario-info">
@@ -157,6 +152,28 @@
             </section>
 
             <div class="pomodoro-toast" id="pomodoro-toast" style="display:none;"></div>
+
+            <!-- ===================== CABEÇALHOS CONTEXTUAIS (mostram claramente qual edital/plano/matéria está em foco em cada aba) ===================== -->
+            <div class="cabecalho-contexto" id="cabecalho-planos-edital-estudos" style="display:none;">
+                <div class="cabecalho-contexto-titulo">📌 Você está vendo: <strong id="cabecalho-plano-atual-nome">—</strong></div>
+                <nav class="planos-tabs" id="planos-tabs">
+                    <!-- abas dos planos (ex: TRT, ENAM) inseridas via JS -->
+                </nav>
+            </div>
+
+            <div class="cabecalho-contexto" id="cabecalho-filtro-jogo" style="display:none;">
+                <div class="cabecalho-contexto-titulo">📌 Jogos de: <strong id="cabecalho-jogo-filtro-nome">Geral</strong></div>
+                <div class="escopo-row" id="jogo-escopo-row">
+                    <!-- pills "Geral" + cada plano, inseridas via JS -->
+                </div>
+            </div>
+
+            <div class="cabecalho-contexto" id="cabecalho-filtro-flashcards" style="display:none;">
+                <div class="cabecalho-contexto-titulo">📌 Baralhos de: <strong id="cabecalho-flashcards-filtro-nome">Geral</strong></div>
+                <div class="escopo-row" id="flashcards-escopo-row">
+                    <!-- pills "Geral" + cada matéria, inseridas via JS -->
+                </div>
+            </div>
 
             <!-- ===================== VIEW: RESUMO ===================== -->
             <div id="view-resumo">
@@ -419,17 +436,17 @@
                     <!-- Tela de seleção: a pessoa escolhe UM jogo e vai direto pra ele,
                          sem ver os outros 2 acumulados na mesma tela. -->
                     <div class="jogo-selecao-cards" id="jogo-selecao-bloco">
-                        <button type="button" class="jogo-selecao-card" onclick="selecionarJogo('mnemonicos')">
+                        <button type="button" class="jogo-selecao-card" data-jogo="mnemonicos" onclick="selecionarJogo('mnemonicos')">
                             <span class="jogo-seletor-icone">🧠</span>
                             <span class="jogo-seletor-nome">Mnemônicos</span>
                             <span class="jogo-seletor-desc">Associe as palavras certas</span>
                         </button>
-                        <button type="button" class="jogo-selecao-card" onclick="selecionarJogo('competencias')">
+                        <button type="button" class="jogo-selecao-card" data-jogo="competencias" onclick="selecionarJogo('competencias')">
                             <span class="jogo-seletor-icone">⚖️</span>
                             <span class="jogo-seletor-nome">Competências</span>
                             <span class="jogo-seletor-desc">Quem julga cada causa</span>
                         </button>
-                        <button type="button" class="jogo-selecao-card" onclick="selecionarJogo('lacunas')">
+                        <button type="button" class="jogo-selecao-card" data-jogo="lacunas" onclick="selecionarJogo('lacunas')">
                             <span class="jogo-seletor-icone">📜</span>
                             <span class="jogo-seletor-nome">CF - Lacunas</span>
                             <span class="jogo-seletor-desc">Complete o texto da lei</span>
@@ -643,8 +660,11 @@
             </div>
             <button type="button" class="link-btn" onclick="abrirModalTipos()">⚙ Gerenciar tipos de estudo</button>
 
+            <label class="modal-label">Edital (plano)</label>
+            <select id="sessao-plano-select" onchange="trocarPlanoSessaoModal()"></select>
+
             <label class="modal-label">Tópicos e subtópicos estudados</label>
-            <input type="text" id="sessao-busca-topicos" class="busca-topicos" placeholder="Buscar matéria ou tópico..." oninput="filtrarTopicosSessao()">
+            <input type="text" id="sessao-busca-topicos" class="busca-topicos" placeholder="Buscar matéria, tópico ou subtópico..." oninput="filtrarTopicosSessao()">
             <div class="sessao-topicos-lista" id="sessao-topicos-lista">
                 <!-- árvore de matérias/tópicos com checkboxes inserida via JS -->
             </div>
@@ -737,6 +757,7 @@
             <input type="text" id="baralho-nome-input" placeholder="Ex: Direito Constitucional" maxlength="120">
             <label class="modal-label">Matéria (opcional)</label>
             <input type="text" id="baralho-materia-input" placeholder="Ex: Português" maxlength="80">
+            <p class="config-texto-ajuda">Vincule a uma matéria pra esse baralho aparecer no filtro dela, ou deixe em branco pra ele ficar em "🌐 Geral".</p>
             <div class="modal-actions">
                 <button class="btn-cancelar" onclick="fecharModalBaralho()">Cancelar</button>
                 <button onclick="salvarBaralho()">Salvar</button>
@@ -770,10 +791,21 @@
     <div id="modal-cartao-overlay" class="modal-overlay" style="display:none;">
         <div class="modal">
             <h3 id="modal-cartao-titulo">Novo cartão</h3>
-            <label class="modal-label">Frente</label>
-            <textarea id="cartao-frente-input" placeholder="Pergunta ou termo"></textarea>
-            <label class="modal-label">Verso</label>
-            <textarea id="cartao-verso-input" placeholder="Resposta ou explicação"></textarea>
+            <div class="cartao-tipo-selector" id="cartao-tipo-selector">
+                <button type="button" class="cartao-tipo-btn ativo" id="btn-tipo-basico" onclick="definirTipoCartao('basico')">📝 Básico</button>
+                <button type="button" class="cartao-tipo-btn" id="btn-tipo-cloze" onclick="definirTipoCartao('cloze')">🕳️ Omissão (cloze)</button>
+            </div>
+            <div id="cartao-campos-basico">
+                <label class="modal-label">Frente</label>
+                <textarea id="cartao-frente-input" placeholder="Pergunta ou termo"></textarea>
+                <label class="modal-label">Verso</label>
+                <textarea id="cartao-verso-input" placeholder="Resposta ou explicação"></textarea>
+            </div>
+            <div id="cartao-campos-cloze" style="display:none;">
+                <label class="modal-label">Texto com omissão</label>
+                <p class="config-texto-ajuda">Escreva o texto normalmente e coloque entre <code>{{chaves duplas}}</code> a(s) parte(s) que devem ficar escondidas até você tocar no cartão pra revelar a resposta. Pode usar mais de uma omissão no mesmo cartão.</p>
+                <textarea id="cartao-cloze-input" placeholder="Ex: O prazo para recurso é de {{15 dias}} úteis."></textarea>
+            </div>
             <div class="modal-actions">
                 <button class="btn-cancelar" onclick="fecharModalCartao()">Cancelar</button>
                 <button onclick="salvarCartao()">Salvar</button>

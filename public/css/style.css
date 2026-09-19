@@ -282,11 +282,34 @@ h1, h2, h3 { font-family: inherit; }
     border: 1px dashed #cbd5e1;
 }
 
+.plano-tab-wrap {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.plano-tab-renomear {
+    background: transparent;
+    color: var(--text-faint);
+    border: none;
+    padding: 6px 7px;
+    font-size: 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.plano-tab-renomear:hover {
+    background: var(--surface-muted);
+    color: var(--primary);
+}
+
 /* ============================================================ */
 /* SELETOR DE ESCOPO DO RESUMO (Geral x por Edital)              */
 /* ============================================================ */
 
-.resumo-escopo-row {
+.resumo-escopo-row,
+.escopo-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -1223,6 +1246,20 @@ button:active {
     color: white;
 }
 
+.btn-renomear-materia {
+    background: transparent;
+    color: var(--text-faint);
+    border: none;
+    padding: 2px 5px;
+    font-size: 11.5px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.btn-renomear-materia:hover {
+    color: var(--primary);
+}
+
 .stats-label {
     font-size: 12px;
     color: var(--text-muted);
@@ -1406,6 +1443,107 @@ input[type="checkbox"] {
 
 .btn-delete:hover {
     background-color: #fecaca;
+}
+
+.btn-quebrar {
+    background-color: var(--surface-muted);
+    color: var(--text-muted);
+    border: none;
+    padding: 6px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.15s;
+}
+
+.btn-quebrar:hover {
+    background-color: var(--surface-muted-hover);
+    color: var(--primary);
+}
+
+/* ============================================================ */
+/* SUBTÓPICOS (dividir um tópico em vários itens marcáveis)      */
+/* ============================================================ */
+
+.item-com-subtopicos {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0;
+}
+
+.topico-com-subtopicos-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+}
+
+.seta-subtopicos {
+    color: var(--text-faint);
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.subtopicos-contador {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 700;
+    margin-left: 6px;
+}
+
+.subtopicos-lista {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 14px 12px 34px;
+}
+
+.subtopico-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+}
+
+.subtopico-item.done .subtopico-texto {
+    opacity: 0.55;
+    text-decoration: line-through;
+}
+
+.subtopico-texto {
+    flex: 1;
+    font-size: 13.5px;
+}
+
+.btn-delete-subtopico {
+    background: transparent;
+    color: var(--text-faint);
+    border: none;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.btn-delete-subtopico:hover {
+    color: #dc2626;
+}
+
+.subtopico-add-linha {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-start;
+    margin-top: 6px;
+}
+
+.subtopico-add-linha textarea {
+    flex: 1;
+    min-width: 180px;
+    min-height: 40px;
+    font-size: 13px;
+    font-family: inherit;
 }
 
 /* ============================================================ */
@@ -1615,6 +1753,9 @@ input[type="checkbox"] {
 }
 
 .sessao-materia-titulo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-weight: 800;
     font-size: 12.5px;
     color: var(--primary-dark);
@@ -1622,7 +1763,75 @@ input[type="checkbox"] {
     letter-spacing: 0.04em;
     margin: 8px 0 4px 0;
     padding-bottom: 4px;
+    padding-top: 2px;
     border-bottom: 1px solid var(--border);
+    cursor: pointer;
+}
+
+.sessao-materia-titulo-fixa {
+    cursor: default;
+    color: var(--text-faint);
+}
+
+.sessao-selecionados-badge {
+    background: var(--primary);
+    color: white;
+    font-size: 10.5px;
+    font-weight: 800;
+    border-radius: 999px;
+    padding: 1px 7px;
+    margin-left: auto;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.sessao-materia-topicos {
+    padding-left: 2px;
+}
+
+.seta-sessao {
+    color: var(--text-faint);
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.sessao-topico-com-subtopicos {
+    margin: 2px 0;
+}
+
+.sessao-topico-titulo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14.5px;
+    padding: 7px 4px;
+    cursor: pointer;
+    border-radius: 6px;
+}
+
+.sessao-topico-titulo:hover {
+    background: var(--primary-light);
+}
+
+.sessao-topico-titulo-texto {
+    flex: 1;
+}
+
+.sessao-subtopicos-contador {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.sessao-subtopicos-lista {
+    display: flex;
+    flex-direction: column;
+    padding-left: 22px;
+}
+
+.sessao-subtopico-item {
+    font-size: 13.5px !important;
 }
 
 .sessao-topico-item {
@@ -2564,6 +2773,93 @@ input[type="checkbox"] {
     margin-bottom: 12px;
 }
 
+.cartao-item-tipo-badge {
+    display: inline-block;
+    align-self: flex-start;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--primary-dark);
+    background: var(--primary-light);
+    border-radius: 999px;
+    padding: 1px 8px;
+    margin-bottom: 3px;
+}
+
+.cloze-lacuna {
+    display: inline-block;
+    background: var(--surface-muted);
+    border: 1px dashed var(--text-faint);
+    border-radius: 4px;
+    padding: 0 6px;
+    color: var(--text-faint);
+    font-style: italic;
+}
+
+.cloze-resposta {
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    border-radius: 4px;
+    padding: 0 4px;
+    font-weight: 700;
+}
+
+/* ============================================================ */
+/* SELETOR DE TIPO DE CARTÃO (Básico x Omissão/cloze)            */
+/* ============================================================ */
+
+.cartao-tipo-selector {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.cartao-tipo-btn {
+    flex: 1;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.cartao-tipo-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.cartao-tipo-btn.ativo {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+/* ============================================================ */
+/* CABEÇALHOS CONTEXTUAIS (Edital/Estudos, Jogo, Flashcards)     */
+/* Mostram, logo no topo da aba, qual plano/edital/matéria está  */
+/* em foco no momento — antes disso ficava escondido na sidebar. */
+/* ============================================================ */
+
+.cabecalho-contexto {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.cabecalho-contexto-titulo {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-faint);
+}
+
+.cabecalho-contexto-titulo strong {
+    color: var(--primary-dark);
+}
+
 .flashcards-revisar-topo {
     display: flex;
     align-items: center;
@@ -2820,6 +3116,14 @@ input[type="checkbox"] {
 
     .plano-tab {
         text-align: left;
+    }
+
+    .plano-tab-wrap {
+        width: 100%;
+    }
+
+    .plano-tab-wrap .plano-tab {
+        flex: 1;
     }
 
     .content {
