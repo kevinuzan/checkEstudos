@@ -1142,121 +1142,236 @@ async function startServer() {
             limits: { fileSize: 40 * 1024 * 1024 } // 40MB — baralhos com mídia podem ser grandes
         });
 
-        // Cartão estilo "cloze" do Anki (omissão de termo): a pessoa escreve um
-        // texto único marcando a(s) parte(s) a esconder entre {{chaves duplas}}.
-        // A partir desse texto, geramos a "frente" (com a lacuna escondida) e o
-        // "verso" (com a resposta revelada em destaque) — reaproveitando, sem
-        // nenhuma mudança, o mesmo fluxo de revisão (revelar ao tocar) já usado
-        // pelos cartões básicos. Suporta mais de uma omissão no mesmo cartão.
-        function processarCartaoCloze(clozeTexto) {
-            const texto = (clozeTexto || '').trim();
-            const regexCloze = /\{\{([^{}]+)\}\}/g;
-            if (!regexCloze.test(texto)) return null;
+        // --- CARTÕES CLOZE (omissão estilo Anki) ---
+        //
+        // Formato aceito, igual ao Anki: {{c1::resposta}}, {{c1::resposta::dica}},
+        // podendo ter vários números (c1, c2, ...) no mesmo texto — cada número
+        // distinto vira um CARTÃO FÍSICO separado (com sua própria repetição
+        // espaçada), mostrando os demais números já revelados (como texto normal),
+        // igual ao comportamento real do Anki. Cartões antigos criados antes desse
+        // formato (só {{texto}}, sem número) continuam funcionando: são tratados
+        // como uma única omissão "c1".
+        const REGEX_CLOZE_ANKI = /\{\{c(\d+)::([\s\S]*?)\}\}/g;
+        const REGEX_CLOZE_LEGADO = /\{\{([^{}:][^{}]*)\}\}/g;
 
-            const frente = texto.replace(/\{\{([^{}]+)\}\}/g, '<span class="cloze-lacuna">[...]</span>');
-            const verso = texto.replace(/\{\{([^{}]+)\}\}/g, '<span class="cloze-resposta">$1</span>');
+        function indicesClozeDoTexto(texto) {
+            const alvo = texto || '';
+            const indices = new Set();
+            let m;
+            const r1 = new RegExp(REGEX_CLOZE_ANKI);
+            while ((m = r1.exec(alvo))) indices.add(Number(m[1]));
+            if (indices.size === 0 && new RegExp(REGEX_CLOZE_LEGADO).test(alvo)) indices.add(1);
+            return [...indices].sort((a, b) => a - b);
+        }
+
+        // Gera a frente/verso de UM cartão cloze específico — indiceAlvo é o
+        // número (cN) que deve ficar escondido nesse cartão; os outros números
+        // aparecem revelados normalmente (como no Anki, quando uma nota tem mais
+        // de uma omissão).
+        function renderizarClozeParaIndice(texto, indiceAlvo) {
+            const alvo = texto || '';
+            if (/\{\{c\d+::/.test(alvo)) {
+                const frente = alvo.replace(new RegExp(REGEX_CLOZE_ANKI), (m, idx, conteudo) => {
+                    const partes = conteudo.split('::');
+                    if (Number(idx) !== indiceAlvo) return partes[0];
+                    const dica = partes.length > 1 ? partes[partes.length - 1] : null;
+                    return `<span class="cloze-lacuna">[${dica || '...'}]</span>`;
+                });
+                const verso = alvo.replace(new RegExp(REGEX_CLOZE_ANKI), (m, idx, conteudo) => {
+                    const resposta = conteudo.split('::')[0];
+                    return Number(idx) === indiceAlvo ? `<span class="cloze-resposta">${resposta}</span>` : resposta;
+                });
+                return { frente, verso };
+            }
+            // Formato antigo (sem número) — trata como uma única omissão.
+            const frente = alvo.replace(new RegExp(REGEX_CLOZE_LEGADO), '<span class="cloze-lacuna">[...]</span>');
+            const verso = alvo.replace(new RegExp(REGEX_CLOZE_LEGADO), '<span class="cloze-resposta">$1</span>');
             return { frente, verso };
         }
 
-        // Aplica uma resposta de revisão (0=Errei, 1=Difícil, 2=Bom, 3=Fácil) ao
-        // estado de repetição espaçada de um cartão, e devolve o novo estado.
+        // --- REPETIÇÃO ESPAÇADA (estilo Anki: passos de aprendizado em minutos
+        // + fase de revisão em dias) ---
+        //
+        // Fase 1 ("novo"/"aprendendo"): passos curtos, em minutos — errar volta
+        // pro primeiro passo; "Difícil" repete o passo atual; "Bom" avança pro
+        // próximo passo (e gradua pra fase de revisão ao terminar o último);
+        // "Fácil" gradua na hora, com um intervalo maior.
+        // Fase 2 ("revisao"): intervalos em dias, crescendo pela facilidade do
+        // cartão — "Difícil" sempre volta mais cedo que "Bom", "Fácil" sempre
+        // mais tarde, e errar manda o cartão de volta pra um passo curto de
+        // "reaprendizado" (minutos), não direto pra dias de novo.
+        const PASSOS_APRENDIZADO_MIN = [1, 10];
+        const PASSOS_RELEARNING_MIN = [10];
+        const INTERVALO_GRADUACAO_DIAS = 1;
+        const INTERVALO_FACIL_DIAS = 4;
+
         function calcularProximaRevisaoCartao(cartao, qualidade) {
+            const agora = new Date();
             let facilidade = typeof cartao.facilidade === 'number' ? cartao.facilidade : 2.5;
             let intervalo = typeof cartao.intervalo === 'number' ? cartao.intervalo : 0;
             let repeticoes = typeof cartao.repeticoes === 'number' ? cartao.repeticoes : 0;
+            let etapa = typeof cartao.etapaAprendizado === 'number' ? cartao.etapaAprendizado : 0;
+            const estadoAtual = cartao.estado || 'novo';
+            const emAprendizado = estadoAtual === 'novo' || estadoAtual === 'aprendendo';
 
-            if (qualidade === 0) {
-                // Errei: reinicia a contagem de repetições e volta pra revisar em 1 dia.
-                repeticoes = 0;
-                intervalo = 1;
-                facilidade = Math.max(1.3, facilidade - 0.2);
-            } else {
-                repeticoes += 1;
-                if (qualidade === 1) { // Difícil
-                    facilidade = Math.max(1.3, facilidade - 0.15);
-                    intervalo = repeticoes === 1 ? 1 : Math.max(1, Math.round(intervalo * 1.2));
-                } else if (qualidade === 3) { // Fácil
-                    facilidade = facilidade + 0.15;
-                    if (repeticoes === 1) intervalo = 4;
-                    else if (repeticoes === 2) intervalo = 8;
-                    else intervalo = Math.max(1, Math.round(intervalo * facilidade * 1.3));
-                } else { // Bom (2, padrão)
-                    if (repeticoes === 1) intervalo = 1;
-                    else if (repeticoes === 2) intervalo = 6;
-                    else intervalo = Math.max(1, Math.round(intervalo * facilidade));
+            if (emAprendizado) {
+                if (qualidade === 0) {
+                    const minutos = PASSOS_APRENDIZADO_MIN[0];
+                    return {
+                        estado: 'aprendendo', etapaAprendizado: 0, facilidade, intervalo: 0, repeticoes: 0,
+                        dataProximaRevisao: new Date(agora.getTime() + minutos * 60000)
+                    };
                 }
+                if (qualidade === 3) {
+                    return {
+                        estado: 'revisao', etapaAprendizado: 0, facilidade: facilidade + 0.15,
+                        intervalo: INTERVALO_FACIL_DIAS, repeticoes: repeticoes + 1,
+                        dataProximaRevisao: new Date(agora.getTime() + INTERVALO_FACIL_DIAS * 86400000)
+                    };
+                }
+                const proximaEtapa = qualidade === 1 ? etapa : etapa + 1;
+                if (proximaEtapa < PASSOS_APRENDIZADO_MIN.length) {
+                    const minutos = PASSOS_APRENDIZADO_MIN[proximaEtapa];
+                    return {
+                        estado: 'aprendendo', etapaAprendizado: proximaEtapa, facilidade, intervalo: 0, repeticoes,
+                        dataProximaRevisao: new Date(agora.getTime() + minutos * 60000)
+                    };
+                }
+                return {
+                    estado: 'revisao', etapaAprendizado: 0, facilidade, intervalo: INTERVALO_GRADUACAO_DIAS,
+                    repeticoes: repeticoes + 1, dataProximaRevisao: new Date(agora.getTime() + INTERVALO_GRADUACAO_DIAS * 86400000)
+                };
             }
 
-            const dataProximaRevisao = new Date(Date.now() + intervalo * 24 * 60 * 60 * 1000);
+            // Fase de revisão (dias)
+            if (qualidade === 0) {
+                const minutos = PASSOS_RELEARNING_MIN[0];
+                return {
+                    estado: 'aprendendo', etapaAprendizado: 0, facilidade: Math.max(1.3, facilidade - 0.2),
+                    intervalo: 1, repeticoes: 0, dataProximaRevisao: new Date(agora.getTime() + minutos * 60000)
+                };
+            }
+
+            let novaFacilidade = facilidade;
+            let novoIntervalo;
+            if (qualidade === 1) { // Difícil
+                novaFacilidade = Math.max(1.3, facilidade - 0.15);
+                novoIntervalo = Math.max(intervalo + 1, Math.round(intervalo * 1.2));
+            } else if (qualidade === 3) { // Fácil
+                novaFacilidade = facilidade + 0.15;
+                novoIntervalo = Math.max(intervalo + 1, Math.round(intervalo * novaFacilidade * 1.3));
+            } else { // Bom
+                novoIntervalo = Math.max(intervalo + 1, Math.round(intervalo * novaFacilidade));
+            }
+
             return {
-                facilidade,
-                intervalo,
-                repeticoes,
-                dataProximaRevisao,
-                estado: repeticoes === 0 ? 'aprendendo' : 'revisao'
+                estado: 'revisao', etapaAprendizado: 0, facilidade: novaFacilidade, intervalo: novoIntervalo,
+                repeticoes: repeticoes + 1, dataProximaRevisao: new Date(agora.getTime() + novoIntervalo * 86400000)
             };
         }
 
-        // Lê um arquivo .apkg (zip do Anki) e devolve a lista de cartões (frente
-        // e verso) encontrados nele. Não depende dos "note types"/templates do
-        // Anki (que variam muito entre versões) — pega direto o campo 1 das
-        // notas como frente e o campo 2 (se houver) como verso, que cobre bem
-        // os tipos de nota mais comuns (Básico, Básico e invertido etc).
-        async function extrairCartoesDeApkg(buffer) {
+        // Lê um arquivo .apkg (zip do Anki) e devolve uma lista de "baralhos"
+        // (um por deck-folha do Anki que tenha cartões), cada um já com seu
+        // caminho de pastas (ex: ["ENAM","Direito Administrativo"] pro deck
+        // "ENAM::Direito Administrativo::Jurisprudência - Súmulas STF") e seus
+        // cartões — detectando automaticamente notas do tipo Cloze (pelo próprio
+        // texto do campo, que é robusto a qualquer versão de esquema do Anki) e
+        // gerando um cartão físico por número de omissão, exatamente como o
+        // Anki faz.
+        async function extrairBaralhosDeApkg(buffer) {
             const zip = new AdmZip(buffer);
             const entradas = zip.getEntries();
-
             const acharEntrada = (nome) => entradas.find(e => e.entryName === nome);
 
-            // Anki 2.1.28+ pode gravar o banco já comprimido em zstd
-            // (collection.anki21b); versões mais antigas (ou exportações com
-            // "suportar versões antigas do Anki" marcado) gravam sem compressão
-            // em collection.anki21 ou collection.anki2.
             let dadosBanco = null;
             const entradaZstd = acharEntrada('collection.anki21b');
             const entrada21 = acharEntrada('collection.anki21');
             const entrada2 = acharEntrada('collection.anki2');
 
-            if (entradaZstd) {
-                dadosBanco = decompressZstd(entradaZstd.getData());
-            } else if (entrada21) {
-                dadosBanco = entrada21.getData();
-            } else if (entrada2) {
-                dadosBanco = entrada2.getData();
-            } else {
-                throw new Error('Não encontramos o banco de dados do baralho dentro do arquivo .apkg');
-            }
+            if (entradaZstd) dadosBanco = decompressZstd(entradaZstd.getData());
+            else if (entrada21) dadosBanco = entrada21.getData();
+            else if (entrada2) dadosBanco = entrada2.getData();
+            else throw new Error('Não encontramos o banco de dados do baralho dentro do arquivo .apkg');
 
             const SQL = await initSqlJs();
             const db = new SQL.Database(new Uint8Array(dadosBanco));
 
-            let resultado;
+            let linhasCartoes;
+            let deckNomePorId = {};
+
             try {
-                resultado = db.exec('SELECT flds FROM notes');
+                // Nomes dos decks: tenta primeiro o JSON legado (col.decks), que a
+                // maioria das exportações do Anki ainda inclui por compatibilidade;
+                // se não existir/estiver vazio, tenta a tabela "decks" (esquemas
+                // mais novos do Anki).
+                try {
+                    const colRes = db.exec('SELECT decks FROM col LIMIT 1');
+                    if (colRes.length > 0 && colRes[0].values[0][0]) {
+                        const obj = JSON.parse(colRes[0].values[0][0]);
+                        Object.values(obj).forEach(d => { deckNomePorId[String(d.id)] = d.name; });
+                    }
+                } catch (e) { /* segue pro fallback abaixo */ }
+
+                if (Object.keys(deckNomePorId).length === 0) {
+                    try {
+                        const decksRes = db.exec('SELECT id, name FROM decks');
+                        if (decksRes.length > 0) {
+                            decksRes[0].values.forEach(([id, name]) => { deckNomePorId[String(id)] = name; });
+                        }
+                    } catch (e) { /* nem essa tabela existe nesse arquivo — segue sem nomes de deck */ }
+                }
+
+                const resultado = db.exec('SELECT c.did AS did, c.ord AS ord, c.nid AS nid, n.flds AS flds FROM cards c JOIN notes n ON n.id = c.nid');
+                linhasCartoes = resultado.length > 0 ? resultado[0].values : [];
             } finally {
                 db.close();
             }
 
-            if (!resultado || resultado.length === 0) return [];
-
             const SEPARADOR_CAMPOS = '\x1f';
-            const cartoes = [];
-            for (const linha of resultado[0].values) {
-                const flds = linha[0];
-                if (typeof flds !== 'string' || !flds) continue;
+            const baralhosPorCaminho = new Map();
+
+            linhasCartoes.forEach(linha => {
+                const [did, ord, nid, flds] = linha;
+                if (typeof flds !== 'string' || !flds) return;
+
+                const nomeCompletoDeck = deckNomePorId[String(did)] || 'Baralho importado';
+                const segmentos = nomeCompletoDeck.split('::').map(s => s.trim()).filter(s => s !== '');
+                const nome = segmentos.length > 0 ? segmentos[segmentos.length - 1] : 'Baralho importado';
+                const caminho = segmentos.slice(0, -1);
+                const chave = segmentos.join('::') || 'Baralho importado';
+
+                if (!baralhosPorCaminho.has(chave)) {
+                    baralhosPorCaminho.set(chave, { caminho, nome, cartoes: [] });
+                }
+
                 const campos = flds.split(SEPARADOR_CAMPOS);
-                const frente = (campos[0] || '').trim();
-                const verso = campos.slice(1).join('<br>').trim();
-                if (!frente && !verso) continue;
-                cartoes.push({ frente: frente || '(sem frente)', verso });
-            }
-            return cartoes;
+                const campo0 = (campos[0] || '').trim();
+                const ehCloze = /\{\{c\d+::/.test(campo0);
+
+                if (ehCloze) {
+                    const indiceAlvo = Number(ord) + 1;
+                    const { frente, verso } = renderizarClozeParaIndice(campo0, indiceAlvo);
+                    const extra = campos.slice(1).join('<br>').trim();
+                    baralhosPorCaminho.get(chave).cartoes.push({
+                        tipo: 'cloze', frente,
+                        verso: extra ? `${verso}<div class="cloze-extra-render">${extra}</div>` : verso,
+                        clozeTexto: campo0, clozeExtra: extra, clozeIndice: indiceAlvo, origemClozeId: `anki-nota-${nid}`
+                    });
+                } else {
+                    const frente = campo0 || '(sem frente)';
+                    const verso = campos.slice(1).join('<br>').trim();
+                    if (frente || verso) baralhosPorCaminho.get(chave).cartoes.push({ tipo: 'basico', frente, verso });
+                }
+            });
+
+            return [...baralhosPorCaminho.values()].filter(b => b.cartoes.length > 0);
         }
 
         // --- BARALHOS ---
 
         // Lista os baralhos do usuário, com o total de cartões e quantos já
-        // estão pendentes de revisão hoje.
+        // estão pendentes hoje — separados em Novo / Aprender / Revisar, igual
+        // o navegador de baralhos do Anki.
         app.get('/api/flashcards/baralhos', requireAuth, async (req, res) => {
             const baralhos = await flashcardsBaralhosColl.find({ userId: req.userId }).sort({ criadoEm: -1 }).toArray();
             const agora = new Date();
@@ -1266,21 +1381,30 @@ async function startServer() {
                 { $group: {
                     _id: '$baralhoId',
                     total: { $sum: 1 },
-                    aRevisar: { $sum: { $cond: [{ $lte: ['$dataProximaRevisao', agora] }, 1, 0] } }
+                    novos: { $sum: { $cond: [{ $and: [{ $eq: ['$estado', 'novo'] }, { $lte: ['$dataProximaRevisao', agora] }] }, 1, 0] } },
+                    aprender: { $sum: { $cond: [{ $and: [{ $eq: ['$estado', 'aprendendo'] }, { $lte: ['$dataProximaRevisao', agora] }] }, 1, 0] } },
+                    revisar: { $sum: { $cond: [{ $and: [{ $eq: ['$estado', 'revisao'] }, { $lte: ['$dataProximaRevisao', agora] }] }, 1, 0] } }
                 } }
             ]).toArray();
             const contagemPorBaralho = {};
             contagens.forEach(c => { contagemPorBaralho[c._id] = c; });
 
-            res.json(baralhos.map(b => ({
-                _id: b._id,
-                nome: b.nome,
-                materia: b.materia || '',
-                origem: b.origem || 'manual',
-                criadoEm: b.criadoEm,
-                totalCartoes: (contagemPorBaralho[String(b._id)] || {}).total || 0,
-                aRevisar: (contagemPorBaralho[String(b._id)] || {}).aRevisar || 0
-            })));
+            res.json(baralhos.map(b => {
+                const c = contagemPorBaralho[String(b._id)] || {};
+                return {
+                    _id: b._id,
+                    nome: b.nome,
+                    materia: b.materia || '',
+                    caminho: Array.isArray(b.caminho) ? b.caminho : [],
+                    origem: b.origem || 'manual',
+                    criadoEm: b.criadoEm,
+                    totalCartoes: c.total || 0,
+                    novos: c.novos || 0,
+                    aprender: c.aprender || 0,
+                    revisar: c.revisar || 0,
+                    aRevisar: (c.novos || 0) + (c.aprender || 0) + (c.revisar || 0)
+                };
+            }));
         });
 
         app.post('/api/flashcards/baralhos', requireAuth, async (req, res) => {
@@ -1316,38 +1440,55 @@ async function startServer() {
         });
 
         // Importa um arquivo .apkg do Anki como um novo baralho.
+        // Importa um .apkg preservando a estrutura de pastas do Anki: cada deck
+        // do Anki que tem cartões vira um baralho aqui, com seu caminho de
+        // pastas (matéria/subpasta) preenchido automaticamente. Notas Cloze são
+        // detectadas pelo próprio texto e viram cartões de omissão de verdade
+        // (um cartão físico por número de lacuna, como no Anki).
         app.post('/api/flashcards/baralhos/importar-anki', requireAuth, uploadApkg.single('arquivo'), async (req, res) => {
             if (!req.file) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
 
-            const nome = (req.body.nome || req.file.originalname.replace(/\.apkg$/i, '')).trim().slice(0, 120) || 'Baralho importado';
-
-            let cartoesExtraidos;
+            let baralhosExtraidos;
             try {
-                cartoesExtraidos = await extrairCartoesDeApkg(req.file.buffer);
+                baralhosExtraidos = await extrairBaralhosDeApkg(req.file.buffer);
             } catch (err) {
                 console.error('Erro ao importar .apkg:', err);
                 return res.status(400).json({ success: false, error: 'Não conseguimos ler esse arquivo .apkg. Verifique se é um baralho exportado do Anki.' });
             }
 
-            if (cartoesExtraidos.length === 0) {
-                return res.status(400).json({ success: false, error: 'Nenhum cartão foi encontrado nesse baralho.' });
+            if (baralhosExtraidos.length === 0) {
+                return res.status(400).json({ success: false, error: 'Nenhum cartão foi encontrado nesse arquivo.' });
             }
 
-            const baralhoDoc = { nome, materia: '', origem: 'anki', userId: req.userId, criadoEm: new Date() };
-            const baralhoInserido = await flashcardsBaralhosColl.insertOne(baralhoDoc);
-            const baralhoId = String(baralhoInserido.insertedId);
+            // Nome customizado só faz sentido quando o .apkg tem um único deck
+            // (sem hierarquia) — com vários decks, os nomes vêm da própria
+            // estrutura de pastas do Anki, que é o que a pessoa pediu pra manter.
+            const nomeCustom = (req.body.nome || '').trim().slice(0, 120);
 
             const agora = new Date();
-            const docsCartoes = cartoesExtraidos.map(c => ({
-                baralhoId, userId: req.userId,
-                frente: c.frente, verso: c.verso,
-                facilidade: 2.5, intervalo: 0, repeticoes: 0,
-                dataProximaRevisao: agora, estado: 'novo',
-                criadoEm: agora
-            }));
-            await flashcardsCartoesColl.insertMany(docsCartoes);
+            let totalBaralhos = 0;
+            let totalCartoes = 0;
 
-            res.json({ success: true, baralho: { ...baralhoDoc, _id: baralhoInserido.insertedId }, totalImportado: docsCartoes.length });
+            for (const b of baralhosExtraidos) {
+                const nome = (baralhosExtraidos.length === 1 && nomeCustom) ? nomeCustom : b.nome;
+                const materia = b.caminho.length > 0 ? b.caminho[b.caminho.length - 1] : '';
+                const baralhoDoc = { nome, materia, caminho: b.caminho, origem: 'anki', userId: req.userId, criadoEm: agora };
+                const baralhoInserido = await flashcardsBaralhosColl.insertOne(baralhoDoc);
+                const baralhoId = String(baralhoInserido.insertedId);
+
+                const docsCartoes = b.cartoes.map(c => ({
+                    baralhoId, userId: req.userId, tipo: c.tipo, frente: c.frente, verso: c.verso,
+                    ...(c.tipo === 'cloze' ? { clozeTexto: c.clozeTexto, clozeExtra: c.clozeExtra, clozeIndice: c.clozeIndice, origemClozeId: c.origemClozeId } : {}),
+                    facilidade: 2.5, intervalo: 0, repeticoes: 0, etapaAprendizado: 0,
+                    dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
+                }));
+                if (docsCartoes.length > 0) await flashcardsCartoesColl.insertMany(docsCartoes);
+
+                totalBaralhos += 1;
+                totalCartoes += docsCartoes.length;
+            }
+
+            res.json({ success: true, totalBaralhos, totalImportado: totalCartoes });
         });
 
         // --- CARTÕES ---
@@ -1360,58 +1501,119 @@ async function startServer() {
             res.json(cartoes);
         });
 
+        // Cria cartão(ões). Pra "cloze", o texto pode ter mais de uma omissão
+        // numerada ({{c1::..}}, {{c2::..}}) — cada número vira um cartão físico
+        // próprio (com repetição espaçada independente), todos ligados pelo
+        // mesmo "origemClozeId" pra poderem ser sincronizados numa edição futura.
         app.post('/api/flashcards/baralhos/:id/cards', requireAuth, async (req, res) => {
             const baralho = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
             if (!baralho) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
 
             const tipo = req.body.tipo === 'cloze' ? 'cloze' : 'basico';
-            let frente, verso, clozeTexto;
+            const agora = new Date();
 
             if (tipo === 'cloze') {
-                clozeTexto = (req.body.clozeTexto || '').trim();
-                const processado = processarCartaoCloze(clozeTexto);
-                if (!processado) return res.status(400).json({ success: false, error: 'Escreva o texto e marque ao menos um trecho a omitir entre {{chaves duplas}}.' });
-                frente = processado.frente;
-                verso = processado.verso;
-            } else {
-                frente = (req.body.frente || '').trim();
-                verso = (req.body.verso || '').trim();
-                if (!frente) return res.status(400).json({ success: false, error: 'A frente do cartão é obrigatória' });
-            }
+                const clozeTexto = (req.body.clozeTexto || '').trim();
+                const clozeExtra = (req.body.clozeExtra || '').trim();
+                const indices = indicesClozeDoTexto(clozeTexto);
+                if (indices.length === 0) {
+                    return res.status(400).json({ success: false, error: 'Selecione ao menos um trecho e clique em "Omitir" pra criar a lacuna.' });
+                }
 
-            const agora = new Date();
-            const doc = {
-                baralhoId: req.params.id, userId: req.userId, tipo, frente, verso,
-                ...(tipo === 'cloze' ? { clozeTexto } : {}),
-                facilidade: 2.5, intervalo: 0, repeticoes: 0,
-                dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
-            };
-            const resultado = await flashcardsCartoesColl.insertOne(doc);
-            res.json({ success: true, cartao: { ...doc, _id: resultado.insertedId } });
+                const origemClozeId = crypto.randomUUID();
+                const docs = indices.map(indiceAlvo => {
+                    const { frente, verso } = renderizarClozeParaIndice(clozeTexto, indiceAlvo);
+                    return {
+                        baralhoId: req.params.id, userId: req.userId, tipo, frente,
+                        verso: clozeExtra ? `${verso}<div class="cloze-extra-render">${clozeExtra}</div>` : verso,
+                        clozeTexto, clozeExtra, clozeIndice: indiceAlvo, origemClozeId,
+                        facilidade: 2.5, intervalo: 0, repeticoes: 0, etapaAprendizado: 0,
+                        dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
+                    };
+                });
+                const resultado = await flashcardsCartoesColl.insertMany(docs);
+                res.json({ success: true, total: docs.length, cartoes: docs.map((d, i) => ({ ...d, _id: resultado.insertedIds[i] })) });
+            } else {
+                const frente = (req.body.frente || '').trim();
+                const verso = (req.body.verso || '').trim();
+                if (!frente) return res.status(400).json({ success: false, error: 'A frente do cartão é obrigatória' });
+
+                const doc = {
+                    baralhoId: req.params.id, userId: req.userId, tipo, frente, verso,
+                    facilidade: 2.5, intervalo: 0, repeticoes: 0, etapaAprendizado: 0,
+                    dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
+                };
+                const resultado = await flashcardsCartoesColl.insertOne(doc);
+                res.json({ success: true, total: 1, cartao: { ...doc, _id: resultado.insertedId } });
+            }
         });
 
+        // Edita um cartão. Pra "cloze", sincroniza com os cartões-irmãos (mesma
+        // origemClozeId): atualiza os que continuam existindo no texto, cria os
+        // que forem números novos e remove os que sumiram do texto.
         app.put('/api/flashcards/cards/:id', requireAuth, async (req, res) => {
+            const cartaoAtual = await flashcardsCartoesColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            if (!cartaoAtual) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
+
             const tipo = req.body.tipo === 'cloze' ? 'cloze' : 'basico';
-            let frente, verso, clozeTexto;
 
             if (tipo === 'cloze') {
-                clozeTexto = (req.body.clozeTexto || '').trim();
-                const processado = processarCartaoCloze(clozeTexto);
-                if (!processado) return res.status(400).json({ success: false, error: 'Escreva o texto e marque ao menos um trecho a omitir entre {{chaves duplas}}.' });
-                frente = processado.frente;
-                verso = processado.verso;
-            } else {
-                frente = (req.body.frente || '').trim();
-                verso = (req.body.verso || '').trim();
-                if (!frente) return res.status(400).json({ success: false, error: 'A frente do cartão é obrigatória' });
-            }
+                const clozeTexto = (req.body.clozeTexto || '').trim();
+                const clozeExtra = (req.body.clozeExtra || '').trim();
+                const indices = indicesClozeDoTexto(clozeTexto);
+                if (indices.length === 0) {
+                    return res.status(400).json({ success: false, error: 'Selecione ao menos um trecho e clique em "Omitir" pra criar a lacuna.' });
+                }
 
-            const resultado = await flashcardsCartoesColl.updateOne(
-                { _id: new ObjectId(req.params.id), userId: req.userId },
-                { $set: { tipo, frente, verso, clozeTexto: tipo === 'cloze' ? clozeTexto : '' } }
-            );
-            if (resultado.matchedCount === 0) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
-            res.json({ success: true });
+                const irmaos = cartaoAtual.origemClozeId
+                    ? await flashcardsCartoesColl.find({ origemClozeId: cartaoAtual.origemClozeId, userId: req.userId }).toArray()
+                    : [cartaoAtual];
+                const origemClozeId = cartaoAtual.origemClozeId || crypto.randomUUID();
+
+                const porIndice = {};
+                irmaos.forEach(c => { porIndice[c.clozeIndice || 1] = c; });
+
+                const agora = new Date();
+                const operacoes = [];
+
+                indices.forEach(indiceAlvo => {
+                    const { frente, verso } = renderizarClozeParaIndice(clozeTexto, indiceAlvo);
+                    const versoFinal = clozeExtra ? `${verso}<div class="cloze-extra-render">${clozeExtra}</div>` : verso;
+                    const existente = porIndice[indiceAlvo];
+                    if (existente) {
+                        operacoes.push(flashcardsCartoesColl.updateOne(
+                            { _id: existente._id },
+                            { $set: { frente, verso: versoFinal, clozeTexto, clozeExtra, clozeIndice: indiceAlvo, origemClozeId } }
+                        ));
+                    } else {
+                        operacoes.push(flashcardsCartoesColl.insertOne({
+                            baralhoId: cartaoAtual.baralhoId, userId: req.userId, tipo, frente, verso: versoFinal,
+                            clozeTexto, clozeExtra, clozeIndice: indiceAlvo, origemClozeId,
+                            facilidade: 2.5, intervalo: 0, repeticoes: 0, etapaAprendizado: 0,
+                            dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
+                        }));
+                    }
+                });
+
+                const removerIds = irmaos.filter(c => !indices.includes(c.clozeIndice || 1)).map(c => c._id);
+                if (removerIds.length > 0) operacoes.push(flashcardsCartoesColl.deleteMany({ _id: { $in: removerIds } }));
+
+                await Promise.all(operacoes);
+                res.json({ success: true });
+            } else {
+                const frente = (req.body.frente || '').trim();
+                const verso = (req.body.verso || '').trim();
+                if (!frente) return res.status(400).json({ success: false, error: 'A frente do cartão é obrigatória' });
+
+                await flashcardsCartoesColl.updateOne(
+                    { _id: cartaoAtual._id },
+                    {
+                        $set: { tipo, frente, verso },
+                        $unset: { clozeTexto: '', clozeExtra: '', clozeIndice: '', origemClozeId: '' }
+                    }
+                );
+                res.json({ success: true });
+            }
         });
 
         app.delete('/api/flashcards/cards/:id', requireAuth, async (req, res) => {

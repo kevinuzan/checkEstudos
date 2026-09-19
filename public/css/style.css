@@ -1547,6 +1547,34 @@ input[type="checkbox"] {
     font-family: inherit;
 }
 
+/* Caixa de adicionar subtópico "solta", usada em tópicos que ainda não têm
+   nenhum subtópico (aparece logo abaixo da linha do tópico normal). */
+.subtopico-add-linha-solta {
+    background: var(--surface-muted);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px;
+    margin-top: -6px;
+    margin-bottom: 6px;
+}
+
+.subtopico-add-linha-acoes {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.subtopico-add-linha-acoes .btn-quebrar {
+    font-size: 11px;
+    white-space: nowrap;
+    padding: 6px 10px;
+    background: transparent;
+    color: var(--text-faint);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
 /* ============================================================ */
 /* MODAIS                                                        */
 /* ============================================================ */
@@ -1979,6 +2007,30 @@ input[type="checkbox"] {
 
 .lista-revisoes,
 .lista-historico {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Grupo de histórico por data (estilo "ordenar por data" do Windows
+   Explorer) — cabeçalho da data + os cards daquela data numa linha só;
+   datas diferentes nunca dividem a mesma linha. */
+.historico-data-grupo {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.historico-data-cabecalho {
+    font-size: 12.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-faint);
+    padding-left: 2px;
+}
+
+.historico-data-linha {
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -2636,6 +2688,119 @@ input[type="checkbox"] {
     gap: 14px;
 }
 
+.flashcards-baralhos-grid.modo-arvore {
+    display: block;
+}
+
+/* ============================================================ */
+/* ÁRVORE DE BARALHOS ("Geral") — igual ao navegador do Anki:   */
+/* pastas expansíveis com contagem de Novo/Aprender/Revisar     */
+/* somada, e os baralhos-folha com os números próprios.         */
+/* ============================================================ */
+
+.baralho-arvore-cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 10px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-faint);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+}
+
+.baralho-arvore {
+    display: flex;
+    flex-direction: column;
+}
+
+.baralho-arvore-pasta-header,
+.baralho-arvore-linha {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px 8px calc(10px + var(--profundidade, 0) * 20px);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.12s ease;
+}
+
+.baralho-arvore-pasta-header:hover,
+.baralho-arvore-linha:hover {
+    background: var(--surface-muted);
+}
+
+.baralho-arvore-pasta-nome {
+    font-weight: 700;
+    font-size: 13.5px;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+}
+
+.baralho-arvore-linha-nome {
+    flex: 1;
+    min-width: 0;
+    font-size: 13.5px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.baralho-arvore-linha-nome:hover {
+    color: var(--primary);
+}
+
+.baralho-arvore-contagens {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+    font-size: 12.5px;
+    font-weight: 700;
+    min-width: 132px;
+    justify-content: flex-end;
+}
+
+.baralho-arvore-cabecalho .baralho-arvore-contagens span {
+    display: inline-block;
+    width: 44px;
+    text-align: right;
+}
+
+.baralho-arvore-contagens .contagem-novo,
+.baralho-arvore-contagens .contagem-aprender,
+.baralho-arvore-contagens .contagem-revisar {
+    display: inline-block;
+    width: 44px;
+    text-align: right;
+}
+
+.contagem-novo { color: #2563eb; }
+.contagem-aprender { color: #d97706; }
+.contagem-revisar { color: #16a34a; }
+
+.baralho-arvore-excluir {
+    background: transparent;
+    color: var(--text-faint);
+    border: none;
+    padding: 4px 6px;
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.baralho-arvore-excluir:hover {
+    color: #dc2626;
+    background: var(--card);
+}
+
 .baralho-card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -2836,6 +3001,114 @@ input[type="checkbox"] {
     background: var(--primary);
     color: white;
     border-color: var(--primary);
+}
+
+/* ============================================================ */
+/* EDITOR RICO (campos de frente/verso/texto com omissão)        */
+/* ============================================================ */
+
+.modal-cartao {
+    max-width: 620px;
+    width: 100%;
+}
+
+.editor-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    padding: 5px 6px;
+}
+
+.editor-toolbar button {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid transparent;
+    padding: 5px 9px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 700;
+    min-width: 30px;
+}
+
+.editor-toolbar button:hover {
+    background: var(--card);
+    border-color: var(--border);
+    color: var(--text);
+}
+
+.editor-toolbar-cor {
+    width: 26px;
+    height: 26px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card);
+    cursor: pointer;
+}
+
+.editor-toolbar-separador {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border);
+    margin: 2px 4px;
+}
+
+.editor-toolbar-omitir {
+    background: var(--primary-light) !important;
+    color: var(--primary-dark) !important;
+    border-color: var(--primary-light) !important;
+    font-weight: 700 !important;
+}
+
+.editor-campo {
+    min-height: 90px;
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 14px;
+    background: var(--card);
+    color: var(--text);
+    margin-bottom: 14px;
+}
+
+.editor-campo-pequeno {
+    min-height: 50px;
+}
+
+.editor-campo:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+}
+
+.editor-campo:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-faint);
+}
+
+.cloze-editor-marca {
+    display: inline-block;
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    border-radius: 4px;
+    padding: 0 4px;
+    position: relative;
+    cursor: default;
+}
+
+.cloze-editor-numero {
+    font-size: 9px;
+    font-weight: 800;
+    margin-left: 2px;
+    vertical-align: super;
 }
 
 /* ============================================================ */
@@ -3136,8 +3409,13 @@ input[type="checkbox"] {
         column-gap: 20px;
     }
 
-    .lista-revisoes,
-    .lista-historico {
+    .lista-revisoes {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .historico-data-linha {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
         gap: 12px;

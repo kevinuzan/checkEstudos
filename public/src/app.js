@@ -645,6 +645,12 @@ function renderizarItemEdital(item) {
         `;
     }
 
+    // Um tópico "normal" (sem subtópicos ainda) também pode ganhar
+    // subtópicos digitados livremente — não só dividindo o texto por ";".
+    // A caixinha de adicionar abre/fecha reaproveitando o mesmo Set de
+    // "expandidos" usado pelos tópicos que já têm subtópicos.
+    const caixaAddAberta = topicosExpandidosEdital.has(item._id);
+
     return `
         <div class="item-check ${item.concluido ? 'done' : ''} ${modoSelecaoEdital && itensSelecionadosEdital.has(item._id) ? 'selecionado' : ''}">
             ${modoSelecaoEdital ? `
@@ -660,12 +666,21 @@ function renderizarItemEdital(item) {
             </span>
             ${modoSelecaoEdital ? '' : `
                 <div class="actions">
-                    <button class="btn-quebrar" onclick="quebrarEmSubtopicos('${item._id}')" title="Dividir esse tópico em vários subtópicos (separados por ;)">⋮≡</button>
+                    <button class="btn-quebrar" onclick="toggleSubtopicosExpandido('${item._id}')" title="Adicionar subtópico(s) a esse tópico">➕≡</button>
                     <button class="btn-edit" onclick="abrirModalEdicao('${item._id}')">✎</button>
                     <button class="btn-delete" onclick="deletarTopico('${item._id}')">🗑️</button>
                 </div>
             `}
         </div>
+        ${caixaAddAberta && !modoSelecaoEdital ? `
+            <div class="subtopico-add-linha subtopico-add-linha-solta">
+                <textarea id="novo-subtopico-${item._id}" placeholder="Novo(s) subtópico(s) — um por linha" rows="2"></textarea>
+                <div class="subtopico-add-linha-acoes">
+                    <button type="button" class="btn-secundario" onclick="adicionarSubtopicos('${item._id}')">+ Adicionar</button>
+                    <button type="button" class="btn-quebrar" onclick="quebrarEmSubtopicos('${item._id}')" title="Em vez de digitar, dividir o texto atual do tópico (separado por ;) em subtópicos">⋮≡ Dividir texto atual</button>
+                </div>
+            </div>
+        ` : ''}
     `;
 }
 
@@ -1877,6 +1892,11 @@ let baralhoAtualId = null; // baralho aberto na tela de detalhe
 let cartoesDoBaralhoCache = [];
 let baralhoEmEdicaoId = null; // null = criando um baralho novo no modal
 
+// Pastas expandidas na árvore de baralhos (visão "Geral", que reproduz a
+// estrutura de pastas do Anki) — guarda o caminho completo (ex:
+// "ENAM::Direito Administrativo") de cada pasta aberta. Não persiste.
+let flashcardsPastasExpandidas = new Set();
+
 let filaRevisaoCache = []; // cartões pendentes na sessão de revisão atual
 let cartaoRevisaoAtual = null;
 let respostaRevisaoRevelada = false;
@@ -1956,20 +1976,131 @@ function mostrarTelaFlashcards(tela) {
     if (blocoRevisar) blocoRevisar.style.display = tela === 'revisar' ? 'block' : 'none';
 }
 
+// --- ÁRVORE DE BARALHOS (visão "Geral") ---
+// Reproduz o navegador de baralhos do Anki: pastas (matéria/subpasta, vindas
+// do "caminho" de cada baralho importado) expansíveis, com Novo/Aprender/
+// Revisar somados por pasta, e os baralhos-folha com seus próprios números.
+
+function construirArvoreBaralhos(baralhos) {
+    const raiz = { nome: null, filhos: new Map(), baralhos: [] };
+    baralhos.forEach(b => {
+        let nodo = raiz;
+        (b.caminho || []).forEach(segmento => {
+            if (!nodo.filhos.has(segmento)) nodo.filhos.set(segmento, { nome: segmento, filhos: new Map(), baralhos: [] });
+            nodo = nodo.filhos.get(segmento);
+        });
+        nodo.baralhos.push(b);
+    });
+    return raiz;
+}
+
+function agregarContagensArvore(nodo) {
+    let novos = 0, aprender = 0, revisar = 0;
+    nodo.baralhos.forEach(b => { novos += b.novos || 0; aprender += b.aprender || 0; revisar += b.revisar || 0; });
+    nodo.filhos.forEach(filho => {
+        const sub = agregarContagensArvore(filho);
+        novos += sub.novos; aprender += sub.aprender; revisar += sub.revisar;
+    });
+    return { novos, aprender, revisar };
+}
+
+function renderizarContagensArvore(cont) {
+    return `
+        <span class="baralho-arvore-contagens">
+            <span class="contagem-novo" title="Novos">${cont.novos || 0}</span>
+            <span class="contagem-aprender" title="Aprendendo">${cont.aprender || 0}</span>
+            <span class="contagem-revisar" title="Pra revisar">${cont.revisar || 0}</span>
+        </span>
+    `;
+}
+
+function renderizarLinhaBaralhoArvore(b) {
+    const profundidade = (b.caminho || []).length;
+    return `
+        <div class="baralho-arvore-linha" style="--profundidade:${profundidade}">
+            <span class="baralho-arvore-linha-nome" onclick="abrirBaralho('${b._id}')" title="Ver cartões">
+                📘 ${b.nome}${b.origem === 'anki' ? ' <span class="baralho-card-origem-anki">Anki</span>' : ''}
+            </span>
+            ${renderizarContagensArvore(b)}
+            <button type="button" class="baralho-arvore-excluir" onclick="event.stopPropagation(); excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>
+        </div>
+    `;
+}
+
+function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
+    let html = '';
+
+    const filhosOrdenados = [...nodo.filhos.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    filhosOrdenados.forEach(filho => {
+        const caminhoFilho = [...caminhoAtual, filho.nome];
+        const chave = caminhoFilho.join('::');
+        const expandido = flashcardsPastasExpandidas.has(chave);
+        const cont = agregarContagensArvore(filho);
+
+        html += `
+            <div class="baralho-arvore-pasta">
+                <div class="baralho-arvore-pasta-header" style="--profundidade:${profundidade}" onclick="toggleFlashcardsPasta('${chave.replace(/'/g, "\\'")}')">
+                    <span class="seta-subtopicos">${expandido ? '▾' : '▸'}</span>
+                    <span class="baralho-arvore-pasta-nome">${filho.nome}</span>
+                    ${renderizarContagensArvore(cont)}
+                </div>
+                ${expandido ? renderizarNodoArvoreBaralhos(filho, caminhoFilho, profundidade + 1) : ''}
+            </div>
+        `;
+    });
+
+    const baralhosOrdenados = [...nodo.baralhos].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    baralhosOrdenados.forEach(b => { html += renderizarLinhaBaralhoArvore(b); });
+
+    return html;
+}
+
+function toggleFlashcardsPasta(chave) {
+    if (flashcardsPastasExpandidas.has(chave)) flashcardsPastasExpandidas.delete(chave);
+    else flashcardsPastasExpandidas.add(chave);
+    renderizarBaralhos();
+}
+
 function renderizarBaralhos() {
     const grid = document.getElementById('flashcards-baralhos-grid');
     const vazio = document.getElementById('flashcards-vazio');
     if (!grid) return;
 
-    const baralhosFiltrados = flashcardsFiltroMateria === 'geral'
-        ? baralhosCache
-        : baralhosCache.filter(b => (b.materia || '').trim() === flashcardsFiltroMateria);
+    if (baralhosCache.length === 0) {
+        if (vazio) {
+            vazio.style.display = 'block';
+            vazio.textContent = 'Você ainda não tem nenhum baralho. Crie um do zero ou importe um baralho do Anki (.apkg) pra começar!';
+        }
+        grid.innerHTML = '';
+        grid.classList.remove('modo-arvore');
+        return;
+    }
+
+    if (flashcardsFiltroMateria === 'geral') {
+        if (vazio) vazio.style.display = 'none';
+        grid.classList.add('modo-arvore');
+        const arvore = construirArvoreBaralhos(baralhosCache);
+        grid.innerHTML = `
+            <div class="baralho-arvore-cabecalho">
+                <span>Baralho</span>
+                <span class="baralho-arvore-contagens">
+                    <span title="Novos">Novo</span>
+                    <span title="Aprendendo">Aprender</span>
+                    <span title="Pra revisar">Revisar</span>
+                </span>
+                <span></span>
+            </div>
+            <div class="baralho-arvore">${renderizarNodoArvoreBaralhos(arvore, [], 0)}</div>
+        `;
+        return;
+    }
+
+    grid.classList.remove('modo-arvore');
+    const baralhosFiltrados = baralhosCache.filter(b => (b.materia || '').trim() === flashcardsFiltroMateria);
 
     if (vazio) {
         vazio.style.display = baralhosFiltrados.length === 0 ? 'block' : 'none';
-        vazio.textContent = baralhosCache.length === 0
-            ? 'Você ainda não tem nenhum baralho. Crie um do zero ou importe um baralho do Anki (.apkg) pra começar!'
-            : `Nenhum baralho em "${flashcardsFiltroMateria}" ainda.`;
+        vazio.textContent = `Nenhum baralho em "${flashcardsFiltroMateria}" ainda.`;
     }
 
     grid.innerHTML = baralhosFiltrados.map(b => `
@@ -2095,8 +2226,11 @@ async function confirmarImportarAnki() {
             return;
         }
         fecharModalImportarAnki();
+        flashcardsFiltroMateria = 'geral';
+        localStorage.setItem('flashcards_filtro_materia', 'geral');
         await carregarFlashcards();
-        alert(`Baralho importado! ${dados.totalImportado} cartões adicionados.`);
+        const rotuloBaralhos = dados.totalBaralhos === 1 ? '1 baralho' : `${dados.totalBaralhos} baralhos`;
+        alert(`Importação concluída! ${rotuloBaralhos}, ${dados.totalImportado} cartões — mantendo a estrutura de pastas do Anki (veja em "🌐 Geral").`);
     } catch (err) {
         console.error('Erro ao importar baralho do Anki:', err);
         alert('Não foi possível importar esse baralho.');
@@ -2139,7 +2273,7 @@ function renderizarCartoesDoBaralho() {
     lista.innerHTML = cartoesDoBaralhoCache.map(c => `
         <div class="cartao-item">
             <div class="cartao-item-conteudo">
-                ${c.tipo === 'cloze' ? `<span class="cartao-item-tipo-badge">🕳️ Omissão</span>` : ''}
+                ${c.tipo === 'cloze' ? `<span class="cartao-item-tipo-badge">🕳️ Omissão${c.clozeIndice ? ` c${c.clozeIndice}` : ''}</span>` : ''}
                 <div class="cartao-item-frente">${removerTagsHtmlFlashcard(c.frente)}</div>
                 <div class="cartao-item-verso">${removerTagsHtmlFlashcard(c.verso)}</div>
             </div>
@@ -2151,11 +2285,120 @@ function renderizarCartoesDoBaralho() {
     `).join('');
 }
 
+// --- EDITOR RICO (usado nos campos de frente/verso/texto com omissão) ---
+// Os campos são <div contenteditable>, não <textarea>, pra permitir negrito/
+// itálico/etc — o "conteúdo" deles é o próprio innerHTML.
+
+// Guarda a última seleção de texto feita DENTRO de um campo editável, porque
+// clicar num botão da barra de formatação tira o foco do campo (perderíamos
+// a seleção se não guardássemos antes).
+let ultimoRangeEditor = null;
+let ultimoEditorFocadoId = null;
+
+function salvarSelecaoEditor(event) {
+    const el = event.currentTarget;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && el.contains(sel.anchorNode)) {
+        ultimoRangeEditor = sel.getRangeAt(0).cloneRange();
+        ultimoEditorFocadoId = el.id;
+    }
+}
+
+function restaurarSelecaoEditor() {
+    if (!ultimoRangeEditor || !ultimoEditorFocadoId) return null;
+    const el = document.getElementById(ultimoEditorFocadoId);
+    if (!el) return null;
+    el.focus();
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(ultimoRangeEditor);
+    return el;
+}
+
+function aplicarFormatoTexto(comando, valor) {
+    restaurarSelecaoEditor();
+    document.execCommand(comando, false, valor || null);
+}
+
+// Envolve o trecho selecionado num "cartão-mostrador" de omissão numerado
+// (1, 2, 3...) — cada número novo vira um cartão diferente ao salvar, igual
+// ao Anki (c1/c2/c3 no mesmo texto = cartões separados).
+function proximoNumeroCloze(containerEl) {
+    let max = 0;
+    containerEl.querySelectorAll('.cloze-editor-marca').forEach(s => {
+        const n = Number(s.dataset.cloze);
+        if (n > max) max = n;
+    });
+    return max + 1;
+}
+
+function omitirSelecaoCloze() {
+    const editor = restaurarSelecaoEditor();
+    if (!editor || editor.id !== 'cartao-cloze-input') {
+        alert('Clique no campo de texto, selecione o trecho que quer esconder e tente de novo.');
+        return;
+    }
+    const selecao = window.getSelection();
+    if (!selecao || selecao.rangeCount === 0 || selecao.isCollapsed) {
+        alert('Selecione o trecho do texto que você quer omitir, e clique em "🕳️ Omitir" de novo.');
+        return;
+    }
+    const range = selecao.getRangeAt(0);
+    const numero = proximoNumeroCloze(editor);
+    const frag = range.cloneContents();
+    const div = document.createElement('div');
+    div.appendChild(frag);
+    const conteudoHtml = div.innerHTML || div.textContent;
+
+    range.deleteContents();
+    const span = document.createElement('span');
+    span.className = 'cloze-editor-marca';
+    span.contentEditable = 'false';
+    span.dataset.cloze = String(numero);
+    span.innerHTML = `${conteudoHtml}<sup class="cloze-editor-numero">${numero}</sup>`;
+    range.insertNode(span);
+
+    // Move o cursor pra depois do trecho recém-marcado.
+    const novaSelecao = window.getSelection();
+    const novoRange = document.createRange();
+    novoRange.setStartAfter(span);
+    novoRange.collapse(true);
+    novaSelecao.removeAllRanges();
+    novaSelecao.addRange(novoRange);
+}
+
+// Serializa o editor de omissão pro formato bruto {{cN::conteúdo}} guardado
+// no banco (o mesmo formato que o Anki usa).
+function converterEditorParaClozeTexto(editorEl) {
+    const clone = editorEl.cloneNode(true);
+    clone.querySelectorAll('.cloze-editor-numero').forEach(b => b.remove());
+    let html = clone.innerHTML;
+    html = html.replace(/<span class="cloze-editor-marca"[^>]*data-cloze="(\d+)"[^>]*>([\s\S]*?)<\/span>/g, (m, n, conteudo) => `{{c${n}::${conteudo}}}`);
+    return html.trim();
+}
+
+// Reconstrói o HTML do editor a partir do texto bruto salvo (pra reabrir um
+// cartão cloze existente pra edição, com as marcações visuais de volta).
+function converterClozeTextoParaEditorHtml(clozeTexto) {
+    if (!clozeTexto) return '';
+    let html = clozeTexto.replace(/\{\{c(\d+)::([\s\S]*?)\}\}/g, (m, n, conteudo) => {
+        const partes = conteudo.split('::');
+        return `<span class="cloze-editor-marca" contenteditable="false" data-cloze="${n}">${partes[0]}<sup class="cloze-editor-numero">${n}</sup></span>`;
+    });
+    // Formato antigo (sem número), de cartões criados antes desse editor.
+    html = html.replace(/\{\{([^{}:][^{}]*)\}\}/g, (m, conteudo) => `<span class="cloze-editor-marca" contenteditable="false" data-cloze="1">${conteudo}<sup class="cloze-editor-numero">1</sup></span>`);
+    return html;
+}
+
 // --- MODAL: CRIAR/EDITAR CARTÃO ---
 
 // Tipo de cartão selecionado no momento no modal: "basico" (frente/verso
-// normais) ou "cloze" (texto único com trecho(s) omitidos entre {{chaves}}).
+// normais) ou "cloze" (texto único com trecho(s) omitidos, numerados).
 let cartaoTipoAtual = 'basico';
+// Quando o cartão está sendo editado a partir da tela de revisão (botão
+// "✏️ Editar cartão"), salvar não deve sair da revisão — só atualizar a
+// fila e continuar de onde estava.
+let cartaoEdicaoEmRevisao = false;
 
 function definirTipoCartao(tipo) {
     cartaoTipoAtual = tipo === 'cloze' ? 'cloze' : 'basico';
@@ -2167,11 +2410,24 @@ function definirTipoCartao(tipo) {
 
 function abrirModalNovoCartao() {
     cartaoEmEdicaoId = null;
+    cartaoEdicaoEmRevisao = false;
     document.getElementById('modal-cartao-titulo').textContent = 'Novo cartão';
-    document.getElementById('cartao-frente-input').value = '';
-    document.getElementById('cartao-verso-input').value = '';
-    document.getElementById('cartao-cloze-input').value = '';
+    document.getElementById('cartao-frente-input').innerHTML = '';
+    document.getElementById('cartao-verso-input').innerHTML = '';
+    document.getElementById('cartao-cloze-input').innerHTML = '';
+    document.getElementById('cartao-cloze-extra-input').innerHTML = '';
     definirTipoCartao('basico');
+    document.getElementById('modal-cartao-overlay').style.display = 'flex';
+}
+
+function preencherModalCartaoComDados(cartao) {
+    const ehCloze = cartao.tipo === 'cloze';
+    document.getElementById('modal-cartao-titulo').textContent = 'Editar cartão';
+    document.getElementById('cartao-frente-input').innerHTML = ehCloze ? '' : (cartao.frente || '');
+    document.getElementById('cartao-verso-input').innerHTML = ehCloze ? '' : (cartao.verso || '');
+    document.getElementById('cartao-cloze-input').innerHTML = ehCloze ? converterClozeTextoParaEditorHtml(cartao.clozeTexto) : '';
+    document.getElementById('cartao-cloze-extra-input').innerHTML = ehCloze ? (cartao.clozeExtra || '') : '';
+    definirTipoCartao(ehCloze ? 'cloze' : 'basico');
     document.getElementById('modal-cartao-overlay').style.display = 'flex';
 }
 
@@ -2179,13 +2435,18 @@ function abrirModalEditarCartao(id) {
     const cartao = cartoesDoBaralhoCache.find(c => c._id === id);
     if (!cartao) return;
     cartaoEmEdicaoId = id;
-    const ehCloze = cartao.tipo === 'cloze';
-    document.getElementById('modal-cartao-titulo').textContent = 'Editar cartão';
-    document.getElementById('cartao-frente-input').value = ehCloze ? '' : cartao.frente;
-    document.getElementById('cartao-verso-input').value = ehCloze ? '' : (cartao.verso || '');
-    document.getElementById('cartao-cloze-input').value = ehCloze ? (cartao.clozeTexto || '') : '';
-    definirTipoCartao(ehCloze ? 'cloze' : 'basico');
-    document.getElementById('modal-cartao-overlay').style.display = 'flex';
+    cartaoEdicaoEmRevisao = false;
+    preencherModalCartaoComDados(cartao);
+}
+
+// Editar o cartão que está sendo revisado NA HORA, sem sair da tela de
+// revisão — útil quando a pessoa percebe um erro ou quer ajustar algo no
+// meio da sessão.
+function editarCartaoDuranteRevisao() {
+    if (!cartaoRevisaoAtual) return;
+    cartaoEmEdicaoId = cartaoRevisaoAtual._id;
+    cartaoEdicaoEmRevisao = true;
+    preencherModalCartaoComDados(cartaoRevisaoAtual);
 }
 
 function fecharModalCartao() {
@@ -2196,16 +2457,18 @@ async function salvarCartao() {
     const corpo = { tipo: cartaoTipoAtual };
 
     if (cartaoTipoAtual === 'cloze') {
-        const clozeTexto = document.getElementById('cartao-cloze-input').value.trim();
-        if (!clozeTexto || !/\{\{[^{}]+\}\}/.test(clozeTexto)) {
-            alert('Escreva o texto e marque ao menos um trecho a omitir entre {{chaves duplas}}.');
+        const editor = document.getElementById('cartao-cloze-input');
+        const clozeTexto = converterEditorParaClozeTexto(editor);
+        if (!clozeTexto || !/\{\{c\d+::/.test(clozeTexto)) {
+            alert('Selecione ao menos um trecho do texto e clique em "🕳️ Omitir" pra criar a lacuna.');
             return;
         }
         corpo.clozeTexto = clozeTexto;
+        corpo.clozeExtra = document.getElementById('cartao-cloze-extra-input').innerHTML.trim();
     } else {
-        const frente = document.getElementById('cartao-frente-input').value.trim();
-        const verso = document.getElementById('cartao-verso-input').value.trim();
-        if (!frente) return;
+        const frente = document.getElementById('cartao-frente-input').innerHTML.trim();
+        const verso = document.getElementById('cartao-verso-input').innerHTML.trim();
+        if (!frente || frente === '<br>') return;
         corpo.frente = frente;
         corpo.verso = verso;
     }
@@ -2230,8 +2493,23 @@ async function salvarCartao() {
             alert(dados.error || 'Não foi possível salvar esse cartão.');
             return;
         }
+
         fecharModalCartao();
-        await abrirBaralho(baralhoAtualId);
+
+        if (cartaoEdicaoEmRevisao) {
+            cartaoEdicaoEmRevisao = false;
+            // Atualiza a fila de revisão do zero — o cartão editado continua
+            // devido, então ele deve reaparecer, e a sessão continua normal.
+            try {
+                const resFila = await fetch(`/api/flashcards/baralhos/${baralhoAtualId}/revisar`);
+                filaRevisaoCache = await resFila.json();
+            } catch (err) {
+                console.error('Erro ao atualizar fila de revisão:', err);
+            }
+            mostrarProximoCartaoRevisao();
+        } else {
+            await abrirBaralho(baralhoAtualId);
+        }
     } catch (err) {
         console.error('Erro ao salvar cartão:', err);
     }
@@ -3337,6 +3615,56 @@ async function carregarPainelEstudos() {
     await carregarRevisoes();
 }
 
+// Rótulo do cabeçalho de cada grupo de data — "Hoje" / "Ontem" / dia da
+// semana + data, igual à ordenação por data do Windows Explorer.
+function rotuloDataHistorico(data) {
+    const hojeISO = formatarDataISO(new Date());
+    const ontemISO = formatarDataISO(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    const iso = formatarDataISO(data);
+    if (iso === hojeISO) return 'Hoje';
+    if (iso === ontemISO) return 'Ontem';
+    const rotulo = data.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+    return rotulo.charAt(0).toUpperCase() + rotulo.slice(1);
+}
+
+function renderizarCardHistorico(s) {
+    const data = new Date(s.fim);
+    const horario = data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const topicosTexto = s.topicos && s.topicos.length > 0
+        ? s.topicos.map(t => t.topico).join(', ')
+        : 'Sem tópicos vinculados';
+    let desempenho = '';
+    if (s.acertos !== null && s.acertos !== undefined) {
+        desempenho = `<span class="historico-badge">✔️ ${s.acertos} / ❌ ${s.erros || 0}</span>`;
+    } else if (s.paginasLidas !== null && s.paginasLidas !== undefined) {
+        const ritmoTxt = (s.duracaoSegundos > 0 && s.paginasLidas > 0)
+            ? ` · ${formatarRitmo(s.duracaoSegundos / s.paginasLidas)}`
+            : '';
+        desempenho = `<span class="historico-badge">📖 ${s.paginasLidas} pág.${ritmoTxt}</span>`;
+    }
+
+    return `
+        <div class="historico-item">
+            <div class="historico-item-topo">
+                <span class="historico-tipo">${s.tipoEstudoNome || 'Outro'}</span>
+                <span class="historico-duracao">${formatarDuracaoCurta(s.duracaoSegundos)}</span>
+                <span class="historico-data" title="Horário">${horario}</span>
+                <div class="historico-item-acoes">
+                    <button class="btn-edit historico-editar" onclick="abrirModalEdicaoSessao('${s._id}')">✎</button>
+                    <button class="btn-delete historico-excluir" onclick="excluirSessao('${s._id}')">🗑️</button>
+                </div>
+            </div>
+            <div class="historico-topicos" title="${topicosTexto}">${topicosTexto}</div>
+            ${desempenho}
+            ${s.observacoes ? `<div class="historico-obs">"${s.observacoes}"</div>` : ''}
+        </div>
+    `;
+}
+
+// Agrupa o histórico por data (já vem do servidor ordenado do mais recente
+// pro mais antigo) — cada grupo de data vira uma "linha" com cabeçalho
+// (Hoje/Ontem/dia da semana), e só cartões da MESMA data ficam lado a lado
+// dentro dela, igual a ordenação por data do Windows Explorer.
 function renderizarHistorico() {
     const lista = document.getElementById('lista-historico');
     if (!lista) return;
@@ -3346,38 +3674,27 @@ function renderizarHistorico() {
         return;
     }
 
-    lista.innerHTML = sessoesCache.slice(0, 40).map(s => {
-        const data = new Date(s.fim);
-        const topicosTexto = s.topicos && s.topicos.length > 0
-            ? s.topicos.map(t => t.topico).join(', ')
-            : 'Sem tópicos vinculados';
-        let desempenho = '';
-        if (s.acertos !== null && s.acertos !== undefined) {
-            desempenho = `<span class="historico-badge">✔️ ${s.acertos} / ❌ ${s.erros || 0}</span>`;
-        } else if (s.paginasLidas !== null && s.paginasLidas !== undefined) {
-            const ritmoTxt = (s.duracaoSegundos > 0 && s.paginasLidas > 0)
-                ? ` · ${formatarRitmo(s.duracaoSegundos / s.paginasLidas)}`
-                : '';
-            desempenho = `<span class="historico-badge">📖 ${s.paginasLidas} pág.${ritmoTxt}</span>`;
+    const sessoes = sessoesCache.slice(0, 60);
+    const grupos = [];
+    let grupoAtual = null;
+    sessoes.forEach(s => {
+        const dataItem = new Date(s.fim);
+        const iso = formatarDataISO(dataItem);
+        if (!grupoAtual || grupoAtual.iso !== iso) {
+            grupoAtual = { iso, data: dataItem, itens: [] };
+            grupos.push(grupoAtual);
         }
+        grupoAtual.itens.push(s);
+    });
 
-        return `
-            <div class="historico-item">
-                <div class="historico-item-topo">
-                    <span class="historico-tipo">${s.tipoEstudoNome || 'Outro'}</span>
-                    <span class="historico-duracao">${formatarDuracaoCurta(s.duracaoSegundos)}</span>
-                    <span class="historico-data">${data.toLocaleDateString('pt-BR')}</span>
-                    <div class="historico-item-acoes">
-                        <button class="btn-edit historico-editar" onclick="abrirModalEdicaoSessao('${s._id}')">✎</button>
-                        <button class="btn-delete historico-excluir" onclick="excluirSessao('${s._id}')">🗑️</button>
-                    </div>
-                </div>
-                <div class="historico-topicos" title="${topicosTexto}">${topicosTexto}</div>
-                ${desempenho}
-                ${s.observacoes ? `<div class="historico-obs">"${s.observacoes}"</div>` : ''}
+    lista.innerHTML = grupos.map(grupo => `
+        <div class="historico-data-grupo">
+            <div class="historico-data-cabecalho">${rotuloDataHistorico(grupo.data)}</div>
+            <div class="historico-data-linha">
+                ${grupo.itens.map(s => renderizarCardHistorico(s)).join('')}
             </div>
-        `;
-    }).join('');
+        </div>
+    `).join('');
 }
 
 async function excluirSessao(id) {
@@ -3886,10 +4203,13 @@ function renderizarDashboardResumo() {
     let totalQuestoesJogo = 0;
     let totalAcertosJogo = 0;
     const diasComEstudo = new Set();
+    const hojeISO = formatarDataISO(new Date());
+    let totalSegundosHoje = 0;
 
     sessoesCache.forEach(s => {
         totalSegundos += s.duracaoSegundos;
         if (s.duracaoSegundos > 0) diasComEstudo.add(formatarDataISO(new Date(s.fim)));
+        if (formatarDataISO(new Date(s.fim)) === hojeISO) totalSegundosHoje += s.duracaoSegundos;
 
         if (s.paginasLidas !== null && s.paginasLidas !== undefined) {
             totalPaginas += s.paginasLidas;
@@ -3916,6 +4236,10 @@ function renderizarDashboardResumo() {
     const percAcertoJogo = totalQuestoesJogo > 0 ? Math.round((totalAcertosJogo / totalQuestoesJogo) * 100) : null;
 
     grid.innerHTML = `
+        <div class="stat-card stat-card-destaque">
+            <span class="stat-card-label">⏱ Estudado hoje</span>
+            <span class="stat-card-valor">${formatarDuracaoCurta(totalSegundosHoje)}</span>
+        </div>
         <div class="stat-card">
             <span class="stat-card-label">Horas estudadas</span>
             <span class="stat-card-valor">${formatarDuracaoCurta(totalSegundos)}</span>
