@@ -253,6 +253,16 @@
 
                 <section class="painel-bloco">
                     <div class="painel-bloco-header">
+                        <h2>🧠 Mapa de dificuldades (Flashcards)</h2>
+                        <span class="painel-bloco-sub">Baralhos com maior taxa de "Errei"/"Difícil" nas revisões</span>
+                    </div>
+                    <div class="mapa-dificuldades" id="mapa-dificuldades-flashcards">
+                        <!-- ranking de baralhos com mais erro inserido via JS -->
+                    </div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
                         <h2>🏅 Conquistas</h2>
                         <button type="button" class="link-botao" onclick="trocarView('conquistas')">Ver todas →</button>
                     </div>
@@ -409,10 +419,10 @@
                         <div class="flashcards-card-dica" id="flashcards-card-dica">Toque no cartão pra ver a resposta</div>
                     </div>
                     <div class="flashcards-respostas" id="flashcards-respostas" style="display:none;">
-                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-errei" onclick="responderRevisao(0)">Errei</button>
-                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-dificil" onclick="responderRevisao(1)">Difícil</button>
-                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-bom" onclick="responderRevisao(2)">Bom</button>
-                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-facil" onclick="responderRevisao(3)">Fácil</button>
+                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-errei" onclick="responderRevisao(0)">Errei<span class="flashcards-resposta-preview" id="flashcards-preview-0"></span></button>
+                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-dificil" onclick="responderRevisao(1)">Difícil<span class="flashcards-resposta-preview" id="flashcards-preview-1"></span></button>
+                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-bom" onclick="responderRevisao(2)">Bom<span class="flashcards-resposta-preview" id="flashcards-preview-2"></span></button>
+                        <button type="button" class="flashcards-resposta-btn flashcards-resposta-facil" onclick="responderRevisao(3)">Fácil<span class="flashcards-resposta-preview" id="flashcards-preview-3"></span></button>
                     </div>
                     <div class="flashcards-revisao-concluida" id="flashcards-revisao-concluida" style="display:none;">
                         <span class="flashcards-revisao-concluida-emoji">🎉</span>

@@ -2026,13 +2026,19 @@ function renderizarContagensArvore(cont) {
 
 function renderizarLinhaBaralhoArvore(b) {
     const profundidade = (b.caminho || []).length;
+    const temPendente = (b.novos || 0) > 0 || (b.aprender || 0) > 0 || (b.revisar || 0) > 0;
     return `
         <div class="baralho-arvore-linha" style="--profundidade:${profundidade}">
             <span class="baralho-arvore-linha-nome" onclick="abrirBaralho('${b._id}')" title="Ver cartões">
                 📘 ${b.nome}${b.origem === 'anki' ? ' <span class="baralho-card-origem-anki">Anki</span>' : ''}
             </span>
             ${renderizarContagensArvore(b)}
-            <button type="button" class="baralho-arvore-excluir" onclick="event.stopPropagation(); excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>
+            <span class="baralho-arvore-acoes">
+                ${temPendente
+                    ? `<button type="button" class="baralho-arvore-revisar-pasta" onclick="event.stopPropagation(); iniciarRevisao('${b._id}')" title="Revisar esse baralho">▶</button>`
+                    : ''}
+                <button type="button" class="baralho-arvore-excluir" onclick="event.stopPropagation(); excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>
+            </span>
         </div>
     `;
 }
@@ -2054,9 +2060,11 @@ function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
                     <span class="seta-subtopicos">${expandido ? '▾' : '▸'}</span>
                     <span class="baralho-arvore-pasta-nome">${filho.nome}</span>
                     ${renderizarContagensArvore(cont)}
-                    ${cont.revisar > 0 || cont.novos > 0 || cont.aprender > 0
-                        ? `<button type="button" class="baralho-arvore-revisar-pasta" onclick="event.stopPropagation(); revisarPasta('${chaveEscapada}')" title="Revisar tudo em &quot;${filho.nome.replace(/"/g, '&quot;')}&quot;">▶</button>`
-                        : '<span class="baralho-arvore-revisar-pasta-vazio"></span>'}
+                    <span class="baralho-arvore-acoes">
+                        ${cont.revisar > 0 || cont.novos > 0 || cont.aprender > 0
+                            ? `<button type="button" class="baralho-arvore-revisar-pasta" onclick="event.stopPropagation(); revisarPasta('${chaveEscapada}')" title="Revisar tudo em &quot;${filho.nome.replace(/"/g, '&quot;')}&quot;">▶</button>`
+                            : ''}
+                    </span>
                 </div>
                 ${expandido ? renderizarNodoArvoreBaralhos(filho, caminhoFilho, profundidade + 1) : ''}
             </div>
@@ -2129,13 +2137,13 @@ function renderizarBaralhos() {
     const arvore = construirArvoreBaralhos(baralhosNoEscopo);
     grid.innerHTML = `
         <div class="baralho-arvore-cabecalho">
-            <span>Baralho</span>
+            <span class="baralho-arvore-cabecalho-nome">Baralho</span>
             <span class="baralho-arvore-contagens">
                 <span class="contagem-novo" title="Novos">Novo</span>
                 <span class="contagem-aprender" title="Aprendendo">Aprender</span>
                 <span class="contagem-revisar" title="Pra revisar">Revisar</span>
             </span>
-            <span></span>
+            <span class="baralho-arvore-acoes"></span>
         </div>
         <div class="baralho-arvore">${renderizarNodoArvoreBaralhos(arvore, [], 0)}</div>
     `;
@@ -2667,6 +2675,14 @@ function mostrarProximoCartaoRevisao() {
     document.getElementById('flashcards-card-verso').style.display = 'none';
     document.getElementById('flashcards-card-dica').style.display = 'block';
     document.getElementById('flashcards-respostas').style.display = 'none';
+
+    // Mostra em cima de cada botão daqui a quanto tempo o cartão volta se
+    // essa for a resposta escolhida — igual ao Anki ("<10min", "2 dias"...).
+    const previews = cartaoRevisaoAtual.previews || {};
+    [0, 1, 2, 3].forEach(q => {
+        const el = document.getElementById(`flashcards-preview-${q}`);
+        if (el) el.textContent = previews[q] || '';
+    });
 }
 
 function mostrarRespostaRevisao() {
@@ -3986,7 +4002,46 @@ async function carregarResumo() {
     renderizarGraficoTiposEmpilhado();
     renderizarIndicadoresMaterias();
     renderizarMapaDificuldades();
+    renderizarMapaDificuldadesFlashcards();
     renderizarConquistas();
+}
+
+// ==================================================================
+// MAPA DE DIFICULDADES DOS FLASHCARDS (baralhos com mais "Errei"/"Difícil")
+// ==================================================================
+async function renderizarMapaDificuldadesFlashcards() {
+    const container = document.getElementById('mapa-dificuldades-flashcards');
+    if (!container) return;
+
+    let lista = [];
+    try {
+        const res = await fetch('/api/flashcards/dificuldades');
+        lista = await res.json();
+    } catch (err) {
+        console.error('Erro ao carregar mapa de dificuldades dos flashcards:', err);
+    }
+
+    if (!Array.isArray(lista) || lista.length === 0) {
+        container.innerHTML = `<div class="lista-vazia">Responda pelo menos algumas revisões de flashcards (Errei/Difícil/Bom/Fácil) pra ver esse mapa aqui.</div>`;
+        return;
+    }
+
+    container.innerHTML = lista.map(b => {
+        const perc = Math.round(b.taxaErro * 100);
+        const subtitulo = b.caminho.length > 0 ? b.caminho.join(' › ') : (b.materia || '');
+        return `
+            <div class="dificuldade-linha">
+                <div class="dificuldade-nomes">
+                    <div class="dificuldade-topico" title="${b.nome}">📘 ${b.nome}</div>
+                    ${subtitulo ? `<div class="dificuldade-materia">${subtitulo}</div>` : ''}
+                    <div class="dificuldade-barra-fundo">
+                        <div class="dificuldade-barra" style="width:${perc}%"></div>
+                    </div>
+                </div>
+                <div class="dificuldade-taxa">${perc}% erro</div>
+            </div>
+        `;
+    }).join('');
 }
 
 // ==================================================================

@@ -1270,6 +1270,35 @@ async function startServer() {
             };
         }
 
+        // Transforma a distância até "dataProximaRevisao" num texto curto,
+        // igual ao que o Anki mostra em cima dos botões de resposta
+        // ("<10min", "2 dias", "4 dias"...).
+        function formatarIntervaloPreview(dataProximaRevisao) {
+            const diffMs = new Date(dataProximaRevisao).getTime() - Date.now();
+            const diffMin = diffMs / 60000;
+            if (diffMin < 60) {
+                const min = Math.max(1, Math.round(diffMin));
+                return min < 10 ? '<10min' : `${min}min`;
+            }
+            const diffHoras = diffMin / 60;
+            if (diffHoras < 24) return `${Math.max(1, Math.round(diffHoras))}h`;
+            const diffDias = Math.max(1, Math.round(diffHoras / 24));
+            return diffDias === 1 ? '1 dia' : `${diffDias} dias`;
+        }
+
+        // Pré-calcula, pra um cartão, o texto de "daqui a quanto tempo ele
+        // volta" pra cada uma das 4 respostas possíveis (Errei/Difícil/Bom/
+        // Fácil) — sem gravar nada, só simulando o cálculo real. Mostrado em
+        // cima dos botões na hora de revisar, igual ao Anki.
+        function calcularPreviewsRevisaoCartao(cartao) {
+            const previews = {};
+            [0, 1, 2, 3].forEach(qualidade => {
+                const resultado = calcularProximaRevisaoCartao(cartao, qualidade);
+                previews[qualidade] = formatarIntervaloPreview(resultado.dataProximaRevisao);
+            });
+            return previews;
+        }
+
         // Lê um arquivo .apkg (zip do Anki) e devolve uma lista de "baralhos"
         // (um por deck-folha do Anki que tenha cartões), cada um já com seu
         // caminho de pastas (ex: ["ENAM","Direito Administrativo"] pro deck
@@ -1637,6 +1666,7 @@ async function startServer() {
             const cartoes = await flashcardsCartoesColl.find({
                 baralhoId: req.params.id, userId: req.userId, dataProximaRevisao: { $lte: new Date() }
             }).sort({ dataProximaRevisao: 1 }).limit(200).toArray();
+            cartoes.forEach(c => { c.previews = calcularPreviewsRevisaoCartao(c); });
             res.json(cartoes);
         });
 
@@ -1648,8 +1678,57 @@ async function startServer() {
             if (!cartao) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
 
             const novoEstado = calcularProximaRevisaoCartao(cartao, qualidade);
-            await flashcardsCartoesColl.updateOne({ _id: cartao._id }, { $set: novoEstado });
+            // Guarda o histórico de respostas do cartão (quantas vezes ela
+            // errou, achou difícil, bom ou fácil) — usado só pro mapa de
+            // dificuldades dos flashcards, não interfere na repetição espaçada.
+            const campoHistorico = ['vezesErrei', 'vezesDificil', 'vezesBom', 'vezesFacil'][qualidade];
+            await flashcardsCartoesColl.updateOne(
+                { _id: cartao._id },
+                { $set: novoEstado, $inc: { [campoHistorico]: 1, vezesRespondido: 1 } }
+            );
             res.json({ success: true, cartao: { ...cartao, ...novoEstado } });
+        });
+
+        // Mapa de dificuldades dos flashcards: ranking dos baralhos com maior
+        // taxa de "Errei"/"Difícil" nas respostas (mínimo de respostas pra
+        // entrar no ranking, senão 1 erro isolado distorceria o número).
+        app.get('/api/flashcards/dificuldades', requireAuth, async (req, res) => {
+            const porBaralho = await flashcardsCartoesColl.aggregate([
+                { $match: { userId: req.userId, vezesRespondido: { $gt: 0 } } },
+                {
+                    $group: {
+                        _id: '$baralhoId',
+                        vezesErrei: { $sum: { $ifNull: ['$vezesErrei', 0] } },
+                        vezesDificil: { $sum: { $ifNull: ['$vezesDificil', 0] } },
+                        vezesRespondido: { $sum: { $ifNull: ['$vezesRespondido', 0] } }
+                    }
+                }
+            ]).toArray();
+
+            const baralhoIds = porBaralho.map(b => { try { return new ObjectId(b._id); } catch { return null; } }).filter(Boolean);
+            const baralhos = await flashcardsBaralhosColl.find({ _id: { $in: baralhoIds }, userId: req.userId }).toArray();
+            const baralhoPorId = {};
+            baralhos.forEach(b => { baralhoPorId[String(b._id)] = b; });
+
+            const lista = porBaralho
+                .map(b => {
+                    const baralho = baralhoPorId[String(b._id)];
+                    if (!baralho) return null;
+                    const taxaErro = (b.vezesErrei + b.vezesDificil * 0.5) / b.vezesRespondido;
+                    return {
+                        baralhoId: String(b._id),
+                        nome: baralho.nome,
+                        caminho: baralho.caminho || [],
+                        materia: baralho.materia || '',
+                        vezesRespondido: b.vezesRespondido,
+                        taxaErro
+                    };
+                })
+                .filter(b => b && b.vezesRespondido >= 3)
+                .sort((a, b) => b.taxaErro - a.taxaErro || b.vezesRespondido - a.vezesRespondido)
+                .slice(0, 8);
+
+            res.json(lista);
         });
 
         httpServer.listen(PORT, () => console.log(`Rodando em http://localhost:${PORT}`));
