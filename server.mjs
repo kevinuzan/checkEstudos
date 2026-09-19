@@ -814,7 +814,14 @@ async function startServer() {
                     },
                     body: JSON.stringify({
                         model: 'claude-haiku-4-5',
-                        max_tokens: 8000,
+                        // Editais grandes (várias matérias, cada uma com muitos
+                        // tópicos) geram uma resposta grande, porque o texto tem
+                        // que ser reproduzido fielmente, sem resumir. Com um
+                        // limite baixo aqui, a resposta da IA era cortada no meio
+                        // do JSON da ferramenta antes de terminar de listar tudo,
+                        // e o servidor então não conseguia interpretar o retorno
+                        // — daí o erro de "não conseguiu identificar matérias".
+                        max_tokens: 32000,
                         system: 'Você extrai o conteúdo programático (matérias e tópicos) de editais de concurso público brasileiro. Ignore capa, regras de inscrição, cronograma, vagas, remuneração, rodapés e numeração de página — foque só na seção de "conteúdo programático" / "objeto de avaliação" / "programa". Cada matéria/disciplina deve virar uma entrada, com os tópicos dela como itens de texto separados, mantendo a redação original o mais fiel possível (sem resumir/reescrever o conteúdo). Não invente nada que não esteja no texto. Se não conseguir identificar o nome do concurso/cargo, deixe nomeEdital em branco.',
                         messages: [
                             { role: 'user', content: `Aqui está o texto extraído de um edital em PDF. Extraia a lista de matérias e tópicos do conteúdo programático:\n\n${texto}` }
@@ -832,6 +839,18 @@ async function startServer() {
 
                 const corpoIA = await respostaIA.json();
                 const blocoFerramenta = (corpoIA.content || []).find(b => b.type === 'tool_use' && b.name === 'retornar_edital');
+
+                // Se a resposta foi cortada por ter estourado o max_tokens (edital
+                // com MUITO conteúdo programático), o JSON da ferramenta vem
+                // incompleto — melhor avisar isso especificamente do que cair no
+                // erro genérico de "não conseguiu identificar", que confunde.
+                if (corpoIA.stop_reason === 'max_tokens') {
+                    return res.status(422).json({
+                        success: false,
+                        error: 'Esse edital tem conteúdo programático extenso demais pra IA processar de uma vez. Tente enviar só a página do Anexo/seção de conteúdo programático em um PDF separado, ou importe manualmente.'
+                    });
+                }
+
                 if (!blocoFerramenta || !blocoFerramenta.input || !Array.isArray(blocoFerramenta.input.materias)) {
                     return res.status(502).json({ success: false, error: 'A IA não conseguiu identificar matérias e tópicos nesse PDF.' });
                 }

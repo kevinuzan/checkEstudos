@@ -604,6 +604,29 @@ h1, h2, h3 { font-family: inherit; }
     flex-shrink: 0;
 }
 
+.arquivo-botao-bonito.arquivo-botao-desabilitado {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.sugestao-pdf-progresso-fundo {
+    margin-top: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.sugestao-pdf-progresso-barra {
+    height: 100%;
+    width: 0%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--primary), var(--primary-dark));
+    transition: width 0.4s ease;
+}
+
 .arquivo-botao-textos {
     display: flex;
     flex-direction: column;

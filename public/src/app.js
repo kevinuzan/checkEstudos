@@ -1006,6 +1006,46 @@ async function salvarNovoTopico() {
 // no banco até a pessoa revisar e confirmar a importação no modal.
 
 let sugestaoEditalAtual = null; // { formato, nomeEdital, materias: [{materia, topicos}] }
+let sugestaoPdfProgressoIntervalo = null;
+
+// Não temos progresso real do servidor (é uma única chamada que só responde
+// no final), então simula um avanço que desacelera perto do topo — sobe
+// rápido no começo e vai ficando mais devagar, sem nunca completar sozinho,
+// só "arrematando" pra 100% quando a resposta chega de verdade.
+function iniciarProgressoSugestaoPdf() {
+    const barra = document.getElementById('sugestao-pdf-progresso-barra');
+    const fundo = document.getElementById('sugestao-pdf-progresso-fundo');
+    if (!barra || !fundo) return;
+
+    let progresso = 0;
+    fundo.style.display = 'block';
+    barra.style.width = '0%';
+
+    if (sugestaoPdfProgressoIntervalo) clearInterval(sugestaoPdfProgressoIntervalo);
+    sugestaoPdfProgressoIntervalo = setInterval(() => {
+        const restante = 92 - progresso;
+        progresso += Math.max(0.3, restante * 0.06);
+        if (progresso > 92) progresso = 92;
+        barra.style.width = `${progresso}%`;
+    }, 400);
+}
+
+function finalizarProgressoSugestaoPdf(sucesso) {
+    if (sugestaoPdfProgressoIntervalo) {
+        clearInterval(sugestaoPdfProgressoIntervalo);
+        sugestaoPdfProgressoIntervalo = null;
+    }
+    const barra = document.getElementById('sugestao-pdf-progresso-barra');
+    const fundo = document.getElementById('sugestao-pdf-progresso-fundo');
+    if (!barra || !fundo) return;
+    if (sucesso) {
+        barra.style.width = '100%';
+        setTimeout(() => { fundo.style.display = 'none'; barra.style.width = '0%'; }, 500);
+    } else {
+        fundo.style.display = 'none';
+        barra.style.width = '0%';
+    }
+}
 
 async function gerarSugestaoEditalPdf(event) {
     const arquivo = event.target.files[0];
@@ -1013,11 +1053,14 @@ async function gerarSugestaoEditalPdf(event) {
 
     const nomeEl = document.getElementById('edital-pdf-nome');
     const statusEl = document.getElementById('sugestao-pdf-status');
+    const botaoLabel = document.querySelector('label[for="edital-pdf-input"]');
     if (nomeEl) nomeEl.textContent = arquivo.name;
     if (statusEl) {
         statusEl.style.display = 'block';
         statusEl.textContent = '🧠 Lendo o PDF e gerando a sugestão... isso pode levar até 1 minuto.';
     }
+    if (botaoLabel) botaoLabel.classList.add('arquivo-botao-desabilitado');
+    iniciarProgressoSugestaoPdf();
 
     try {
         const formData = new FormData();
@@ -1029,6 +1072,8 @@ async function gerarSugestaoEditalPdf(event) {
         event.target.value = '';
         if (nomeEl) nomeEl.textContent = 'Nenhum arquivo selecionado';
         if (statusEl) statusEl.style.display = 'none';
+        if (botaoLabel) botaoLabel.classList.remove('arquivo-botao-desabilitado');
+        finalizarProgressoSugestaoPdf(resultado.success);
 
         if (!resultado.success) {
             alert(resultado.error || 'Não foi possível gerar a sugestão a partir desse PDF.');
@@ -1041,6 +1086,8 @@ async function gerarSugestaoEditalPdf(event) {
         event.target.value = '';
         if (nomeEl) nomeEl.textContent = 'Nenhum arquivo selecionado';
         if (statusEl) statusEl.style.display = 'none';
+        if (botaoLabel) botaoLabel.classList.remove('arquivo-botao-desabilitado');
+        finalizarProgressoSugestaoPdf(false);
         alert('Não foi possível processar esse PDF agora.');
     }
 }
