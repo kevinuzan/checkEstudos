@@ -706,6 +706,18 @@ async function getItemData2() {
                         let acertos = 0;
                         let erros = 0;
 
+                        // "listaPalavras" tem TODAS as competências corretas
+                        // dessa matéria, mas só até 5 cards (entre corretas e
+                        // "iscas") aparecem na tela (a linha abaixo escolhe
+                        // esses 5: listaPalavrasFinal = shuffle2(..., 5)). Uma
+                        // competência correta que nem chegou a ser exibida
+                        // nunca poderia ter sido selecionada — então só conta
+                        // como "faltando" quem realmente apareceu como opção
+                        // nessa rodada, senão cada envio penalizava de graça
+                        // por competências que a pessoa nunca teve chance de
+                        // marcar.
+                        const corretasExibidasNestaRodada = listaPalavrasFinal.filter(p => listaPalavras.includes(p));
+
                         // Verificar cards selecionados para correção
                         selectedCards.forEach(card => {
                             const text = card.innerText.trim();
@@ -725,8 +737,8 @@ async function getItemData2() {
                             }
                         });
 
-                        // Verificar se todas as palavras corretas originais foram selecionadas
-                        for (const correctWord of listaPalavras) {
+                        // Verificar se todas as competências corretas EXIBIDAS foram selecionadas
+                        for (const correctWord of corretasExibidasNestaRodada) {
                             if (!selectedTexts.includes(correctWord)) {
                                 allCorrectWordsPresent = false; // Uma palavra correta foi perdida
                                 erros++;
@@ -744,7 +756,7 @@ async function getItemData2() {
                         // Fornecer feedback com base nas verificações (banner inline)
                         if (selectedCards.length === 0) {
                             mostrarFeedback(container, header, 'Nenhum card selecionado!', 'aviso');
-                        } else if (allCorrectlySelected && allCorrectWordsPresent && selectedTexts.length === listaPalavras.length) {
+                        } else if (allCorrectlySelected && allCorrectWordsPresent && selectedTexts.length === corretasExibidasNestaRodada.length) {
                             mostrarFeedback(container, header, 'Parabéns! Todas as competências corretas foram selecionadas!', 'sucesso');
                         } else {
                             mostrarFeedback(container, header, 'Verifique suas seleções. Há itens incorretos (vermelho) ou corretos faltando (amarelo).', 'erro');
