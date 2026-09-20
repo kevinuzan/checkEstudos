@@ -466,14 +466,14 @@ async function getItemData() {
                     listaPalavrasFinal = listaPalavras2
                 }
 
-                // Evita que "Enviar" some o mesmo resultado no placar mais de
-                // uma vez pro mesmo mnemônico. Antes, qualquer clique num
-                // card (mesmo só re-selecionar a mesma coisa) liberava um
-                // novo registro, e cada "Enviar" soma os acertos/erros de
-                // TODAS as palavras do card, não só o que mudou — dava pra
-                // inflar o placar só clicando nos cards de novo e mandando
-                // de novo. Agora só reseta no "Reiniciar" (uma tentativa nova
-                // de verdade), nunca só por tocar num card.
+                // Esse mnemônico específico só pode somar no placar UMA vez
+                // (a primeira vez que "Enviar" é clicado com algo
+                // selecionado). Nem tocar num card de novo, nem "Reiniciar",
+                // liberam contar de novo — só passar pro próximo/anterior (que
+                // cria um card novo do zero) começa uma tentativa nova. Cada
+                // "Enviar" soma os acertos/erros de TODAS as palavras do
+                // grupo, então sem esse travamento total dava pra inflar o
+                // placar só clicando em Reiniciar + Enviar repetidas vezes.
                 let jaEnviado = false;
 
                 listaPalavrasFinal.forEach(palavra => {
@@ -569,7 +569,12 @@ async function getItemData() {
                         card.style.color = '';
                         card.style.fontWeight = '';
                     });
-                    jaEnviado = false;
+                    // "Reiniciar" só limpa a seleção pra praticar de novo — NÃO
+                    // libera contar no placar outra vez. Esse mnemônico específico
+                    // (esse card na tela) já valeu uma vez; só um novo (próximo/
+                    // anterior) conta de novo. Sem isso, Reiniciar + Enviar de
+                    // novo era exatamente o jeito de inflar o placar que a
+                    // usuária reportou.
                 });
 
                 container.appendChild(header);
@@ -763,7 +768,9 @@ async function getItemData2() {
                             card.style.color = '';
                             card.style.fontWeight = '';
                         });
-                        jaEnviado = false;
+                        // Mesma regra dos mnemônicos: "Reiniciar" só limpa a
+                        // seleção pra tentar de novo, sem liberar contar no
+                        // placar de novo (essa competência já valeu uma vez).
                     });
 
                     container.appendChild(header);
