@@ -466,12 +466,14 @@ async function getItemData() {
                     listaPalavrasFinal = listaPalavras2
                 }
 
-                // Evita que clicar em "Enviar" várias vezes seguidas some o
-                // mesmo resultado no placar repetidamente (cada clique
-                // registrava de novo os mesmos acertos/erros, inflando o
-                // total). Só registra de novo depois que a pessoa mexe na
-                // seleção — clique repetido no mesmo estado só reexibe o
-                // feedback, sem contar de novo.
+                // Evita que "Enviar" some o mesmo resultado no placar mais de
+                // uma vez pro mesmo mnemônico. Antes, qualquer clique num
+                // card (mesmo só re-selecionar a mesma coisa) liberava um
+                // novo registro, e cada "Enviar" soma os acertos/erros de
+                // TODAS as palavras do card, não só o que mudou — dava pra
+                // inflar o placar só clicando nos cards de novo e mandando
+                // de novo. Agora só reseta no "Reiniciar" (uma tentativa nova
+                // de verdade), nunca só por tocar num card.
                 let jaEnviado = false;
 
                 listaPalavrasFinal.forEach(palavra => {
@@ -480,7 +482,6 @@ async function getItemData() {
                     card.textContent = palavra;
                     card.addEventListener('click', () => {
                         card.classList.toggle('active');
-                        jaEnviado = false;
                     });
                     cards.appendChild(card);
                 });
@@ -664,9 +665,8 @@ async function getItemData2() {
                     console.log(listaPalavrasFinal)
                     listaPalavrasFinal = shuffle2([...listaPalavrasFinal], 5);
 
-                    // Mesma proteção contra clique repetido em "Enviar" some
-                    // dos mnemônicos: só registra pontuação de novo depois que
-                    // a seleção muda.
+                    // Mesma proteção usada nos mnemônicos: só reseta no
+                    // "Reiniciar", nunca só por tocar num card de novo.
                     let jaEnviado = false;
 
                     listaPalavrasFinal.forEach(palavra => {
@@ -675,7 +675,6 @@ async function getItemData2() {
                         card.textContent = palavra;
                         card.addEventListener('click', () => {
                             card.classList.toggle('active');
-                            jaEnviado = false;
                         });
                         cards.appendChild(card);
                     });
@@ -906,15 +905,11 @@ async function carregarArtigosComLacunas() {
     const artigoContainer = document.createElement('div');
     app.appendChild(artigoContainer);
 
-    // Evita que clicar em "Corrigir" várias vezes seguidas, sem mudar nada,
-    // some de novo no placar — só volta a valer depois que a pessoa edita
-    // alguma lacuna. Ligado uma vez só aqui (não a cada troca de artigo),
-    // pra não empilhar um listener novo em cima do artigoContainer a cada
-    // navegação.
+    // Evita que "Corrigir" some de novo no placar pro mesmo artigo — clicar
+    // de novo (ou editar uma lacuna e corrigir de novo) só reexibe o
+    // feedback, sem contar outra vez. Só volta a valer quando troca de
+    // artigo (reseta dentro de mostrarArtigo, abaixo).
     let jaCorrigido = false;
-    artigoContainer.addEventListener('input', (ev) => {
-        if (ev.target.classList.contains('lacuna-input')) jaCorrigido = false;
-    });
 
     const response = await fetch('/jogo/constituicao');
     const data = await response.json();
