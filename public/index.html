@@ -403,6 +403,14 @@
                                 <button type="button" id="btn-revisar-baralho-atual" onclick="iniciarRevisao(baralhoAtualId)">▶ Revisar</button>
                             </div>
                         </div>
+                        <div class="edital-selecao-barra">
+                            <button type="button" class="btn-secundario" id="btn-toggle-selecao-cartoes" onclick="alternarModoSelecaoCartoes()">☑️ Selecionar vários</button>
+                            <div class="edital-selecao-acoes" id="cartoes-selecao-acoes" style="display:none;">
+                                <span class="edital-selecao-contador" id="cartoes-selecao-contador">0 selecionado(s)</span>
+                                <button type="button" class="btn-secundario" onclick="abrirModalMoverCartaoEmMassa()">↗️ Mover/copiar selecionados</button>
+                                <button type="button" class="btn-secundario" onclick="cancelarSelecaoCartoes()">Cancelar</button>
+                            </div>
+                        </div>
                         <div class="flashcards-cartoes-lista" id="flashcards-cartoes-lista">
                             <!-- cartões do baralho inseridos via JS -->
                         </div>

@@ -2307,23 +2307,34 @@ async function salvarBaralho() {
     if (!nome) return;
 
     try {
+        let resultado;
         if (baralhoEmEdicaoId) {
-            await fetch(`/api/flashcards/baralhos/${baralhoEmEdicaoId}`, {
+            const res = await fetch(`/api/flashcards/baralhos/${baralhoEmEdicaoId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ nome, caminho })
             });
+            resultado = await res.json();
             const detalheNome = document.getElementById('flashcards-detalhe-nome');
             if (detalheNome && baralhoAtualId === baralhoEmEdicaoId) detalheNome.textContent = nome;
         } else {
-            await fetch('/api/flashcards/baralhos', {
+            const res = await fetch('/api/flashcards/baralhos', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ nome, caminho })
             });
+            resultado = await res.json();
         }
         fecharModalBaralho();
         await carregarFlashcards();
+
+        // Quando o baralho criado/editado fica dentro de outro que já tinha
+        // cartões direto nele, o servidor move esses cartões automaticamente
+        // pra um subbaralho "Geral" — avisa aqui pra não parecer mágica.
+        if (resultado && resultado.migracao) {
+            const m = resultado.migracao;
+            alert(`"${m.nomeAntigo}" tinha ${m.totalCartoes} cartão(ões) direto nele. Pra abrir espaço pro(s) subbaralho(s), eles foram movidos automaticamente pra um novo subbaralho chamado "${m.novoNome}", dentro de "${m.nomeAntigo}". Você pode renomear esse subbaralho quando quiser.`);
+        }
     } catch (err) {
         console.error('Erro ao salvar baralho:', err);
     }
@@ -2401,6 +2412,14 @@ async function abrirBaralho(id) {
     const baralho = baralhosCache.find(b => b._id === id);
     document.getElementById('flashcards-detalhe-nome').textContent = baralho ? baralho.nome : 'Baralho';
 
+    // Troca de baralho encerra qualquer seleção em massa que tenha ficado
+    // pendente (evita "selecionado(s)" fantasma vindo de outro baralho).
+    if (modoSelecaoCartoes || cartoesSelecionados.size > 0) {
+        modoSelecaoCartoes = false;
+        cartoesSelecionados.clear();
+        atualizarBarraSelecaoCartoes();
+    }
+
     mostrarTelaFlashcards('detalhe');
     try {
         const res = await fetch(`/api/flashcards/baralhos/${id}/cards`);
@@ -2425,17 +2444,24 @@ function renderizarCartoesDoBaralho() {
     if (vazio) vazio.style.display = cartoesDoBaralhoCache.length === 0 ? 'block' : 'none';
 
     lista.innerHTML = cartoesDoBaralhoCache.map(c => `
-        <div class="cartao-item">
+        <div class="cartao-item ${modoSelecaoCartoes && cartoesSelecionados.has(c._id) ? 'selecionado' : ''}"
+            ${modoSelecaoCartoes ? `onclick="toggleSelecaoCartao('${c._id}', !cartoesSelecionados.has('${c._id}'))"` : ''}>
+            ${modoSelecaoCartoes ? `
+                <input type="checkbox" class="checkbox-selecao-item" ${cartoesSelecionados.has(c._id) ? 'checked' : ''}
+                    onclick="event.stopPropagation()" onchange="toggleSelecaoCartao('${c._id}', this.checked)">
+            ` : ''}
             <div class="cartao-item-conteudo">
                 ${c.tipo === 'cloze' ? `<span class="cartao-item-tipo-badge">🕳️ Omissão${c.clozeIndice ? ` c${c.clozeIndice}` : ''}</span>` : ''}
                 <div class="cartao-item-frente">${removerTagsHtmlFlashcard(c.frente)}</div>
                 <div class="cartao-item-verso">${removerTagsHtmlFlashcard(c.verso)}</div>
             </div>
-            <div class="cartao-item-acoes">
-                <button type="button" onclick="abrirModalEditarCartao('${c._id}')" title="Editar">✏️</button>
-                <button type="button" onclick="abrirModalMoverCartao('${c._id}')" title="Mover ou copiar pra outro baralho">↗️</button>
-                <button type="button" onclick="excluirCartao('${c._id}')" title="Excluir">🗑️</button>
-            </div>
+            ${modoSelecaoCartoes ? '' : `
+                <div class="cartao-item-acoes">
+                    <button type="button" onclick="abrirModalEditarCartao('${c._id}')" title="Editar">✏️</button>
+                    <button type="button" onclick="abrirModalMoverCartao('${c._id}')" title="Mover ou copiar pra outro baralho">↗️</button>
+                    <button type="button" onclick="excluirCartao('${c._id}')" title="Excluir">🗑️</button>
+                </div>
+            `}
         </div>
     `).join('');
 }
@@ -2743,45 +2769,115 @@ async function excluirCartao(id) {
     }
 }
 
-// --- MODAL: MOVER/COPIAR CARTÃO PRA OUTRO BARALHO ---
+// --- SELEÇÃO EM MASSA DE CARTÕES (mover/copiar vários de uma vez) ---
+
+let modoSelecaoCartoes = false;
+let cartoesSelecionados = new Set();
+
+function alternarModoSelecaoCartoes() {
+    modoSelecaoCartoes = !modoSelecaoCartoes;
+    if (!modoSelecaoCartoes) cartoesSelecionados.clear();
+    atualizarBarraSelecaoCartoes();
+    renderizarCartoesDoBaralho();
+}
+
+function cancelarSelecaoCartoes() {
+    modoSelecaoCartoes = false;
+    cartoesSelecionados.clear();
+    atualizarBarraSelecaoCartoes();
+    renderizarCartoesDoBaralho();
+}
+
+function toggleSelecaoCartao(id, marcado) {
+    if (marcado) cartoesSelecionados.add(id);
+    else cartoesSelecionados.delete(id);
+    atualizarBarraSelecaoCartoes();
+    renderizarCartoesDoBaralho();
+}
+
+function atualizarBarraSelecaoCartoes() {
+    const btnToggle = document.getElementById('btn-toggle-selecao-cartoes');
+    const acoes = document.getElementById('cartoes-selecao-acoes');
+    const contador = document.getElementById('cartoes-selecao-contador');
+    if (!btnToggle || !acoes) return;
+
+    btnToggle.textContent = modoSelecaoCartoes ? '✖ Sair da seleção' : '☑️ Selecionar vários';
+    acoes.style.display = modoSelecaoCartoes ? 'flex' : 'none';
+    if (contador) contador.textContent = `${cartoesSelecionados.size} selecionado(s)`;
+}
+
+// --- MODAL: MOVER/COPIAR CARTÃO(ÕES) PRA OUTRO BARALHO ---
+// O mesmo modal serve pro botão "↗️" de um cartão só e pra ação em massa —
+// "moverEmMassaAtivo" decide se a confirmação usa o(s) cartão(ões)
+// selecionado(s) ou só o cartaoParaMoverId de um clique individual.
 
 let cartaoParaMoverId = null;
+let moverEmMassaAtivo = false;
+
+function preencherSelectDestinoCartao() {
+    const select = document.getElementById('mover-cartao-destino-select');
+    if (!select) return;
+    const opcoes = baralhosCache
+        .map(b => ({ id: b._id, rotulo: [...(b.caminho || []), b.nome].join(' › ') }))
+        .filter(o => o.id !== baralhoAtualId)
+        .sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR'));
+    select.innerHTML = opcoes.map(o => `<option value="${o.id}">${o.rotulo}</option>`).join('');
+}
 
 function abrirModalMoverCartao(id) {
     cartaoParaMoverId = id;
-    const select = document.getElementById('mover-cartao-destino-select');
-    if (select) {
-        const opcoes = baralhosCache
-            .map(b => ({ id: b._id, rotulo: [...(b.caminho || []), b.nome].join(' › ') }))
-            .filter(o => o.id !== baralhoAtualId)
-            .sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR'));
-        select.innerHTML = opcoes.map(o => `<option value="${o.id}">${o.rotulo}</option>`).join('');
-    }
+    moverEmMassaAtivo = false;
+    preencherSelectDestinoCartao();
+    document.getElementById('modal-mover-cartao-overlay').style.display = 'flex';
+}
+
+function abrirModalMoverCartaoEmMassa() {
+    if (cartoesSelecionados.size === 0) return alert('Selecione ao menos um cartão primeiro.');
+    cartaoParaMoverId = null;
+    moverEmMassaAtivo = true;
+    preencherSelectDestinoCartao();
     document.getElementById('modal-mover-cartao-overlay').style.display = 'flex';
 }
 
 function fecharModalMoverCartao() {
     cartaoParaMoverId = null;
+    moverEmMassaAtivo = false;
     document.getElementById('modal-mover-cartao-overlay').style.display = 'none';
 }
 
 async function confirmarMoverCopiarCartao(mover) {
     const destinoId = document.getElementById('mover-cartao-destino-select').value;
-    if (!cartaoParaMoverId || !destinoId) return;
+    if (!destinoId) return;
 
     try {
-        const res = await fetch(`/api/flashcards/cards/${cartaoParaMoverId}/${mover ? 'mover' : 'copiar'}`, {
-            method: mover ? 'PUT' : 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ baralhoId: destinoId })
-        });
+        let res;
+        if (moverEmMassaAtivo) {
+            if (cartoesSelecionados.size === 0) return;
+            res = await fetch(`/api/flashcards/cards/${mover ? 'mover-em-massa' : 'copiar-em-massa'}`, {
+                method: mover ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: Array.from(cartoesSelecionados), baralhoId: destinoId })
+            });
+        } else {
+            if (!cartaoParaMoverId) return;
+            res = await fetch(`/api/flashcards/cards/${cartaoParaMoverId}/${mover ? 'mover' : 'copiar'}`, {
+                method: mover ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ baralhoId: destinoId })
+            });
+        }
         const dados = await res.json();
         if (!dados.success) {
             alert(dados.error || 'Não foi possível concluir a ação.');
             return;
         }
+        const eraEmMassa = moverEmMassaAtivo;
         fecharModalMoverCartao();
+        cancelarSelecaoCartoes();
         await abrirBaralho(baralhoAtualId);
+        if (eraEmMassa && typeof dados.total === 'number') {
+            alert(`${dados.total} cartão(ões) ${mover ? 'movido(s)' : 'copiado(s)'} com sucesso.`);
+        }
     } catch (err) {
         console.error('Erro ao mover/copiar cartão:', err);
     }

@@ -1502,6 +1502,44 @@ async function startServer() {
             }));
         });
 
+        // Quando um baralho novo (ou uma edição que reposiciona um baralho na
+        // árvore) fica ANINHADO dentro de outro baralho que hoje tem cartões
+        // direto nele, esse baralho-pai vira só uma pasta de organização: os
+        // cartões dele migram automaticamente pra um subbaralho "Geral",
+        // criado no mesmo lugar — sem isso, os cartões antigos ficavam
+        // "escondidos" junto com os novos subbaralhos, todos sob o mesmo nó,
+        // o que confunde (o pai continuava parecendo um baralho único).
+        async function migrarCartoesDeBaralhoPaiSeNecessario(caminhoFinal, userId, ignorarId) {
+            if (!Array.isArray(caminhoFinal) || caminhoFinal.length === 0) return null;
+
+            const caminhoPai = caminhoFinal.slice(0, -1);
+            const nomePai = caminhoFinal[caminhoFinal.length - 1];
+
+            const filtroPai = { userId, nome: nomePai, caminho: caminhoPai };
+            if (ignorarId) filtroPai._id = { $ne: new ObjectId(ignorarId) };
+            const pai = await flashcardsBaralhosColl.findOne(filtroPai);
+            if (!pai) return null;
+
+            const totalCartoes = await flashcardsCartoesColl.countDocuments({ baralhoId: String(pai._id), userId });
+            if (totalCartoes === 0) return null;
+
+            // Acha um nome livre pra não colidir com um subbaralho que já
+            // exista nesse mesmo lugar (raro, mas possível).
+            let novoNome = 'Geral';
+            let sufixo = 2;
+            while (await flashcardsBaralhosColl.findOne({ userId, nome: novoNome, caminho: caminhoFinal, _id: { $ne: pai._id } })) {
+                novoNome = `Geral ${sufixo}`;
+                sufixo++;
+            }
+
+            await flashcardsBaralhosColl.updateOne(
+                { _id: pai._id },
+                { $set: { caminho: caminhoFinal, nome: novoNome, materia: novoNome } }
+            );
+
+            return { baralhoId: pai._id, nomeAntigo: nomePai, novoNome, totalCartoes };
+        }
+
         app.post('/api/flashcards/baralhos', requireAuth, async (req, res) => {
             const nome = (req.body.nome || '').trim();
             const caminho = Array.isArray(req.body.caminho) ? req.body.caminho.map(s => String(s).trim()).filter(s => s !== '') : [];
@@ -1510,9 +1548,11 @@ async function startServer() {
             const materia = caminho.length > 0 ? caminho[caminho.length - 1] : (req.body.materia || '').trim();
             if (!nome) return res.status(400).json({ success: false, error: 'Nome do baralho é obrigatório' });
 
+            const migracao = await migrarCartoesDeBaralhoPaiSeNecessario([...caminho, nome], req.userId, null);
+
             const doc = { nome, caminho, materia, origem: 'manual', userId: req.userId, criadoEm: new Date() };
             const resultado = await flashcardsBaralhosColl.insertOne(doc);
-            res.json({ success: true, baralho: { ...doc, _id: resultado.insertedId } });
+            res.json({ success: true, baralho: { ...doc, _id: resultado.insertedId }, migracao });
         });
 
         app.put('/api/flashcards/baralhos/:id', requireAuth, async (req, res) => {
@@ -1521,12 +1561,14 @@ async function startServer() {
             const materia = caminho.length > 0 ? caminho[caminho.length - 1] : (req.body.materia || '').trim();
             if (!nome) return res.status(400).json({ success: false, error: 'Nome do baralho é obrigatório' });
 
+            const migracao = await migrarCartoesDeBaralhoPaiSeNecessario([...caminho, nome], req.userId, req.params.id);
+
             const resultado = await flashcardsBaralhosColl.updateOne(
                 { _id: new ObjectId(req.params.id), userId: req.userId },
                 { $set: { nome, caminho, materia } }
             );
             if (resultado.matchedCount === 0) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
-            res.json({ success: true });
+            res.json({ success: true, migracao });
         });
 
         app.delete('/api/flashcards/baralhos/:id', requireAuth, async (req, res) => {
@@ -1772,6 +1814,62 @@ async function startServer() {
             res.json({ success: true, cartaoId: resultado.insertedId });
         });
 
+        // Move VÁRIOS cartões de uma vez pra outro baralho — mesma regra do
+        // /mover individual (mantém progresso, sai de grupos de omissão),
+        // só que num updateMany só, pra selecionar um monte de cartões e
+        // reorganizar de uma vez.
+        app.put('/api/flashcards/cards/mover-em-massa', requireAuth, async (req, res) => {
+            const baralhoDestinoId = (req.body.baralhoId || '').trim();
+            const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string' && id.trim() !== '') : [];
+            if (!baralhoDestinoId) return res.status(400).json({ success: false, error: 'Escolha o baralho de destino' });
+            if (ids.length === 0) return res.status(400).json({ success: false, error: 'Selecione ao menos um cartão' });
+
+            const destino = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(baralhoDestinoId), userId: req.userId });
+            if (!destino) return res.status(404).json({ success: false, error: 'Baralho de destino não encontrado' });
+
+            const resultado = await flashcardsCartoesColl.updateMany(
+                { _id: { $in: ids.map(id => new ObjectId(id)) }, userId: req.userId },
+                { $set: { baralhoId: baralhoDestinoId }, $unset: { origemClozeId: '' } }
+            );
+            res.json({ success: true, total: resultado.modifiedCount });
+        });
+
+        // Copia VÁRIOS cartões de uma vez pra outro baralho — mesma regra do
+        // /copiar individual (cada cópia nasce como cartão novo).
+        app.post('/api/flashcards/cards/copiar-em-massa', requireAuth, async (req, res) => {
+            const baralhoDestinoId = (req.body.baralhoId || '').trim();
+            const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string' && id.trim() !== '') : [];
+            if (!baralhoDestinoId) return res.status(400).json({ success: false, error: 'Escolha o baralho de destino' });
+            if (ids.length === 0) return res.status(400).json({ success: false, error: 'Selecione ao menos um cartão' });
+
+            const destino = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(baralhoDestinoId), userId: req.userId });
+            if (!destino) return res.status(404).json({ success: false, error: 'Baralho de destino não encontrado' });
+
+            const originais = await flashcardsCartoesColl.find({ _id: { $in: ids.map(id => new ObjectId(id)) }, userId: req.userId }).toArray();
+            if (originais.length === 0) return res.json({ success: true, total: 0 });
+
+            const agora = new Date();
+            const copias = originais.map(original => {
+                const copia = {
+                    ...original,
+                    baralhoId: baralhoDestinoId,
+                    origemClozeId: undefined,
+                    estado: 'novo',
+                    etapaAprendizado: 0,
+                    facilidade: 2.5,
+                    intervalo: 0,
+                    repeticoes: 0,
+                    dataProximaRevisao: agora,
+                    vezesErrei: undefined, vezesDificil: undefined, vezesBom: undefined, vezesFacil: undefined, vezesRespondido: undefined,
+                    criadoEm: agora
+                };
+                delete copia._id;
+                return copia;
+            });
+            const resultado = await flashcardsCartoesColl.insertMany(copias);
+            res.json({ success: true, total: Object.keys(resultado.insertedIds).length });
+        });
+
         // --- EXPORTAR / IMPORTAR BARALHO ---
         // Formato "checkestudos-baralho-v1": um JSON com o baralho e seus
         // cartões (só o conteúdo — frente/verso/cloze — sem progresso de
@@ -1834,6 +1932,8 @@ async function startServer() {
                 const nome = (bloco.nome || '').trim();
                 if (!nome) continue;
                 const caminho = [...prefixo, ...(Array.isArray(bloco.caminho) ? bloco.caminho.map(p => (p || '').trim()).filter(p => p !== '') : [])];
+
+                await migrarCartoesDeBaralhoPaiSeNecessario([...caminho, nome], req.userId, null);
 
                 const agora = new Date();
                 const resultadoBaralho = await flashcardsBaralhosColl.insertOne({

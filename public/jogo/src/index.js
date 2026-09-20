@@ -376,11 +376,12 @@ async function getItemData() {
             // mainTitle.textContent = 'MINEMÔNICOS';
             // titleRow.appendChild(mainTitle);
             // Adiciona os botões de navegação ao final do app
+            // Botões de navegação nas LATERAIS da tela (fixos), em vez de
+            // empilhados no topo — pedido explícito da usuária.
             const navButtonsContainer = document.createElement('div');
-            navButtonsContainer.className = 'd-flex justify-content-center mt-4';
             navButtonsContainer.innerHTML = `
-                <button id="prevButton" class="btn btn-primary me-2"><i class="fas fa-arrow-left"></i></button>
-                <button id="nextButton" class="btn btn-primary"><i class="fas fa-arrow-right"></i></button>
+                <button id="prevButton" class="btn btn-primary nav-lateral nav-lateral-esquerda"><i class="fas fa-arrow-left"></i></button>
+                <button id="nextButton" class="btn btn-primary nav-lateral nav-lateral-direita"><i class="fas fa-arrow-right"></i></button>
             `;
             app.appendChild(navButtonsContainer);
             app.appendChild(titleRow);
@@ -465,12 +466,21 @@ async function getItemData() {
                     listaPalavrasFinal = listaPalavras2
                 }
 
+                // Evita que clicar em "Enviar" várias vezes seguidas some o
+                // mesmo resultado no placar repetidamente (cada clique
+                // registrava de novo os mesmos acertos/erros, inflando o
+                // total). Só registra de novo depois que a pessoa mexe na
+                // seleção — clique repetido no mesmo estado só reexibe o
+                // feedback, sem contar de novo.
+                let jaEnviado = false;
+
                 listaPalavrasFinal.forEach(palavra => {
                     const card = document.createElement('div');
                     card.className = 'card';
                     card.textContent = palavra;
                     card.addEventListener('click', () => {
                         card.classList.toggle('active');
+                        jaEnviado = false;
                     });
                     cards.appendChild(card);
                 });
@@ -540,7 +550,10 @@ async function getItemData() {
                         mostrarFeedback(container, header, 'Verifique suas seleções. Há palavras incorretas (vermelho) ou corretas faltando (amarelo).', 'erro');
                     }
 
-                    if (selectedCards.length > 0) registrarPontuacao('mnemonicos', acertos, erros);
+                    if (selectedCards.length > 0 && !jaEnviado) {
+                        registrarPontuacao('mnemonicos', acertos, erros);
+                        jaEnviado = true;
+                    }
                 });
 
                 const botaoReset = document.createElement('button');
@@ -555,6 +568,7 @@ async function getItemData() {
                         card.style.color = '';
                         card.style.fontWeight = '';
                     });
+                    jaEnviado = false;
                 });
 
                 container.appendChild(header);
@@ -611,10 +625,9 @@ async function getItemData2() {
             `;
 
             const navButtonsContainer = document.createElement('div');
-            navButtonsContainer.className = 'd-flex justify-content-center mt-4';
             navButtonsContainer.innerHTML = `
-                <button id="prevButton2" class="btn btn-primary me-2"><i class="fas fa-arrow-left"></i></button>
-                <button id="nextButton2" class="btn btn-primary"><i class="fas fa-arrow-right"></i></button>
+                <button id="prevButton2" class="btn btn-primary nav-lateral nav-lateral-esquerda"><i class="fas fa-arrow-left"></i></button>
+                <button id="nextButton2" class="btn btn-primary nav-lateral nav-lateral-direita"><i class="fas fa-arrow-right"></i></button>
             `;
             app.appendChild(atualiza);
             app.appendChild(navButtonsContainer);
@@ -651,12 +664,18 @@ async function getItemData2() {
                     console.log(listaPalavrasFinal)
                     listaPalavrasFinal = shuffle2([...listaPalavrasFinal], 5);
 
+                    // Mesma proteção contra clique repetido em "Enviar" some
+                    // dos mnemônicos: só registra pontuação de novo depois que
+                    // a seleção muda.
+                    let jaEnviado = false;
+
                     listaPalavrasFinal.forEach(palavra => {
                         const card = document.createElement('div');
                         card.className = 'card2';
                         card.textContent = palavra;
                         card.addEventListener('click', () => {
                             card.classList.toggle('active');
+                            jaEnviado = false;
                         });
                         cards.appendChild(card);
                     });
@@ -727,7 +746,10 @@ async function getItemData2() {
                             mostrarFeedback(container, header, 'Verifique suas seleções. Há itens incorretos (vermelho) ou corretos faltando (amarelo).', 'erro');
                         }
 
-                        if (selectedCards.length > 0) registrarPontuacao('competencias', acertos, erros);
+                        if (selectedCards.length > 0 && !jaEnviado) {
+                            registrarPontuacao('competencias', acertos, erros);
+                            jaEnviado = true;
+                        }
                     });
 
                     const botaoReset = document.createElement('button');
@@ -742,6 +764,7 @@ async function getItemData2() {
                             card.style.color = '';
                             card.style.fontWeight = '';
                         });
+                        jaEnviado = false;
                     });
 
                     container.appendChild(header);
@@ -868,10 +891,9 @@ async function carregarArtigosComLacunas() {
 
     // Container dos botões topo (setas)
     const navButtonsContainer = document.createElement('div');
-    navButtonsContainer.className = 'd-flex justify-content-center gap-2 mb-3';
     navButtonsContainer.innerHTML = `
-        <button id="prevButton3" class="btn btn-primary"><i class="fas fa-arrow-left"></i></button>
-        <button id="nextButton3" class="btn btn-primary"><i class="fas fa-arrow-right"></i></button>
+        <button id="prevButton3" class="btn btn-primary nav-lateral nav-lateral-esquerda"><i class="fas fa-arrow-left"></i></button>
+        <button id="nextButton3" class="btn btn-primary nav-lateral nav-lateral-direita"><i class="fas fa-arrow-right"></i></button>
     `;
     app.appendChild(navButtonsContainer);
 
@@ -883,6 +905,16 @@ async function carregarArtigosComLacunas() {
     // Container do artigo
     const artigoContainer = document.createElement('div');
     app.appendChild(artigoContainer);
+
+    // Evita que clicar em "Corrigir" várias vezes seguidas, sem mudar nada,
+    // some de novo no placar — só volta a valer depois que a pessoa edita
+    // alguma lacuna. Ligado uma vez só aqui (não a cada troca de artigo),
+    // pra não empilhar um listener novo em cima do artigoContainer a cada
+    // navegação.
+    let jaCorrigido = false;
+    artigoContainer.addEventListener('input', (ev) => {
+        if (ev.target.classList.contains('lacuna-input')) jaCorrigido = false;
+    });
 
     const response = await fetch('/jogo/constituicao');
     const data = await response.json();
@@ -914,6 +946,9 @@ async function carregarArtigosComLacunas() {
             pElem.innerHTML = gerarLacunasComInputs(p, 1);
             artigoContainer.appendChild(pElem);
         });
+
+        // Novo artigo == nova tentativa.
+        jaCorrigido = false;
 
         // Botões corrigir e revelar
         const botoes = document.createElement('div');
@@ -949,7 +984,10 @@ async function carregarArtigosComLacunas() {
                     `${acertos} de ${inputs.length} lacunas corretas.`,
                     acertos === inputs.length ? 'sucesso' : 'erro'
                 );
-                registrarPontuacao('lacunas', acertos, erros);
+                if (!jaCorrigido) {
+                    registrarPontuacao('lacunas', acertos, erros);
+                    jaCorrigido = true;
+                }
             }
         });
 

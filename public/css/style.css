@@ -2993,6 +2993,15 @@ input[type="checkbox"] {
     padding: 10px 12px;
 }
 
+.cartao-item.selecionado {
+    background: var(--primary-light);
+    cursor: pointer;
+}
+
+.cartao-item .checkbox-selecao-item {
+    margin-top: 2px;
+}
+
 .cartao-item-conteudo {
     flex: 1;
     min-width: 0;

@@ -824,3 +824,53 @@ body {
         max-width: none;
     }
 }
+
+/* Botões de "passar pergunta/card" (anterior/próximo) fixos nas laterais da
+   tela, em vez de empilhados no topo — mais fácil de alcançar e não some
+   parte do conteúdo com botões grandes centralizados. */
+.nav-lateral {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1040;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    box-shadow: var(--shadow);
+    opacity: 0.9;
+}
+
+.nav-lateral:hover:not(:disabled) {
+    opacity: 1;
+}
+
+.nav-lateral:disabled {
+    opacity: 0.35;
+}
+
+.nav-lateral-esquerda {
+    left: 10px;
+}
+
+.nav-lateral-direita {
+    right: 10px;
+}
+
+@media (max-width: 768px) {
+    .nav-lateral {
+        width: 40px;
+        height: 40px;
+    }
+
+    .nav-lateral-esquerda {
+        left: 4px;
+    }
+
+    .nav-lateral-direita {
+        right: 4px;
+    }
+}
