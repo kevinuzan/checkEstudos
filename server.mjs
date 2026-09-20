@@ -1689,6 +1689,67 @@ async function startServer() {
             }
         });
 
+        // Move VÁRIOS cartões de uma vez pra outro baralho — mesma regra do
+        // /mover individual (mantém progresso, sai de grupos de omissão),
+        // só que num updateMany só, pra selecionar um monte de cartões e
+        // reorganizar de uma vez.
+        // IMPORTANTE: precisa ficar registrada ANTES de "PUT /cards/:id" —
+        // senão o Express casa "mover-em-massa" como se fosse o :id daquela
+        // rota (que vem antes no arquivo por padrão), tentando um
+        // `new ObjectId('mover-em-massa')` inválido e derrubando a requisição
+        // com 500/502. Isso foi exatamente o bug que aconteceu.
+        app.put('/api/flashcards/cards/mover-em-massa', requireAuth, async (req, res) => {
+            const baralhoDestinoId = (req.body.baralhoId || '').trim();
+            const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string' && id.trim() !== '') : [];
+            if (!baralhoDestinoId) return res.status(400).json({ success: false, error: 'Escolha o baralho de destino' });
+            if (ids.length === 0) return res.status(400).json({ success: false, error: 'Selecione ao menos um cartão' });
+
+            const destino = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(baralhoDestinoId), userId: req.userId });
+            if (!destino) return res.status(404).json({ success: false, error: 'Baralho de destino não encontrado' });
+
+            const resultado = await flashcardsCartoesColl.updateMany(
+                { _id: { $in: ids.map(id => new ObjectId(id)) }, userId: req.userId },
+                { $set: { baralhoId: baralhoDestinoId }, $unset: { origemClozeId: '' } }
+            );
+            res.json({ success: true, total: resultado.modifiedCount });
+        });
+
+        // Copia VÁRIOS cartões de uma vez pra outro baralho — mesma regra do
+        // /copiar individual (cada cópia nasce como cartão novo).
+        app.post('/api/flashcards/cards/copiar-em-massa', requireAuth, async (req, res) => {
+            const baralhoDestinoId = (req.body.baralhoId || '').trim();
+            const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string' && id.trim() !== '') : [];
+            if (!baralhoDestinoId) return res.status(400).json({ success: false, error: 'Escolha o baralho de destino' });
+            if (ids.length === 0) return res.status(400).json({ success: false, error: 'Selecione ao menos um cartão' });
+
+            const destino = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(baralhoDestinoId), userId: req.userId });
+            if (!destino) return res.status(404).json({ success: false, error: 'Baralho de destino não encontrado' });
+
+            const originais = await flashcardsCartoesColl.find({ _id: { $in: ids.map(id => new ObjectId(id)) }, userId: req.userId }).toArray();
+            if (originais.length === 0) return res.json({ success: true, total: 0 });
+
+            const agora = new Date();
+            const copias = originais.map(original => {
+                const copia = {
+                    ...original,
+                    baralhoId: baralhoDestinoId,
+                    origemClozeId: undefined,
+                    estado: 'novo',
+                    etapaAprendizado: 0,
+                    facilidade: 2.5,
+                    intervalo: 0,
+                    repeticoes: 0,
+                    dataProximaRevisao: agora,
+                    vezesErrei: undefined, vezesDificil: undefined, vezesBom: undefined, vezesFacil: undefined, vezesRespondido: undefined,
+                    criadoEm: agora
+                };
+                delete copia._id;
+                return copia;
+            });
+            const resultado = await flashcardsCartoesColl.insertMany(copias);
+            res.json({ success: true, total: Object.keys(resultado.insertedIds).length });
+        });
+
         // Edita um cartão. Pra "cloze", sincroniza com os cartões-irmãos (mesma
         // origemClozeId): atualiza os que continuam existindo no texto, cria os
         // que forem números novos e remove os que sumiram do texto.
@@ -1812,62 +1873,6 @@ async function startServer() {
             delete copia._id;
             const resultado = await flashcardsCartoesColl.insertOne(copia);
             res.json({ success: true, cartaoId: resultado.insertedId });
-        });
-
-        // Move VÁRIOS cartões de uma vez pra outro baralho — mesma regra do
-        // /mover individual (mantém progresso, sai de grupos de omissão),
-        // só que num updateMany só, pra selecionar um monte de cartões e
-        // reorganizar de uma vez.
-        app.put('/api/flashcards/cards/mover-em-massa', requireAuth, async (req, res) => {
-            const baralhoDestinoId = (req.body.baralhoId || '').trim();
-            const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string' && id.trim() !== '') : [];
-            if (!baralhoDestinoId) return res.status(400).json({ success: false, error: 'Escolha o baralho de destino' });
-            if (ids.length === 0) return res.status(400).json({ success: false, error: 'Selecione ao menos um cartão' });
-
-            const destino = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(baralhoDestinoId), userId: req.userId });
-            if (!destino) return res.status(404).json({ success: false, error: 'Baralho de destino não encontrado' });
-
-            const resultado = await flashcardsCartoesColl.updateMany(
-                { _id: { $in: ids.map(id => new ObjectId(id)) }, userId: req.userId },
-                { $set: { baralhoId: baralhoDestinoId }, $unset: { origemClozeId: '' } }
-            );
-            res.json({ success: true, total: resultado.modifiedCount });
-        });
-
-        // Copia VÁRIOS cartões de uma vez pra outro baralho — mesma regra do
-        // /copiar individual (cada cópia nasce como cartão novo).
-        app.post('/api/flashcards/cards/copiar-em-massa', requireAuth, async (req, res) => {
-            const baralhoDestinoId = (req.body.baralhoId || '').trim();
-            const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(id => typeof id === 'string' && id.trim() !== '') : [];
-            if (!baralhoDestinoId) return res.status(400).json({ success: false, error: 'Escolha o baralho de destino' });
-            if (ids.length === 0) return res.status(400).json({ success: false, error: 'Selecione ao menos um cartão' });
-
-            const destino = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(baralhoDestinoId), userId: req.userId });
-            if (!destino) return res.status(404).json({ success: false, error: 'Baralho de destino não encontrado' });
-
-            const originais = await flashcardsCartoesColl.find({ _id: { $in: ids.map(id => new ObjectId(id)) }, userId: req.userId }).toArray();
-            if (originais.length === 0) return res.json({ success: true, total: 0 });
-
-            const agora = new Date();
-            const copias = originais.map(original => {
-                const copia = {
-                    ...original,
-                    baralhoId: baralhoDestinoId,
-                    origemClozeId: undefined,
-                    estado: 'novo',
-                    etapaAprendizado: 0,
-                    facilidade: 2.5,
-                    intervalo: 0,
-                    repeticoes: 0,
-                    dataProximaRevisao: agora,
-                    vezesErrei: undefined, vezesDificil: undefined, vezesBom: undefined, vezesFacil: undefined, vezesRespondido: undefined,
-                    criadoEm: agora
-                };
-                delete copia._id;
-                return copia;
-            });
-            const resultado = await flashcardsCartoesColl.insertMany(copias);
-            res.json({ success: true, total: Object.keys(resultado.insertedIds).length });
         });
 
         // --- EXPORTAR / IMPORTAR BARALHO ---

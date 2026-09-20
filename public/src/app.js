@@ -2135,12 +2135,22 @@ function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
         const temPendente = cont.revisar > 0 || cont.novos > 0 || cont.aprender > 0;
         const b = filho.baralho; // preenchido quando esse nó também é um baralho com cartões próprios
 
+        // Um baralho SEM nenhum cartão que só está servindo de pasta (tem
+        // subbaralhos dentro) é tratado visualmente como uma pasta pura —
+        // sem o ícone de baralho, badge do Anki, nome clicável ou lixeira —
+        // exatamente como "Direito Administrativo" etc. no ENAM, que nunca
+        // chegaram a virar um documento próprio. Isso evita que criar
+        // subbaralhos por "+" (que agora sempre cria um documento vazio nesse
+        // nível) deixe a árvore cheia de "baralhos" que na prática são só
+        // organização, sem cartão nenhum.
+        const ehBaralhoDeVerdade = b && (!temFilhos || (b.totalCartoes || 0) > 0);
+
         html += `
             <div class="baralho-arvore-pasta">
-                <div class="baralho-arvore-pasta-header" style="--profundidade:${profundidade}" onclick="${temFilhos ? `toggleFlashcardsPasta('${chaveEscapada}')` : (b ? `abrirBaralho('${b._id}')` : '')}">
+                <div class="baralho-arvore-pasta-header" style="--profundidade:${profundidade}" onclick="${temFilhos ? `toggleFlashcardsPasta('${chaveEscapada}')` : (ehBaralhoDeVerdade ? `abrirBaralho('${b._id}')` : '')}">
                     <span class="seta-subtopicos">${temFilhos ? (expandido ? '▾' : '▸') : ''}</span>
-                    <span class="baralho-arvore-pasta-nome" ${b && temFilhos ? `onclick="event.stopPropagation(); abrirBaralho('${b._id}')" title="Ver cartões"` : ''}>
-                        ${b ? '📘 ' : ''}${filho.nome}${b && b.origem === 'anki' ? ' <span class="baralho-card-origem-anki">Anki</span>' : ''}
+                    <span class="baralho-arvore-pasta-nome" ${ehBaralhoDeVerdade && temFilhos ? `onclick="event.stopPropagation(); abrirBaralho('${b._id}')" title="Ver cartões"` : ''}>
+                        ${ehBaralhoDeVerdade ? '📘 ' : ''}${filho.nome}${ehBaralhoDeVerdade && b.origem === 'anki' ? ' <span class="baralho-card-origem-anki">Anki</span>' : ''}
                     </span>
                     ${renderizarContagensArvore(cont)}
                     <span class="baralho-arvore-acoes">
@@ -2148,7 +2158,7 @@ function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
                             ? `<button type="button" class="baralho-arvore-revisar-pasta" onclick="event.stopPropagation(); revisarPasta('${chaveEscapada}')" title="Revisar tudo em &quot;${nomeEscapado}&quot;">▶</button>`
                             : ''}
                         <button type="button" class="baralho-arvore-add-sub" onclick="event.stopPropagation(); abrirModalNovoBaralho('${chaveEscapada}')" title="Novo baralho dentro de &quot;${nomeEscapado}&quot;">+</button>
-                        ${b ? `<button type="button" class="baralho-arvore-excluir" onclick="event.stopPropagation(); excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>` : ''}
+                        ${ehBaralhoDeVerdade ? `<button type="button" class="baralho-arvore-excluir" onclick="event.stopPropagation(); excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>` : ''}
                     </span>
                 </div>
                 ${expandido ? renderizarNodoArvoreBaralhos(filho, caminhoFilho, profundidade + 1) : ''}
