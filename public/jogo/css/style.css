@@ -852,6 +852,20 @@ body {
     opacity: 0.35;
 }
 
+/* A ".btn" normal usa transform: translateY(-1px)/(0) no hover/active pra dar
+   aquele "levantar" de feedback — só que "transform" não acumula entre
+   regras, ele SUBSTITUI. Sem isso aqui, o hover/active da .btn apagava o
+   "translateY(-50%)" que centraliza o botão verticalmente, e o botão pulava
+   pra baixo bem na hora que o mouse chegava perto (por isso parecia "fugir"
+   do cursor). Repetindo o -50% junto com o efeito de hover/active resolve. */
+.nav-lateral:hover:not(:disabled) {
+    transform: translateY(-50%) translateY(-1px);
+}
+
+.nav-lateral:active:not(:disabled) {
+    transform: translateY(-50%) translateY(0);
+}
+
 .nav-lateral-esquerda {
     left: 10px;
 }
