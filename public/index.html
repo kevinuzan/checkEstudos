@@ -827,60 +827,66 @@
             </div>
 
             <div id="cartao-campos-basico">
-                <label class="modal-label">Frente</label>
-                <div class="editor-toolbar">
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('underline')" title="Sublinhado"><u>S</u></button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('superscript')" title="Sobrescrito">x²</button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('subscript')" title="Subscrito">x₂</button>
-                    <input type="color" class="editor-toolbar-cor" title="Cor do texto" onchange="aplicarFormatoTexto('foreColor', this.value)">
-                    <input type="color" class="editor-toolbar-cor" title="Realce" value="#fff59d" onchange="aplicarFormatoTexto('hiliteColor', this.value)">
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('removeFormat')" title="Limpar formatação">⌫</button>
+                <div class="editor-grupo">
+                    <label class="modal-label">Frente</label>
+                    <div class="editor-toolbar">
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('underline')" title="Sublinhado"><u>S</u></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('superscript')" title="Sobrescrito">x²</button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('subscript')" title="Subscrito">x₂</button>
+                        <input type="color" class="editor-toolbar-cor" title="Cor do texto" onchange="aplicarFormatoTexto('foreColor', this.value)">
+                        <input type="color" class="editor-toolbar-cor" title="Realce" value="#fff59d" onchange="aplicarFormatoTexto('hiliteColor', this.value)">
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('removeFormat')" title="Limpar formatação">⌫</button>
+                    </div>
+                    <div id="cartao-frente-input" class="editor-campo" contenteditable="true" data-placeholder="Pergunta ou termo"
+                        onmouseup="salvarSelecaoEditor(event)" onkeyup="salvarSelecaoEditor(event)" onfocus="salvarSelecaoEditor(event)"></div>
                 </div>
-                <div id="cartao-frente-input" class="editor-campo" contenteditable="true" data-placeholder="Pergunta ou termo"
-                    onmouseup="salvarSelecaoEditor(event)" onkeyup="salvarSelecaoEditor(event)" onfocus="salvarSelecaoEditor(event)"></div>
 
-                <label class="modal-label">Verso</label>
-                <div class="editor-toolbar">
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('underline')" title="Sublinhado"><u>S</u></button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('superscript')" title="Sobrescrito">x²</button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('subscript')" title="Subscrito">x₂</button>
-                    <input type="color" class="editor-toolbar-cor" title="Cor do texto" onchange="aplicarFormatoTexto('foreColor', this.value)">
-                    <input type="color" class="editor-toolbar-cor" title="Realce" value="#fff59d" onchange="aplicarFormatoTexto('hiliteColor', this.value)">
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('removeFormat')" title="Limpar formatação">⌫</button>
+                <div class="editor-grupo">
+                    <label class="modal-label">Verso</label>
+                    <div class="editor-toolbar">
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('underline')" title="Sublinhado"><u>S</u></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('superscript')" title="Sobrescrito">x²</button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('subscript')" title="Subscrito">x₂</button>
+                        <input type="color" class="editor-toolbar-cor" title="Cor do texto" onchange="aplicarFormatoTexto('foreColor', this.value)">
+                        <input type="color" class="editor-toolbar-cor" title="Realce" value="#fff59d" onchange="aplicarFormatoTexto('hiliteColor', this.value)">
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('removeFormat')" title="Limpar formatação">⌫</button>
+                    </div>
+                    <div id="cartao-verso-input" class="editor-campo" contenteditable="true" data-placeholder="Resposta ou explicação"
+                        onmouseup="salvarSelecaoEditor(event)" onkeyup="salvarSelecaoEditor(event)" onfocus="salvarSelecaoEditor(event)"></div>
                 </div>
-                <div id="cartao-verso-input" class="editor-campo" contenteditable="true" data-placeholder="Resposta ou explicação"
-                    onmouseup="salvarSelecaoEditor(event)" onkeyup="salvarSelecaoEditor(event)" onfocus="salvarSelecaoEditor(event)"></div>
             </div>
 
             <div id="cartao-campos-cloze" style="display:none;">
-                <label class="modal-label">Texto</label>
-                <p class="config-texto-ajuda">Escreva o texto, <strong>selecione</strong> um trecho e clique em "🕳️ Omitir" pra escondê-lo no <strong>cartão ativo</strong> (indicado abaixo). Selecione outro trecho e clique em "🕳️ Omitir" de novo pra esconder junto, no MESMO cartão. Só use "🕳️+ Novo cartão" quando quiser que o próximo trecho vire um cartão separado. Clique num trecho já omitido pra desfazer.</p>
-                <div class="cloze-numero-ativo-row">
-                    <span class="cloze-numero-ativo-label">Cartão ativo:</span>
-                    <button type="button" class="cloze-numero-ativo-passo" onmousedown="event.preventDefault()" onclick="definirClozeNumeroAtivo(-1)">−</button>
-                    <span class="cloze-numero-ativo-valor" id="cloze-numero-ativo-valor">1</span>
-                    <button type="button" class="cloze-numero-ativo-passo" onmousedown="event.preventDefault()" onclick="definirClozeNumeroAtivo(1)">+</button>
-                    <span class="cloze-numero-ativo-dica">(pra continuar omitindo num cartão anterior, mude o número aqui antes de selecionar o texto)</span>
+                <div class="editor-grupo">
+                    <label class="modal-label">Texto</label>
+                    <p class="config-texto-ajuda">Escreva o texto, <strong>selecione</strong> um trecho e clique em "🕳️ Omitir" pra escondê-lo no <strong>cartão ativo</strong> (indicado abaixo). Selecione outro trecho e clique em "🕳️ Omitir" de novo pra esconder junto, no MESMO cartão. Só use "🕳️+ Novo cartão" quando quiser que o próximo trecho vire um cartão separado. Clique num trecho já omitido pra desfazer.</p>
+                    <div class="cloze-numero-ativo-row">
+                        <span class="cloze-numero-ativo-label">Cartão ativo:</span>
+                        <button type="button" class="cloze-numero-ativo-passo" onmousedown="event.preventDefault()" onclick="definirClozeNumeroAtivo(-1)">−</button>
+                        <span class="cloze-numero-ativo-valor" id="cloze-numero-ativo-valor">1</span>
+                        <button type="button" class="cloze-numero-ativo-passo" onmousedown="event.preventDefault()" onclick="definirClozeNumeroAtivo(1)">+</button>
+                        <span class="cloze-numero-ativo-dica">(pra continuar omitindo num cartão anterior, mude o número aqui antes de selecionar o texto)</span>
+                    </div>
+                    <div class="editor-toolbar">
+                        <button type="button" class="editor-toolbar-omitir" onmousedown="event.preventDefault()" onclick="omitirSelecao()" title="Esconder o trecho selecionado no cartão ativo">🕳️ Omitir</button>
+                        <button type="button" class="editor-toolbar-omitir-novo" onmousedown="event.preventDefault()" onclick="omitirSelecaoNovoCartao()" title="Esconder o trecho selecionado criando um cartão NOVO">🕳️+ Novo cartão</button>
+                        <span class="editor-toolbar-separador"></span>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('underline')" title="Sublinhado"><u>S</u></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('superscript')" title="Sobrescrito">x²</button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('subscript')" title="Subscrito">x₂</button>
+                        <input type="color" class="editor-toolbar-cor" title="Cor do texto" onchange="aplicarFormatoTexto('foreColor', this.value)">
+                        <input type="color" class="editor-toolbar-cor" title="Realce" value="#fff59d" onchange="aplicarFormatoTexto('hiliteColor', this.value)">
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('removeFormat')" title="Limpar formatação">⌫</button>
+                    </div>
+                    <div id="cartao-cloze-input" class="editor-campo" contenteditable="true" data-placeholder="Ex: O prazo para recurso é de 15 dias úteis."
+                        onmouseup="salvarSelecaoEditor(event)" onkeyup="salvarSelecaoEditor(event)" onfocus="salvarSelecaoEditor(event)"></div>
                 </div>
-                <div class="editor-toolbar">
-                    <button type="button" class="editor-toolbar-omitir" onmousedown="event.preventDefault()" onclick="omitirSelecao()" title="Esconder o trecho selecionado no cartão ativo">🕳️ Omitir</button>
-                    <button type="button" class="editor-toolbar-omitir-novo" onmousedown="event.preventDefault()" onclick="omitirSelecaoNovoCartao()" title="Esconder o trecho selecionado criando um cartão NOVO">🕳️+ Novo cartão</button>
-                    <span class="editor-toolbar-separador"></span>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('underline')" title="Sublinhado"><u>S</u></button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('superscript')" title="Sobrescrito">x²</button>
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('subscript')" title="Subscrito">x₂</button>
-                    <input type="color" class="editor-toolbar-cor" title="Cor do texto" onchange="aplicarFormatoTexto('foreColor', this.value)">
-                    <input type="color" class="editor-toolbar-cor" title="Realce" value="#fff59d" onchange="aplicarFormatoTexto('hiliteColor', this.value)">
-                    <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('removeFormat')" title="Limpar formatação">⌫</button>
-                </div>
-                <div id="cartao-cloze-input" class="editor-campo" contenteditable="true" data-placeholder="Ex: O prazo para recurso é de 15 dias úteis."
-                    onmouseup="salvarSelecaoEditor(event)" onkeyup="salvarSelecaoEditor(event)" onfocus="salvarSelecaoEditor(event)"></div>
 
                 <label class="modal-label">Verso Extra (opcional)</label>
                 <div id="cartao-cloze-extra-input" class="editor-campo editor-campo-pequeno" contenteditable="true" data-placeholder="Alguma explicação extra que só aparece na resposta"

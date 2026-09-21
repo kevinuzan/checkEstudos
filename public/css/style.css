@@ -3290,18 +3290,36 @@ input[type="checkbox"] {
     color: var(--text-faint);
 }
 
-/* No celular, o menu nativo de "Recortar/Copiar/Colar" que aparece ao
-   selecionar um trecho de texto costuma abrir bem em cima da seleção — e
-   como a barra de ferramentas (Omitir, N, I...) fica colada direto no topo
-   do campo de texto, esse menu nativo acaba tampando os botões justo na
-   hora que você mais precisa deles (logo depois de selecionar um trecho
-   pra omitir ou formatar). Dando mais respiro no topo do campo, o texto
-   selecionado fica mais afastado da barra, sobrando espaço pro menu nativo
-   aparecer sem cobrir os botões. Só no celular — no computador não tem
-   esse menu de seleção tampando nada, então não precisa desse espaço extra. */
+/* Agrupa label + barra de ferramentas + campo de texto de cada campo
+   (Frente, Verso, Texto do cloze) num único container flex — isso permite
+   reordenar visualmente só esses 3 elementos no celular (ver media query
+   abaixo), sem afetar a ordem de nada mais na tela. */
+.editor-grupo {
+    display: flex;
+    flex-direction: column;
+}
+
 @media (max-width: 600px) {
-    .editor-campo {
-        padding-top: 34px;
+    /* No celular, o menu nativo de "Recortar/Copiar/Colar" que aparece ao
+       selecionar um trecho de texto abre bem em cima da seleção — e como a
+       barra de ferramentas (Omitir, N, I...) ficava colada no topo do campo
+       de texto, esse menu nativo tampava os botões bem na hora que mais
+       precisa deles. Solução: no celular, a barra de ferramentas passa pra
+       BAIXO do campo de texto (a seleção fica longe dos botões, sem risco
+       de o menu nativo cobrir eles). No computador não existe esse menu de
+       seleção tampando nada, então a barra continua em cima, como sempre. */
+    .editor-grupo .editor-campo {
+        order: 1;
+        border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+        margin-bottom: 0;
+    }
+
+    .editor-grupo .editor-toolbar {
+        order: 2;
+        border-top: none;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+        margin-bottom: 14px;
     }
 }
 
