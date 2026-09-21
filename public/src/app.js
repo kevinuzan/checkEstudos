@@ -2875,15 +2875,37 @@ function toggleSelecaoCartao(id, marcado) {
     renderizarCartoesDoBaralho();
 }
 
+// Alterna entre selecionar todos os cartões do baralho aberto e limpar a
+// seleção — se já estiverem todos selecionados, o clique desmarca todos.
+function alternarSelecaoTodosCartoes() {
+    const todosJaSelecionados = cartoesDoBaralhoCache.length > 0
+        && cartoesDoBaralhoCache.every(c => cartoesSelecionados.has(c._id));
+
+    if (todosJaSelecionados) {
+        cartoesSelecionados.clear();
+    } else {
+        cartoesDoBaralhoCache.forEach(c => cartoesSelecionados.add(c._id));
+    }
+    atualizarBarraSelecaoCartoes();
+    renderizarCartoesDoBaralho();
+}
+
 function atualizarBarraSelecaoCartoes() {
     const btnToggle = document.getElementById('btn-toggle-selecao-cartoes');
     const acoes = document.getElementById('cartoes-selecao-acoes');
     const contador = document.getElementById('cartoes-selecao-contador');
+    const btnTodos = document.getElementById('btn-selecionar-todos-cartoes');
     if (!btnToggle || !acoes) return;
 
     btnToggle.textContent = modoSelecaoCartoes ? '✖ Sair da seleção' : '☑️ Selecionar vários';
     acoes.style.display = modoSelecaoCartoes ? 'flex' : 'none';
     if (contador) contador.textContent = `${cartoesSelecionados.size} selecionado(s)`;
+
+    if (btnTodos) {
+        const todosJaSelecionados = cartoesDoBaralhoCache.length > 0
+            && cartoesDoBaralhoCache.every(c => cartoesSelecionados.has(c._id));
+        btnTodos.textContent = todosJaSelecionados ? '☐ Desmarcar todos' : '☑️ Selecionar todos';
+    }
 }
 
 // --- MODAL: MOVER/COPIAR CARTÃO(ÕES) PRA OUTRO BARALHO ---
