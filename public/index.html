@@ -19,6 +19,8 @@
                 if (tema) document.documentElement.setAttribute('data-tema', tema);
                 var fundo = localStorage.getItem('checkestudos_fundo');
                 if (fundo === 'neutro') document.documentElement.setAttribute('data-fundo', 'neutro');
+                var fonteEscala = localStorage.getItem('checkestudos_fonte_escala');
+                if (fonteEscala) document.documentElement.style.setProperty('--fonte-escala', fonteEscala);
             } catch (e) { /* localStorage indisponível — segue com os padrões */ }
         })();
     </script>
@@ -598,6 +600,16 @@
                             <div class="fundo-opcoes" id="fundo-opcoes">
                                 <!-- opções de fundo inseridas via JS -->
                             </div>
+                        </div>
+                        <div class="config-linha">
+                            <div class="tema-label">Tamanho do texto</div>
+                            <div class="fonte-escala-controle">
+                                <button type="button" class="fonte-escala-passo" onclick="ajustarFonteEscala(-0.1)" title="Diminuir o texto">A−</button>
+                                <span class="fonte-escala-valor" id="fonte-escala-valor">100%</span>
+                                <button type="button" class="fonte-escala-passo" onclick="ajustarFonteEscala(0.1)" title="Aumentar o texto">A+</button>
+                                <button type="button" class="fonte-escala-resetar" onclick="redefinirFonteEscala()" title="Voltar ao tamanho padrão">Redefinir</button>
+                            </div>
+                            <p class="config-texto-ajuda">Vale pro app inteiro (todas as abas), e fica salvo nesse aparelho.</p>
                         </div>
                     </div>
                 </section>

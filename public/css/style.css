@@ -142,6 +142,16 @@ html:not([data-fundo="neutro"]) {
 
 * { box-sizing: border-box; }
 
+/* Tamanho do texto do app inteiro (controle em Configurações > Aparência).
+   "zoom" amplia a renderização da página toda de um jeito proporcional —
+   texto, espaçamentos, ícones, tudo junto — sem precisar reescrever cada
+   font-size em px do site pra rem. Fica no <html> (não no <body>) pra
+   elementos "position: fixed" (modais, cronômetro flutuante etc.)
+   escalarem certinho, sem ficarem desalinhados do resto da página. */
+html {
+    zoom: var(--fonte-escala, 1);
+}
+
 body {
     font-family: 'Inter', 'Segoe UI', sans-serif;
     background: var(--bg);
@@ -479,6 +489,55 @@ h1, h2, h3 { font-family: inherit; }
     background: var(--primary);
     border-color: var(--primary);
     color: #fff;
+}
+
+.fonte-escala-controle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fonte-escala-passo {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-weight: 800;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 0;
+}
+
+.fonte-escala-passo:hover {
+    border-color: var(--primary);
+    color: var(--primary-dark);
+}
+
+.fonte-escala-valor {
+    min-width: 42px;
+    text-align: center;
+    font-weight: 700;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.fonte-escala-resetar {
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text-muted);
+    cursor: pointer;
+    margin-left: 4px;
+}
+
+.fonte-escala-resetar:hover {
+    background: var(--surface-muted);
+    color: var(--text);
 }
 
 /* ============================================================ */
@@ -3299,15 +3358,18 @@ input[type="checkbox"] {
     flex-direction: column;
 }
 
-@media (max-width: 600px) {
-    /* No celular, o menu nativo de "Recortar/Copiar/Colar" que aparece ao
-       selecionar um trecho de texto abre bem em cima da seleção — e como a
-       barra de ferramentas (Omitir, N, I...) ficava colada no topo do campo
-       de texto, esse menu nativo tampava os botões bem na hora que mais
-       precisa deles. Solução: no celular, a barra de ferramentas passa pra
-       BAIXO do campo de texto (a seleção fica longe dos botões, sem risco
-       de o menu nativo cobrir eles). No computador não existe esse menu de
-       seleção tampando nada, então a barra continua em cima, como sempre. */
+@media (pointer: coarse) {
+    /* Em qualquer aparelho de TOQUE (celular OU tablet — "pointer: coarse"
+       detecta isso pelo tipo de entrada, não pelo tamanho da tela, então um
+       tablet grande também entra aqui), o menu nativo de "Recortar/Copiar/
+       Colar" que aparece ao selecionar um trecho de texto abre bem em cima
+       da seleção — e como a barra de ferramentas (Omitir, N, I...) ficava
+       colada no topo do campo de texto, esse menu nativo tampava os botões
+       bem na hora que mais precisa deles. Solução: nesses aparelhos, a barra
+       de ferramentas passa pra BAIXO do campo de texto (a seleção fica longe
+       dos botões, sem risco de o menu nativo cobrir eles). No computador com
+       mouse ("pointer: fine") não existe esse menu de seleção tampando
+       nada, então a barra continua em cima, como sempre. */
     .editor-grupo .editor-campo {
         order: 1;
         border-radius: var(--radius-sm) var(--radius-sm) 0 0;

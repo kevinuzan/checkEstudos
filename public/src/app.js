@@ -61,6 +61,7 @@ let flashcardsFiltroMateria = localStorage.getItem('flashcards_filtro_materia') 
 async function iniciar() {
     renderizarSeletorTema();
     renderizarSeletorFundo();
+    atualizarRotuloFonteEscala();
     configurarSeletorCorMateria();
     await carregarPlanos();
     await carregarEdital();
@@ -371,6 +372,46 @@ function renderizarSeletorFundo() {
         <button type="button" class="fundo-opcao ${fundoAtual === f.id ? 'ativo' : ''}"
             onclick="aplicarFundo('${f.id}')">${f.nome}</button>
     `).join('');
+}
+
+// --- TAMANHO DO TEXTO (controle único, vale pro app inteiro) ---
+// Usa a propriedade CSS "zoom" no <html> (ver style.css), que amplia a
+// página toda de forma proporcional — texto, espaçamentos, ícones — sem
+// precisar mexer em cada font-size do site. Guardado no localStorage,
+// aplicado também no <script> do <head> (antes da página desenhar) pra não
+// "piscar" no tamanho padrão a cada carregamento.
+const FONTE_ESCALA_KEY = 'checkestudos_fonte_escala';
+const FONTE_ESCALA_MIN = 0.8;
+const FONTE_ESCALA_MAX = 1.5;
+const FONTE_ESCALA_PADRAO = 1;
+
+function obterFonteEscalaSalva() {
+    try {
+        const salvo = parseFloat(localStorage.getItem(FONTE_ESCALA_KEY));
+        return Number.isFinite(salvo) ? salvo : FONTE_ESCALA_PADRAO;
+    } catch (err) {
+        return FONTE_ESCALA_PADRAO;
+    }
+}
+
+function aplicarFonteEscala(escala) {
+    const valor = Math.round(Math.min(FONTE_ESCALA_MAX, Math.max(FONTE_ESCALA_MIN, escala)) * 100) / 100;
+    document.documentElement.style.setProperty('--fonte-escala', valor);
+    try { localStorage.setItem(FONTE_ESCALA_KEY, String(valor)); } catch (err) { /* segue sem salvar */ }
+    atualizarRotuloFonteEscala();
+}
+
+function ajustarFonteEscala(delta) {
+    aplicarFonteEscala(obterFonteEscalaSalva() + delta);
+}
+
+function redefinirFonteEscala() {
+    aplicarFonteEscala(FONTE_ESCALA_PADRAO);
+}
+
+function atualizarRotuloFonteEscala() {
+    const el = document.getElementById('fonte-escala-valor');
+    if (el) el.textContent = `${Math.round(obterFonteEscalaSalva() * 100)}%`;
 }
 
 // --- PLANOS ---
@@ -3117,6 +3158,7 @@ function mostrarProximoCartaoRevisao() {
 
     if (progresso) progresso.textContent = `${totalRestante} restante${totalRestante === 1 ? '' : 's'}`;
     document.getElementById('flashcards-card-frente').innerHTML = cartaoRevisaoAtual.frente;
+    document.getElementById('flashcards-card-frente').style.display = 'block';
     document.getElementById('flashcards-card-verso').innerHTML = cartaoRevisaoAtual.verso || '<em>(sem verso)</em>';
     document.getElementById('flashcards-card-verso').style.display = 'none';
     document.getElementById('flashcards-card-dica').style.display = 'block';
@@ -3142,6 +3184,17 @@ function mostrarProximoCartaoRevisao() {
 function mostrarRespostaRevisao() {
     if (respostaRevisaoRevelada || !cartaoRevisaoAtual) return;
     respostaRevisaoRevelada = true;
+
+    // Num cartão de omissão (cloze), a "frente" e o "verso" são a MESMA
+    // frase — só muda o trecho que estava escondido (que no verso já vem
+    // destacado em azul, pronto). Mostrar os dois juntos duplicava a frase
+    // inteira na tela sem necessidade; nesse caso a gente troca a frente
+    // pelo verso, em vez de empilhar os dois. Num cartão básico (pergunta
+    // separada da resposta), continua mostrando os dois, porque aí o
+    // conteúdo é mesmo diferente.
+    if (cartaoRevisaoAtual.tipo === 'cloze') {
+        document.getElementById('flashcards-card-frente').style.display = 'none';
+    }
     document.getElementById('flashcards-card-verso').style.display = 'block';
     document.getElementById('flashcards-card-dica').style.display = 'none';
     document.getElementById('flashcards-respostas').style.display = 'grid';
