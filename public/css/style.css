@@ -3290,6 +3290,21 @@ input[type="checkbox"] {
     color: var(--text-faint);
 }
 
+/* No celular, o menu nativo de "Recortar/Copiar/Colar" que aparece ao
+   selecionar um trecho de texto costuma abrir bem em cima da seleção — e
+   como a barra de ferramentas (Omitir, N, I...) fica colada direto no topo
+   do campo de texto, esse menu nativo acaba tampando os botões justo na
+   hora que você mais precisa deles (logo depois de selecionar um trecho
+   pra omitir ou formatar). Dando mais respiro no topo do campo, o texto
+   selecionado fica mais afastado da barra, sobrando espaço pro menu nativo
+   aparecer sem cobrir os botões. Só no celular — no computador não tem
+   esse menu de seleção tampando nada, então não precisa desse espaço extra. */
+@media (max-width: 600px) {
+    .editor-campo {
+        padding-top: 34px;
+    }
+}
+
 .cloze-editor-marca {
     display: inline-block;
     background: var(--primary-light);
