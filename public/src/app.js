@@ -2565,6 +2565,27 @@ function salvarSelecaoEditor(event) {
     }
 }
 
+// No celular, selecionar mais de uma palavra normalmente é: toca numa
+// palavra (seleciona só ela) e depois ARRASTA as alcinhas azuis pra
+// estender a seleção pras palavras ao lado. Esse arrastar não dispara
+// mouseup/keyup/focus no campo (os eventos que o salvarSelecaoEditor acima
+// escuta) — então a seleção "guardada" ficava travada só na primeira
+// palavra tocada, e o "Omitir" acabava escondendo só ela, mesmo a pessoa
+// vendo a frase inteira destacada na tela. O evento "selectionchange" do
+// próprio documento, por outro lado, dispara continuamente enquanto a
+// seleção muda (incluindo esse arrastar de alcinha) — então usamos ele
+// pra manter a seleção sempre atualizada de verdade, em vez de confiar só
+// nos eventos de mouse/teclado.
+document.addEventListener('selectionchange', () => {
+    const el = document.activeElement;
+    if (!el || !el.classList || !el.classList.contains('editor-campo')) return;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && el.contains(sel.anchorNode)) {
+        ultimoRangeEditor = sel.getRangeAt(0).cloneRange();
+        ultimoEditorFocadoId = el.id;
+    }
+});
+
 function restaurarSelecaoEditor() {
     if (!ultimoRangeEditor || !ultimoEditorFocadoId) return null;
     const el = document.getElementById(ultimoEditorFocadoId);

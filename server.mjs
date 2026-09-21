@@ -35,6 +35,17 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const MONGO_URI = process.env.MONGO_PUBLIC_URL || "SUA_URI_LOCAL_DE_TESTE";
 
+// Versão dos arquivos estáticos (JS/CSS) — muda sozinha a cada deploy, porque
+// é calculada quando o servidor SOBE (Railway sempre reinicia o processo num
+// deploy novo). Usada pra "carimbar" a URL do app.min.js/style.min.css lá no
+// HTML (ver rotas de "/" e "/jogo" mais abaixo) com "?v=<isso aqui>". Alguns
+// celulares/operadoras guardam o JS/CSS em cache de um jeito bem teimoso —
+// mesmo dando F5 ou relogando, continuam servindo a versão antiga que já
+// tinham baixado. Como a URL fica DIFERENTE a cada deploy, não tem cache que
+// segure: pro navegador é um arquivo novo, então ele é obrigado a baixar de
+// novo.
+const VERSAO_ASSETS = Date.now().toString(36);
+
 // --- LOGIN (Google) ---
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || "checkestudos-troque-este-segredo-em-producao";
@@ -74,6 +85,44 @@ app.use(cors({
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
+
+// Serve o HTML principal "na mão" (em vez de deixar o express.static
+// entregar o arquivo puro), pra poder: (1) carimbar a URL do app.min.js e do
+// style.min.css com "?v=<VERSAO_ASSETS>", forçando o navegador a baixar a
+// versão nova depois de um deploy, e (2) mandar cabeçalhos que proíbem
+// qualquer cache de guardar o HTML em si — assim a PÁGINA sempre vem
+// fresquinha, e ela é quem manda buscar o JS/CSS certo (com o "?v=" certo).
+// Sem isso, só trocar o conteúdo do app.js/style.css não adianta nada se o
+// HTML que aponta pra eles também ficou preso num cache antigo.
+async function servirHtmlComVersao(res, caminhoArquivo, substituicoes) {
+    try {
+        let html = await fs.promises.readFile(caminhoArquivo, 'utf-8');
+        for (const [de, para] of substituicoes) {
+            html = html.replace(de, para);
+        }
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.type('html').send(html);
+    } catch (err) {
+        console.error(`Erro ao servir ${caminhoArquivo}:`, err);
+        res.status(500).send('Erro ao carregar a página.');
+    }
+}
+
+app.get(['/', '/index.html'], (req, res) => {
+    servirHtmlComVersao(res, path.join(__dirname, 'public/index.html'), [
+        ['/src/app.min.js', `/src/app.min.js?v=${VERSAO_ASSETS}`],
+        ['/css/style.min.css', `/css/style.min.css?v=${VERSAO_ASSETS}`]
+    ]);
+});
+
+app.get(['/jogo', '/jogo/', '/jogo/index.html'], (req, res) => {
+    servirHtmlComVersao(res, path.join(__dirname, 'public/jogo/index.html'), [
+        ['/jogo/src/index.min.js', `/jogo/src/index.min.js?v=${VERSAO_ASSETS}`],
+        ['/jogo/css/style.min.css', `/jogo/css/style.min.css?v=${VERSAO_ASSETS}`]
+    ]);
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- JOGO "ESTUDA TRT" (mnemônicos, competências e lacunas da CF) ---
