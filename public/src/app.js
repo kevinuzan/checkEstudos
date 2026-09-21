@@ -2830,7 +2830,9 @@ function abrirModalNovoCartao() {
     document.getElementById('cartao-verso-input').innerHTML = '';
     document.getElementById('cartao-cloze-input').innerHTML = '';
     document.getElementById('cartao-cloze-extra-input').innerHTML = '';
-    definirTipoCartao('basico');
+    // Padrão agora é "Omissão (cloze)" em vez de "Básico" — é o tipo de
+    // cartão mais usado, então já abre pronto pra digitar nesse modo.
+    definirTipoCartao('cloze');
     clozeNumeroAtivo = 1;
     atualizarIndicadorClozeAtivo();
     document.getElementById('modal-cartao-overlay').style.display = 'flex';
@@ -2869,6 +2871,20 @@ function editarCartaoDuranteRevisao() {
 
 function fecharModalCartao() {
     document.getElementById('modal-cartao-overlay').style.display = 'none';
+}
+
+// Limpa só os campos de conteúdo do modal (mantendo o tipo escolhido —
+// Básico ou Omissão — e o modal aberto), pra permitir cadastrar vários
+// cartões seguidos sem precisar reabrir o modal a cada um.
+function limparCamposModalCartaoParaProximo() {
+    document.getElementById('cartao-frente-input').innerHTML = '';
+    document.getElementById('cartao-verso-input').innerHTML = '';
+    document.getElementById('cartao-cloze-input').innerHTML = '';
+    document.getElementById('cartao-cloze-extra-input').innerHTML = '';
+    clozeNumeroAtivo = 1;
+    atualizarIndicadorClozeAtivo();
+    const campoFoco = document.getElementById(cartaoTipoAtual === 'cloze' ? 'cartao-cloze-input' : 'cartao-frente-input');
+    if (campoFoco) campoFoco.focus();
 }
 
 async function salvarCartao() {
@@ -2912,9 +2928,8 @@ async function salvarCartao() {
             return;
         }
 
-        fecharModalCartao();
-
         if (cartaoEdicaoEmRevisao) {
+            fecharModalCartao();
             cartaoEdicaoEmRevisao = false;
             // Atualiza a fila de revisão do zero (somando de novo todos os
             // baralhos da sessão, mesmo quando é uma revisão de pasta inteira)
@@ -2923,8 +2938,17 @@ async function salvarCartao() {
             const idsFila = revisaoIdsAtual.length > 0 ? revisaoIdsAtual : [baralhoAtualId];
             filaRevisaoCache = await buscarFilaRevisaoParaIds(idsFila);
             mostrarProximoCartaoRevisao();
-        } else {
+        } else if (cartaoEmEdicaoId) {
+            // Editando um cartão já existente (fora da revisão) — fecha
+            // como sempre, não faz sentido continuar "adicionando" aqui.
+            fecharModalCartao();
             await abrirBaralho(baralhoAtualId);
+        } else {
+            // Cartão novo: mantém o modal aberto pra continuar cadastrando
+            // vários cartões em sequência — só limpa os campos e atualiza a
+            // lista/contagens do baralho por trás, sem fechar.
+            await abrirBaralho(baralhoAtualId);
+            limparCamposModalCartaoParaProximo();
         }
     } catch (err) {
         console.error('Erro ao salvar cartão:', err);
