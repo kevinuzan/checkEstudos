@@ -540,6 +540,30 @@ h1, h2, h3 { font-family: inherit; }
     color: var(--text);
 }
 
+/* Versão compacta do controle de tamanho de letra, usada dentro do modal
+   "Novo cartão" (aumenta/diminui só o texto do editor daquele cartão —
+   controle separado do tamanho geral do app, que fica em Configurações). */
+.fonte-escala-controle-mini {
+    gap: 4px;
+}
+
+.fonte-escala-controle-mini .fonte-escala-passo {
+    width: 26px;
+    height: 26px;
+    font-size: 11.5px;
+}
+
+.modal-cartao-topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.modal-cartao-topo h3 {
+    margin: 0;
+}
+
 /* ============================================================ */
 /* LOGIN (Google) E USUÁRIO LOGADO                                */
 /* ============================================================ */
@@ -2845,11 +2869,21 @@ input[type="checkbox"] {
 .baralho-arvore-linha {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
     padding: 8px 10px 8px calc(10px + var(--profundidade, 0) * 20px);
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition: background 0.12s ease;
+}
+
+/* Item "invisível" que só existe pra forçar a quebra de linha entre o nome
+   do baralho e as contagens/ações, quando precisa (ver media query
+   abaixo) — no computador ele não ocupa espaço nenhum (flex-basis:0), não
+   muda nada da linha única de sempre. */
+.baralho-arvore-quebra {
+    flex-basis: 0;
+    width: 0;
 }
 
 .baralho-arvore-pasta-header:hover,
@@ -2955,6 +2989,38 @@ input[type="checkbox"] {
     color: var(--primary-dark);
     font-size: 11.5px;
     font-weight: 700;
+}
+
+/* No celular a tela é estreita demais pra caber nome + 3 colunas de
+   contagem (220px) + ações (66px) numa linha só — sobrava quase nada pro
+   nome do baralho, que acabava quebrando em várias linhas bem estreitas
+   (ilegível). Solução: abaixo de 600px, o nome fica sozinho numa linha
+   (com o ".baralho-arvore-quebra" forçando a quebra logo depois dele) e as
+   contagens + ações passam pra segunda linha, mais compactas. */
+@media (max-width: 600px) {
+    .baralho-arvore-quebra {
+        flex-basis: 100%;
+        height: 0;
+    }
+
+    .baralho-arvore-contagens {
+        min-width: 0;
+        flex: 1;
+        justify-content: flex-start;
+        gap: 14px;
+        margin-left: calc(10px + var(--profundidade, 0) * 20px + 18px);
+    }
+
+    .baralho-arvore-contagens .contagem-novo,
+    .baralho-arvore-contagens .contagem-aprender,
+    .baralho-arvore-contagens .contagem-revisar {
+        width: auto;
+        text-align: left;
+    }
+
+    .baralho-arvore-cabecalho .baralho-arvore-contagens {
+        margin-left: 0;
+    }
 }
 
 .baralho-arvore-revisar-pasta:hover {
@@ -3328,7 +3394,12 @@ input[type="checkbox"] {
     border-radius: 0 0 var(--radius-sm) var(--radius-sm);
     padding: 10px 12px;
     font-family: inherit;
-    font-size: 14px;
+    /* Tamanho de letra só do campo de texto (Frente/Verso/Omissão), ajustável
+       pelo controle A-/A+ que fica no topo do modal "Novo cartão" — separado
+       do controle geral de tamanho de texto do app (que fica em Configurações
+       > Aparência), pra dar pra deixar só a área de digitação maior/menor
+       sem mudar o resto da tela do modal. */
+    font-size: calc(14px * var(--fonte-editor-escala, 1));
     background: var(--card);
     color: var(--text);
     margin-bottom: 14px;
@@ -3499,6 +3570,19 @@ input[type="checkbox"] {
     width: 100%;
     color: var(--text-muted);
     font-weight: 500;
+}
+
+/* Num cartão de omissão (cloze), o verso passa a SUBSTITUIR a frente
+   inteira (ver mostrarRespostaRevisao em app.js) — nesse caso ele precisa
+   ficar com a MESMA formatação da frente (mesmo tamanho, peso e cor de
+   letra), sem a linha divisória nem o texto acinzentado que faziam sentido
+   quando o verso era uma seção "resposta" separada, ABAIXO da frente. */
+.flashcards-card-verso.flashcards-card-verso-sozinho {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+    color: var(--text);
+    font-weight: 600;
 }
 
 .flashcards-card-dica {

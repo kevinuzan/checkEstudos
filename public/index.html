@@ -21,6 +21,8 @@
                 if (fundo === 'neutro') document.documentElement.setAttribute('data-fundo', 'neutro');
                 var fonteEscala = localStorage.getItem('checkestudos_fonte_escala');
                 if (fonteEscala) document.documentElement.style.setProperty('--fonte-escala', fonteEscala);
+                var fonteEditorEscala = localStorage.getItem('checkestudos_fonte_editor_escala');
+                if (fonteEditorEscala) document.documentElement.style.setProperty('--fonte-editor-escala', fonteEditorEscala);
             } catch (e) { /* localStorage indisponível — segue com os padrões */ }
         })();
     </script>
@@ -832,7 +834,13 @@
     <!-- Modal: criar/editar cartão de flashcard -->
     <div id="modal-cartao-overlay" class="modal-overlay" style="display:none;">
         <div class="modal modal-cartao">
-            <h3 id="modal-cartao-titulo">Novo cartão</h3>
+            <div class="modal-cartao-topo">
+                <h3 id="modal-cartao-titulo">Novo cartão</h3>
+                <div class="fonte-escala-controle fonte-escala-controle-mini" title="Tamanho da letra do texto do cartão">
+                    <button type="button" class="fonte-escala-passo" onclick="ajustarFonteEditorCartao(-0.1)" title="Diminuir a letra">A−</button>
+                    <button type="button" class="fonte-escala-passo" onclick="ajustarFonteEditorCartao(0.1)" title="Aumentar a letra">A+</button>
+                </div>
+            </div>
             <div class="cartao-tipo-selector" id="cartao-tipo-selector">
                 <button type="button" class="cartao-tipo-btn ativo" id="btn-tipo-basico" onclick="definirTipoCartao('basico')">📝 Básico</button>
                 <button type="button" class="cartao-tipo-btn" id="btn-tipo-cloze" onclick="definirTipoCartao('cloze')">🕳️ Omissão (cloze)</button>

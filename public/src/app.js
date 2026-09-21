@@ -414,6 +414,34 @@ function atualizarRotuloFonteEscala() {
     if (el) el.textContent = `${Math.round(obterFonteEscalaSalva() * 100)}%`;
 }
 
+// --- TAMANHO DO TEXTO DO CARTÃO (só o campo de digitação do modal "Novo cartão") ---
+// Controle separado do de cima: mexe só no font-size do ".editor-campo" (ver
+// style.css), sem dar zoom no resto do modal. Também guardado no localStorage
+// e restaurado cedo no <script> do <head>, pra não "piscar" no tamanho padrão.
+const FONTE_EDITOR_ESCALA_KEY = 'checkestudos_fonte_editor_escala';
+const FONTE_EDITOR_ESCALA_MIN = 0.8;
+const FONTE_EDITOR_ESCALA_MAX = 2;
+const FONTE_EDITOR_ESCALA_PADRAO = 1;
+
+function obterFonteEditorEscalaSalva() {
+    try {
+        const salvo = parseFloat(localStorage.getItem(FONTE_EDITOR_ESCALA_KEY));
+        return Number.isFinite(salvo) ? salvo : FONTE_EDITOR_ESCALA_PADRAO;
+    } catch (err) {
+        return FONTE_EDITOR_ESCALA_PADRAO;
+    }
+}
+
+function aplicarFonteEditorEscala(escala) {
+    const valor = Math.round(Math.min(FONTE_EDITOR_ESCALA_MAX, Math.max(FONTE_EDITOR_ESCALA_MIN, escala)) * 100) / 100;
+    document.documentElement.style.setProperty('--fonte-editor-escala', valor);
+    try { localStorage.setItem(FONTE_EDITOR_ESCALA_KEY, String(valor)); } catch (err) { /* segue sem salvar */ }
+}
+
+function ajustarFonteEditorCartao(delta) {
+    aplicarFonteEditorEscala(obterFonteEditorEscalaSalva() + delta);
+}
+
 // --- PLANOS ---
 
 async function carregarPlanos() {
@@ -2263,6 +2291,7 @@ function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
                     <span class="baralho-arvore-pasta-nome" ${ehBaralhoDeVerdade && temFilhos ? `onclick="event.stopPropagation(); abrirBaralho('${b._id}')" title="Ver cartões"` : ''}>
                         ${ehBaralhoDeVerdade ? '📘 ' : ''}${filho.nome}${ehBaralhoDeVerdade && b.origem === 'anki' ? ' <span class="baralho-card-origem-anki">Anki</span>' : ''}
                     </span>
+                    <span class="baralho-arvore-quebra"></span>
                     ${renderizarContagensArvore(cont)}
                     <span class="baralho-arvore-acoes">
                         ${temPendente
@@ -2342,6 +2371,7 @@ function renderizarBaralhos() {
     grid.innerHTML = `
         <div class="baralho-arvore-cabecalho">
             <span class="baralho-arvore-cabecalho-nome">Baralho</span>
+            <span class="baralho-arvore-quebra"></span>
             <span class="baralho-arvore-contagens">
                 <span class="contagem-novo" title="Novos">Novo</span>
                 <span class="contagem-aprender" title="Aprendendo">Aprender</span>
@@ -3161,6 +3191,7 @@ function mostrarProximoCartaoRevisao() {
     document.getElementById('flashcards-card-frente').style.display = 'block';
     document.getElementById('flashcards-card-verso').innerHTML = cartaoRevisaoAtual.verso || '<em>(sem verso)</em>';
     document.getElementById('flashcards-card-verso').style.display = 'none';
+    document.getElementById('flashcards-card-verso').classList.remove('flashcards-card-verso-sozinho');
     document.getElementById('flashcards-card-dica').style.display = 'block';
     document.getElementById('flashcards-respostas').style.display = 'none';
 
@@ -3194,6 +3225,7 @@ function mostrarRespostaRevisao() {
     // conteúdo é mesmo diferente.
     if (cartaoRevisaoAtual.tipo === 'cloze') {
         document.getElementById('flashcards-card-frente').style.display = 'none';
+        document.getElementById('flashcards-card-verso').classList.add('flashcards-card-verso-sozinho');
     }
     document.getElementById('flashcards-card-verso').style.display = 'block';
     document.getElementById('flashcards-card-dica').style.display = 'none';
