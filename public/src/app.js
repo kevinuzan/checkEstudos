@@ -435,6 +435,14 @@ function renderizarTabsPlanos() {
             btnRenomear.title = `Renomear "${plano.nome}"`;
             btnRenomear.onclick = (ev) => { ev.stopPropagation(); renomearPlano(plano.nome); };
             wrap.appendChild(btnRenomear);
+
+            const btnExcluir = document.createElement('button');
+            btnExcluir.type = 'button';
+            btnExcluir.className = 'plano-tab-excluir';
+            btnExcluir.textContent = '🗑️';
+            btnExcluir.title = `Excluir "${plano.nome}"`;
+            btnExcluir.onclick = (ev) => { ev.stopPropagation(); excluirPlano(plano.nome); };
+            wrap.appendChild(btnExcluir);
         }
 
         nav.appendChild(wrap);
@@ -471,6 +479,42 @@ async function renomearPlano(nomeAtual) {
     if (planoAtual === nomeAtual) {
         planoAtual = nomeFinal;
         localStorage.setItem('edital_plano_atual', planoAtual);
+    }
+
+    await carregarPlanos();
+    await carregarEdital();
+    if (viewAtual === 'estudos') await carregarPainelEstudos();
+    if (viewAtual === 'resumo') await carregarResumo();
+}
+
+// Exclui um plano de estudos. O backend já cuida de: apagar os tópicos que
+// pertenciam SOMENTE a esse plano, e apenas desvincular (mantendo) os que são
+// compartilhados com outros planos. Não deixa excluir o último plano restante,
+// já que o app sempre espera ter pelo menos um.
+async function excluirPlano(nome) {
+    if (planosDisponiveis.length <= 1) {
+        alert('Não é possível excluir o único plano de estudos que você tem. Crie outro plano antes de excluir este.');
+        return;
+    }
+
+    const confirmar = confirm(
+        `Excluir o plano "${nome}"?\n\n` +
+        `Tópicos que pertencem SOMENTE a esse plano serão apagados. Tópicos ` +
+        `compartilhados com outros planos continuam existindo normalmente neles.\n\n` +
+        `Essa ação não pode ser desfeita.`
+    );
+    if (!confirmar) return;
+
+    const res = await fetch(`/api/planos/${encodeURIComponent(nome)}`, { method: 'DELETE' });
+    const resultado = await res.json();
+    if (!resultado.success) {
+        alert(resultado.error || 'Não foi possível excluir o plano.');
+        return;
+    }
+
+    if (planoAtual === nome) {
+        planoAtual = null;
+        localStorage.removeItem('edital_plano_atual');
     }
 
     await carregarPlanos();

@@ -313,6 +313,31 @@ h1, h2, h3 { font-family: inherit; }
     color: white;
 }
 
+.plano-tab-excluir {
+    background: transparent;
+    color: var(--text-faint);
+    border: none;
+    padding: 5px 7px;
+    font-size: 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.plano-tab-wrap:has(.escopo-pill.ativo) .plano-tab-excluir {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.plano-tab-excluir:hover {
+    background: rgba(220, 38, 38, 0.12);
+    color: #dc2626;
+}
+
+.plano-tab-wrap:has(.escopo-pill.ativo) .plano-tab-excluir:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fecaca;
+}
+
 /* ============================================================ */
 /* SELETOR DE ESCOPO DO RESUMO (Geral x por Edital)              */
 /* ============================================================ */

@@ -43,7 +43,34 @@ const oauthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // --- MIDDLEWARES ---
 app.set('trust proxy', 1);
-app.use(cors());
+
+// CORS: como o front-end é servido pelo próprio Express (express.static logo
+// abaixo), as chamadas normais do site (fetch('/api/...')) são "same-origin"
+// e o navegador nem manda o header Origin — essas sempre funcionam, com ou
+// sem CORS liberado. O que o CORS aberto (cors() sem opções) permitia era
+// QUALQUER outro site na internet fazer requisições pro seu backend a partir
+// do JavaScript dele. Aqui a gente restringe pra só os domínios listados em
+// FRONTEND_URL (defina essa variável no Railway com o domínio de produção,
+// separando por vírgula se tiver mais de um, ex: dois domínios customizados).
+// Sem FRONTEND_URL configurada, libera geral — assim não quebra o `npm start`
+// local em desenvolvimento.
+const ORIGENS_PERMITIDAS = (process.env.FRONTEND_URL || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Sem "origin" no header = requisição same-origin (o próprio front-end
+        // deste servidor) ou uma chamada de ferramenta (curl, apps mobile,
+        // health-check do Railway etc.) — sempre libera.
+        if (!origin) return callback(null, true);
+        if (ORIGENS_PERMITIDAS.length === 0 || ORIGENS_PERMITIDAS.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error('Origem não permitida pelo CORS'));
+    }
+}));
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());

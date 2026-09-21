@@ -1,1 +1,18 @@
+# Dependências instaladas via npm — nunca commitar, são reconstruídas
+# automaticamente pelo `npm install` (local e no Railway).
 node_modules/
+
+# Variáveis de ambiente/segredos — sempre configurar no Railway, nunca commitar.
+.env
+.env.local
+
+# Arquivos minificados gerados pelo build (`npm run build`, disparado
+# automaticamente antes de `npm start` via "prestart") — são só uma versão
+# compactada dos arquivos-fonte, não precisam (e não devem) ir pro Git.
+public/src/app.min.js
+public/jogo/src/index.min.js
+public/css/style.min.css
+public/jogo/css/style.min.css
+
+# Arquivos de sistema
+.DS_Store
