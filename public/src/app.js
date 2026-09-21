@@ -1,3 +1,29 @@
+// --- SEGURANÇA: escapar texto vindo de fora antes de inserir no HTML ---
+// Matéria/tópico/subtópico do Edital podem vir de um PDF processado por IA
+// (sugestão de edital via PDF) — ou seja, o TEXTO É EFETIVAMENTE
+// CONTROLÁVEL por quem monta o PDF. Sem escapar, um PDF malicioso poderia
+// instruir a IA a devolver um "tópico" contendo HTML/JS (ex: uma tag
+// <img onerror=...>), que rodaria no navegador de quem importou o edital
+// quando a lista fosse exibida. Usar sempre que um desses textos for
+// inserido via innerHTML/template string.
+function escaparHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Pra texto que vai DENTRO de um onclick="...('${x}')": escapa primeiro pro
+// contexto de string JS (aspas simples/barra invertida) e depois pro
+// contexto de atributo HTML (protege contra a própria string quebrar o
+// atributo com uma aspas dupla, escapando pra fora do onclick).
+function escaparParaOnclick(str) {
+    const paraJs = String(str ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return escaparHtml(paraJs);
+}
+
 // Estado para manter matérias minimizadas
 let estadosMinimizados = JSON.parse(localStorage.getItem('editais_minimizados')) || {};
 
@@ -566,16 +592,16 @@ function renderizar(itens) {
         divMateria.className = 'materia-group';
 
         divMateria.innerHTML = `
-            <div class="materia-header" onclick="toggleMateria('${materia}')" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+            <div class="materia-header" onclick="toggleMateria('${escaparParaOnclick(materia)}')" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
                 <div class="materia-info">
                     <span class="seta">${estaMinimizado ? '▶' : '▼'}</span>
-                    <strong class="materia-title">${materia}</strong>
-                    <button type="button" class="btn-renomear-materia" title="Renomear matéria &quot;${materia}&quot;"
-                        onclick="event.stopPropagation(); renomearMateria('${materia.replace(/'/g, "\\'")}')">✎</button>
+                    <strong class="materia-title">${escaparHtml(materia)}</strong>
+                    <button type="button" class="btn-renomear-materia" title="Renomear matéria &quot;${escaparHtml(materia)}&quot;"
+                        onclick="event.stopPropagation(); renomearMateria('${escaparParaOnclick(materia)}')">✎</button>
                     <span class="stats-label">(${concluidosMat}/${totalMat}) - ${percMat}%</span>
                 </div>
-                <button type="button" class="btn-add-topico-materia" title="Adicionar tópico em ${materia}"
-                    onclick="event.stopPropagation(); abrirModalNovoTopico('${materia.replace(/'/g, "\\'")}')">+ Tópico</button>
+                <button type="button" class="btn-add-topico-materia" title="Adicionar tópico em ${escaparHtml(materia)}"
+                    onclick="event.stopPropagation(); abrirModalNovoTopico('${escaparParaOnclick(materia)}')">+ Tópico</button>
             </div>
             <div class="materia-content" style="display: ${estaMinimizado ? 'none' : 'block'}">
                 ${grupos[materia].map(item => renderizarItemEdital(item)).join('')}
@@ -614,7 +640,7 @@ function renderizarItemEdital(item) {
                             onclick="event.stopPropagation()" onchange="toggleSelecaoItemEdital('${item._id}', this.checked)">
                     ` : `<span class="seta-subtopicos">${expandido ? '▾' : '▸'}</span>`}
                     <span class="topico-texto">
-                        ${item.topico}
+                        ${escaparHtml(item.topico)}
                         <span class="subtopicos-contador">(${concluidosSub}/${totalSub})</span>
                         ${badgePlanos}
                     </span>
@@ -631,7 +657,7 @@ function renderizarItemEdital(item) {
                             <div class="subtopico-item ${sub.concluido ? 'done' : ''}">
                                 <input type="checkbox" ${sub.concluido ? 'checked' : ''}
                                     onchange="toggleCheckSubtopico('${item._id}', '${sub.id}', this.checked)">
-                                <span class="subtopico-texto">${sub.texto}</span>
+                                <span class="subtopico-texto">${escaparHtml(sub.texto)}</span>
                                 <button type="button" class="btn-delete-subtopico" onclick="removerSubtopico('${item._id}', '${sub.id}')" title="Remover subtópico">✕</button>
                             </div>
                         `).join('')}
@@ -661,7 +687,7 @@ function renderizarItemEdital(item) {
                     onchange="toggleCheck('${item._id}', this.checked)">
             `}
             <span class="topico-texto" onclick="${modoSelecaoEdital ? `toggleSelecaoItemEdital('${item._id}', !itensSelecionadosEdital.has('${item._id}'))` : `abrirModalEdicao('${item._id}')`}">
-                ${item.topico}
+                ${escaparHtml(item.topico)}
                 ${badgePlanos}
             </span>
             ${modoSelecaoEdital ? '' : `
@@ -1142,10 +1168,10 @@ function renderizarBlocosMateriaSugestao() {
     container.innerHTML = sugestaoEditalAtual.materias.map((bloco, i) => `
         <div class="sugestao-materia-bloco">
             <div class="sugestao-materia-topo">
-                <input type="text" class="sugestao-materia-nome" data-indice="${i}" value="${(bloco.materia || '').replace(/"/g, '&quot;')}" placeholder="Nome da matéria">
+                <input type="text" class="sugestao-materia-nome" data-indice="${i}" value="${escaparHtml(bloco.materia || '')}" placeholder="Nome da matéria">
                 <button type="button" class="btn-remover-materia-sugestao" onclick="removerBlocoMateriaSugestao(${i})" title="Remover matéria">🗑️</button>
             </div>
-            <textarea class="sugestao-materia-topicos" data-indice="${i}" placeholder="Um tópico por linha. Linhas indentadas (com espaço/tab antes) viram subtópicos do tópico logo acima.">${formatarTopicosParaTextarea(bloco.topicos)}</textarea>
+            <textarea class="sugestao-materia-topicos" data-indice="${i}" placeholder="Um tópico por linha. Linhas indentadas (com espaço/tab antes) viram subtópicos do tópico logo acima.">${escaparHtml(formatarTopicosParaTextarea(bloco.topicos))}</textarea>
         </div>
     `).join('');
 }
@@ -3642,16 +3668,40 @@ function construirFimAPartirDoInput() {
     return new Date(y, m - 1, d, agora.getHours(), agora.getMinutes(), agora.getSeconds());
 }
 
-// Preenche o seletor "Edital (plano)" do modal de sessão com os planos
-// disponíveis, selecionando o nome informado (se existir na lista).
+// Valor especial do <select> pra "Todos os planos" — não é o nome de um
+// plano de verdade (evita colidir com um plano que a pessoa batize de
+// "Todos"), só um sinalizador pro resto do código saber que é pra buscar
+// tópicos de TODOS os planos ao mesmo tempo.
+const SESSAO_PLANO_TODOS = '__todos__';
+
+// Preenche o seletor "Edital (plano)" do modal de sessão com "Todos os
+// planos" + os planos disponíveis, selecionando o nome informado (se
+// existir na lista, ou o próprio "Todos").
 function preencherSeletorPlanoSessao(nomeSelecionado) {
     const select = document.getElementById('sessao-plano-select');
     if (!select) return;
-    select.innerHTML = planosDisponiveis.map(p =>
+    const opcaoTodos = `<option value="${SESSAO_PLANO_TODOS}">Todos os planos</option>`;
+    const opcoesPlanos = planosDisponiveis.map(p =>
         `<option value="${p.nome.replace(/"/g, '&quot;')}">${p.nome}</option>`
     ).join('');
-    if (nomeSelecionado && planosDisponiveis.some(p => p.nome === nomeSelecionado)) {
+    select.innerHTML = opcaoTodos + opcoesPlanos;
+    if (nomeSelecionado === SESSAO_PLANO_TODOS || planosDisponiveis.some(p => p.nome === nomeSelecionado)) {
         select.value = nomeSelecionado;
+    } else {
+        select.value = SESSAO_PLANO_TODOS;
+    }
+}
+
+// Busca os tópicos a mostrar no modal pro plano selecionado — ou de TODOS os
+// planos do usuário, se "Todos os planos" estiver escolhido.
+async function buscarTopicosDoPlanoSessao(nomePlano) {
+    try {
+        const url = nomePlano === SESSAO_PLANO_TODOS ? '/api/edital' : `/api/edital?plano=${encodeURIComponent(nomePlano)}`;
+        const res = await fetch(url);
+        return await res.json();
+    } catch (err) {
+        console.error('Erro ao carregar tópicos do plano selecionado:', err);
+        return [];
     }
 }
 
@@ -3676,12 +3726,16 @@ function abrirModalSessao() {
     document.getElementById('sessao-duracao-minutos').value = Math.round((elapsedMs % 3600000) / 60000);
     document.getElementById('sessao-data').value = formatarDataISO(new Date());
 
-    // Por padrão sugere o plano/edital que está aberto na tela agora, mas a
-    // pessoa pode trocar — útil quando ela quer registrar horas de um plano
-    // diferente do que está vendo no momento.
-    preencherSeletorPlanoSessao(planoAtual);
-    sessaoPlanoCarregadoAtual = planoAtual;
-    sessaoTopicosDisponiveis = itensAtuais.slice();
+    // Por padrão mostra os tópicos de TODOS os planos (mais fácil de achar o
+    // tópico certo sem ter que lembrar em qual plano ele está) — a pessoa
+    // pode filtrar por um plano específico no seletor, se quiser.
+    preencherSeletorPlanoSessao(SESSAO_PLANO_TODOS);
+    sessaoPlanoCarregadoAtual = SESSAO_PLANO_TODOS;
+    sessaoTopicosDisponiveis = [];
+    buscarTopicosDoPlanoSessao(SESSAO_PLANO_TODOS).then(itens => {
+        sessaoTopicosDisponiveis = itens;
+        renderizarTopicosSessao(document.getElementById('sessao-busca-topicos').value);
+    });
     topicosSelecionadosSessao = new Set();
     sessaoMateriasExpandidas = new Set();
     sessaoTopicosExpandidos = new Set();
@@ -3722,13 +3776,7 @@ async function trocarPlanoSessaoModal() {
         }
     }
 
-    try {
-        const res = await fetch(`/api/edital?plano=${encodeURIComponent(novoPlano)}`);
-        sessaoTopicosDisponiveis = await res.json();
-    } catch (err) {
-        console.error('Erro ao carregar tópicos do plano selecionado:', err);
-        sessaoTopicosDisponiveis = [];
-    }
+    sessaoTopicosDisponiveis = await buscarTopicosDoPlanoSessao(novoPlano);
 
     sessaoPlanoCarregadoAtual = novoPlano;
     topicosSelecionadosSessao = new Set();
@@ -3847,7 +3895,7 @@ function renderizarItemTopicoSessao(item, forcarExpandido) {
             <label class="sessao-topico-item">
                 <input type="checkbox" value="${item._id}" ${topicosSelecionadosSessao.has(item._id) ? 'checked' : ''}
                     onchange="toggleTopicoSessao('${item._id}')">
-                ${item.topico}
+                ${escaparHtml(item.topico)}
             </label>
         `;
     }
@@ -3859,7 +3907,7 @@ function renderizarItemTopicoSessao(item, forcarExpandido) {
         <div class="sessao-topico-com-subtopicos">
             <div class="sessao-topico-titulo" onclick="toggleTopicoSessaoExpandido('${item._id}')">
                 <span class="seta-sessao">${expandido ? '▾' : '▸'}</span>
-                <span class="sessao-topico-titulo-texto">${item.topico}</span>
+                <span class="sessao-topico-titulo-texto">${escaparHtml(item.topico)}</span>
                 <span class="sessao-subtopicos-contador">${selecionados}/${item.subtopicos.length}</span>
             </div>
             ${expandido ? `
@@ -3868,7 +3916,7 @@ function renderizarItemTopicoSessao(item, forcarExpandido) {
                         <label class="sessao-topico-item sessao-subtopico-item">
                             <input type="checkbox" value="${sub.id}" ${topicosSelecionadosSessao.has(`${item._id}::${sub.id}`) ? 'checked' : ''}
                                 onchange="toggleSubtopicoSessao('${item._id}', '${sub.id}')">
-                            ${sub.texto}
+                            ${escaparHtml(sub.texto)}
                         </label>
                     `).join('')}
                 </div>
@@ -3904,13 +3952,13 @@ function renderizarTopicosSessao(filtro) {
         html = materias.map(materia => {
             const expandida = forcarExpandido || sessaoMateriasExpandidas.has(materia);
             const totalSelecionados = grupos[materia].reduce((n, item) => n + contarSelecionadosItemSessao(item), 0);
-            const materiaEscapada = materia.replace(/'/g, "\\'");
+            const materiaEscapada = escaparParaOnclick(materia);
 
             return `
                 <div class="sessao-materia-grupo">
                     <div class="sessao-materia-titulo" onclick="toggleMateriaSessaoExpandida('${materiaEscapada}')">
                         <span class="seta-sessao">${expandida ? '▾' : '▸'}</span>
-                        <span>${materia}</span>
+                        <span>${escaparHtml(materia)}</span>
                         ${totalSelecionados > 0 ? `<span class="sessao-selecionados-badge">${totalSelecionados}</span>` : ''}
                     </div>
                     ${expandida ? `
@@ -4019,7 +4067,16 @@ async function salvarSessao() {
     const revisaoMarcada = document.getElementById('sessao-revisao-check').checked;
     const revisaoDias = parseInt(document.getElementById('sessao-revisao-dias').value) || 7;
 
-    const planoSelecionadoModal = document.getElementById('sessao-plano-select').value || planoAtual;
+    // "Todos os planos" é só um jeito de FILTRAR/ACHAR o tópico na hora de
+    // marcar — não é um plano de verdade, então nunca pode ser salvo como o
+    // "plano" da sessão (isso é usado como fallback pra sessões sem tópico
+    // vinculado a nenhum plano específico; salvar "__todos__" ali faria a
+    // sessão sumir de todas as telas de plano). Cai pro plano que está aberto
+    // no resto do app nesse caso.
+    const planoSelecionadoBruto = document.getElementById('sessao-plano-select').value;
+    const planoSelecionadoModal = (planoSelecionadoBruto && planoSelecionadoBruto !== SESSAO_PLANO_TODOS)
+        ? planoSelecionadoBruto
+        : planoAtual;
 
     const corpo = {
         inicio: inicio.toISOString(),
@@ -5068,7 +5125,7 @@ function renderizarIndicadoresMaterias() {
         const nomeExibido = isSemMateria ? 'Sem matéria vinculada' : materia;
         const cor = isSemMateria ? '#cbd5e1' : corDaMateria(materia);
         const perc = Math.round((segundos / maxSegundos) * 100);
-        const materiaEscapada = materia.replace(/'/g, "\\'");
+        const materiaEscapada = escaparParaOnclick(materia);
         const expandida = !isSemMateria && materiasExpandidasIndicador.has(materia);
         const topicosDaMateria = expandida ? obterTopicosDaMateriaParaIndicador(materia, segundosPorTopico, infoTopico) : [];
         const maxSegundosTopico = Math.max(...topicosDaMateria.map(t => t.segundos), 1);
@@ -5093,11 +5150,11 @@ function renderizarIndicadoresMaterias() {
         return `
             <div class="materia-indicador">
                 <button type="button" class="materia-cor-swatch" style="background:${cor}"
-                    onclick="abrirSeletorCorMateria('${materiaEscapada}')" title="Trocar cor de ${materia}"></button>
+                    onclick="abrirSeletorCorMateria('${materiaEscapada}')" title="Trocar cor de ${escaparHtml(materia)}"></button>
                 <div class="materia-indicador-corpo" onclick="alternarIndicadorMateria('${materiaEscapada}')" style="cursor:pointer;">
                     <div class="materia-indicador-topo">
                         <span class="materia-indicador-nome">
-                            <span class="materia-indicador-seta">${expandida ? '▾' : '▸'}</span> ${materia}
+                            <span class="materia-indicador-seta">${expandida ? '▾' : '▸'}</span> ${escaparHtml(materia)}
                         </span>
                         <span class="materia-indicador-tempo">${segundos > 0 ? formatarDuracaoCurta(segundos) : '—'}</span>
                     </div>
