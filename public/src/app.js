@@ -2373,9 +2373,9 @@ function renderizarBaralhos() {
             <span class="baralho-arvore-cabecalho-nome">Baralho</span>
             <span class="baralho-arvore-quebra"></span>
             <span class="baralho-arvore-contagens">
-                <span class="contagem-novo" title="Novos">Novo</span>
-                <span class="contagem-aprender" title="Aprendendo">Aprender</span>
-                <span class="contagem-revisar" title="Pra revisar">Revisar</span>
+                <span class="contagem-novo" title="Novos" data-curto="Nv">Novo</span>
+                <span class="contagem-aprender" title="Aprendendo" data-curto="Apr">Aprender</span>
+                <span class="contagem-revisar" title="Pra revisar" data-curto="Rev">Revisar</span>
             </span>
             <span class="baralho-arvore-acoes"></span>
         </div>

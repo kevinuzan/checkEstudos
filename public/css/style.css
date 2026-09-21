@@ -2844,6 +2844,7 @@ input[type="checkbox"] {
 .baralho-arvore-cabecalho {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
     padding: 4px 10px 8px 10px;
     font-size: 11px;
@@ -2992,34 +2993,72 @@ input[type="checkbox"] {
 }
 
 /* No celular a tela é estreita demais pra caber nome + 3 colunas de
-   contagem (220px) + ações (66px) numa linha só — sobrava quase nada pro
-   nome do baralho, que acabava quebrando em várias linhas bem estreitas
-   (ilegível). Solução: abaixo de 600px, o nome fica sozinho numa linha
-   (com o ".baralho-arvore-quebra" forçando a quebra logo depois dele) e as
-   contagens + ações passam pra segunda linha, mais compactas. */
+   contagem (220px) + ações (66px) na largura de sempre — em vez de jogar
+   contagens/ações pra uma segunda linha (que ficava com um vão gigante e
+   feio), a solução é encolher tudo e manter numa linha só: nome com
+   reticências se não couber, colunas de contagem bem mais estreitas (só
+   o número, sem "Aprender" etc. por extenso) e botões de ação menores. */
 @media (max-width: 600px) {
+    .baralho-arvore-cabecalho,
+    .baralho-arvore-pasta-header,
+    .baralho-arvore-linha {
+        flex-wrap: nowrap;
+        gap: 6px;
+    }
+
+    .baralho-arvore-pasta-header,
+    .baralho-arvore-linha {
+        padding: 8px 8px 8px calc(8px + var(--profundidade, 0) * 14px);
+    }
+
+    .baralho-arvore-cabecalho {
+        padding: 4px 8px 8px 8px;
+    }
+
+    .baralho-arvore-pasta-nome,
+    .baralho-arvore-linha-nome {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 36px;
+    }
+
+    /* No celular a quebra não é mais necessária (tudo cabe numa linha só). */
     .baralho-arvore-quebra {
-        flex-basis: 100%;
-        height: 0;
+        display: none;
     }
 
     .baralho-arvore-contagens {
-        min-width: 0;
-        flex: 1;
-        justify-content: flex-start;
-        gap: 14px;
-        margin-left: calc(10px + var(--profundidade, 0) * 20px + 18px);
+        gap: 6px;
+        font-size: 11px;
     }
 
-    .baralho-arvore-contagens .contagem-novo,
-    .baralho-arvore-contagens .contagem-aprender,
-    .baralho-arvore-contagens .contagem-revisar {
+    .baralho-arvore-contagens .contagem-novo { width: 18px; }
+    .baralho-arvore-contagens .contagem-aprender { width: 24px; }
+    .baralho-arvore-contagens .contagem-revisar { width: 18px; }
+
+    /* No cabeçalho, "Aprender"/"Revisar" por extenso não cabem mais nessas
+       colunas estreitas — troca pelo texto abreviado guardado no atributo
+       "data-curto" de cada span (ver renderizarBaralhos() no app.js). */
+    .baralho-arvore-cabecalho .baralho-arvore-contagens span {
+        font-size: 0;
+    }
+
+    .baralho-arvore-cabecalho .baralho-arvore-contagens span::after {
+        content: attr(data-curto);
+        font-size: 10px;
+    }
+
+    .baralho-arvore-acoes {
         width: auto;
-        text-align: left;
     }
 
-    .baralho-arvore-cabecalho .baralho-arvore-contagens {
-        margin-left: 0;
+    .baralho-arvore-excluir,
+    .baralho-arvore-revisar-pasta,
+    .baralho-arvore-add-sub {
+        width: 22px;
+        height: 22px;
+        font-size: 10.5px;
     }
 }
 
@@ -3267,8 +3306,9 @@ input[type="checkbox"] {
 /* ============================================================ */
 
 .modal-cartao {
-    max-width: 620px;
+    max-width: 760px;
     width: 100%;
+    max-height: 94vh;
 }
 
 .editor-toolbar {
@@ -3387,8 +3427,8 @@ input[type="checkbox"] {
 }
 
 .editor-campo {
-    min-height: 90px;
-    max-height: 260px;
+    min-height: 130px;
+    max-height: 340px;
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: 0 0 var(--radius-sm) var(--radius-sm);
