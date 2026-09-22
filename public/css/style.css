@@ -3357,6 +3357,16 @@ input[type="checkbox"] {
     margin: 2px 4px;
 }
 
+.editor-toolbar-desfazer {
+    border: 1px dashed var(--border) !important;
+    font-size: 11.5px !important;
+}
+
+.editor-toolbar-desfazer:hover {
+    color: var(--primary-dark) !important;
+    border-color: var(--primary) !important;
+}
+
 .editor-toolbar-omitir {
     background: var(--primary-light) !important;
     color: var(--primary-dark) !important;

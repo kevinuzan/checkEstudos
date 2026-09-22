@@ -2673,6 +2673,16 @@ function aplicarFormatoTexto(comando, valor) {
     document.execCommand(comando, false, valor || null);
 }
 
+// "Desfazer" (tipo Ctrl+Z) pro campo de texto do cartão — no computador já
+// dá pra usar o atalho do teclado, mas no celular/tablet não tem Ctrl+Z,
+// então esse botão cobre esse caso. Foca de volta no campo que estava
+// sendo editado antes de desfazer, senão o navegador desfaz no campo
+// errado (ou em nenhum).
+function desfazerEditor() {
+    restaurarSelecaoEditor();
+    document.execCommand('undo');
+}
+
 // Envolve o trecho selecionado num "cartão-mostrador" de omissão numerado
 // (1, 2, 3...) — cada número novo vira um cartão diferente ao salvar, igual
 // ao Anki (c1/c2/c3 no mesmo texto = cartões separados).

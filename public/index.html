@@ -850,6 +850,8 @@
                 <div class="editor-grupo">
                     <label class="modal-label">Frente</label>
                     <div class="editor-toolbar">
+                        <button type="button" class="editor-toolbar-desfazer" onmousedown="event.preventDefault()" onclick="desfazerEditor()" title="Desfazer a última alteração">↶ Desfazer</button>
+                        <span class="editor-toolbar-separador"></span>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('underline')" title="Sublinhado"><u>S</u></button>
@@ -866,6 +868,8 @@
                 <div class="editor-grupo">
                     <label class="modal-label">Verso</label>
                     <div class="editor-toolbar">
+                        <button type="button" class="editor-toolbar-desfazer" onmousedown="event.preventDefault()" onclick="desfazerEditor()" title="Desfazer a última alteração">↶ Desfazer</button>
+                        <span class="editor-toolbar-separador"></span>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('underline')" title="Sublinhado"><u>S</u></button>
@@ -894,6 +898,8 @@
                     <div class="editor-toolbar">
                         <button type="button" class="editor-toolbar-omitir" onmousedown="event.preventDefault()" onclick="omitirSelecao()" title="Esconder o trecho selecionado no cartão ativo">🕳️ Omitir</button>
                         <button type="button" class="editor-toolbar-omitir-novo" onmousedown="event.preventDefault()" onclick="omitirSelecaoNovoCartao()" title="Esconder o trecho selecionado criando um cartão NOVO">🕳️+ Novo cartão</button>
+                        <span class="editor-toolbar-separador"></span>
+                        <button type="button" class="editor-toolbar-desfazer" onmousedown="event.preventDefault()" onclick="desfazerEditor()" title="Desfazer a última alteração">↶ Desfazer</button>
                         <span class="editor-toolbar-separador"></span>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>
