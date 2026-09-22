@@ -3455,6 +3455,32 @@ input[type="checkbox"] {
     margin-bottom: 14px;
 }
 
+/* Listas criadas pelos botões "1.", "-" e "a)" da barra de ferramentas —
+   por padrão o navegador só sabe fazer números (1. 2. 3.) e marcadores (•);
+   o dos traços e o de letras entram sobrescrevendo o marcador via
+   ::marker, que já é bem suportado em navegador de celular/computador. */
+.editor-campo ol,
+.editor-campo ul {
+    margin: 4px 0;
+    padding-left: 26px;
+}
+
+.editor-campo ol.lista-letras {
+    list-style-type: lower-alpha;
+}
+
+.editor-campo ol.lista-letras li::marker {
+    content: counter(list-item, lower-alpha) ") ";
+}
+
+.editor-campo ul.lista-tracos {
+    list-style-type: none;
+}
+
+.editor-campo ul.lista-tracos li::marker {
+    content: "- ";
+}
+
 .editor-campo-pequeno {
     min-height: 50px;
 }

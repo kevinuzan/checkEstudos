@@ -2673,6 +2673,34 @@ function aplicarFormatoTexto(comando, valor) {
     document.execCommand(comando, false, valor || null);
 }
 
+// Insere um caractere (ex: "°") no ponto onde o cursor estava no campo,
+// sem precisar copiar/colar ou trocar de teclado.
+function inserirCaractereEditor(caractere) {
+    restaurarSelecaoEditor();
+    document.execCommand('insertText', false, caractere);
+}
+
+// Listas com numeração/letras/traços. "numerada" e "marcadores" usam a
+// lista padrão do navegador (1. 2. 3. / •); "letras" reaproveita a lista
+// numerada só trocando o estilo do marcador pra "a) b) c)" via CSS (ver
+// ".lista-letras" no style.css) — o document.execCommand não tem um modo
+// de lista com letras pronto.
+function aplicarListaEditor(tipo) {
+    const el = restaurarSelecaoEditor();
+    if (!el) return;
+    document.execCommand(tipo === 'marcadores' ? 'insertUnorderedList' : 'insertOrderedList', false, null);
+
+    if (tipo === 'letras' || tipo === 'marcadores') {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+            const noh = sel.getRangeAt(0).startContainer;
+            const elemento = noh.nodeType === 3 ? noh.parentElement : noh;
+            const lista = elemento ? elemento.closest(tipo === 'letras' ? 'ol' : 'ul') : null;
+            if (lista) lista.classList.add(tipo === 'letras' ? 'lista-letras' : 'lista-tracos');
+        }
+    }
+}
+
 // "Desfazer" (tipo Ctrl+Z) pro campo de texto do cartão — no computador já
 // dá pra usar o atalho do teclado, mas no celular/tablet não tem Ctrl+Z,
 // então esse botão cobre esse caso. Foca de volta no campo que estava
