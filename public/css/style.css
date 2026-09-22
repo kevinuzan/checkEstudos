@@ -3273,12 +3273,14 @@ input[type="checkbox"] {
 
 .cartao-tipo-selector {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 14px;
 }
 
 .cartao-tipo-btn {
     flex: 1;
+    min-width: 120px;
     background: var(--surface-muted);
     color: var(--text-muted);
     border: 1px solid var(--border);
@@ -3288,6 +3290,45 @@ input[type="checkbox"] {
     font-size: 13px;
     cursor: pointer;
     transition: all 0.15s ease;
+}
+
+/* Seletor "Resposta correta" (Verdadeiro/Falso) do cartão tipo vf — mesmo
+   visual do seletor de tipo acima, só que fica marcado com verde/vermelho
+   quando ativo, pra reforçar visualmente qual é a resposta escolhida. */
+.cartao-vf-resposta-selector {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.cartao-vf-resposta-btn {
+    flex: 1;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    padding: 10px;
+    border-radius: var(--radius-sm);
+    font-weight: 700;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.cartao-vf-resposta-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.cartao-vf-resposta-btn.ativo:first-child {
+    background: #16a34a;
+    color: #fff;
+    border-color: #16a34a;
+}
+
+.cartao-vf-resposta-btn.ativo:last-child {
+    background: #dc2626;
+    color: #fff;
+    border-color: #dc2626;
 }
 
 .cartao-tipo-btn:hover {
@@ -3348,6 +3389,52 @@ input[type="checkbox"] {
     border-radius: 6px;
     background: var(--card);
     cursor: pointer;
+}
+
+/* Paleta de cores favoritas (texto e realce) — substitui o seletor de cor
+   "cru" do navegador por um punhado de cores prontas pra clicar direto;
+   o "+" no final abre o seletor nativo só pra ESCOLHER uma cor nova, que
+   entra na paleta (ver renderizarPaletasCores()/corFavoritaEscolhida() no
+   app.js). */
+.editor-toolbar-cores {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.cor-favorita-swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.cor-favorita-swatch:hover {
+    border-color: var(--primary);
+    transform: scale(1.08);
+}
+
+.cor-favorita-add {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    padding: 0;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.cor-favorita-add:hover {
+    border-color: var(--primary);
+    color: var(--primary-dark);
 }
 
 .editor-toolbar-separador {
@@ -3680,6 +3767,54 @@ input[type="checkbox"] {
     color: var(--text-faint);
     text-transform: uppercase;
     letter-spacing: 0.03em;
+}
+
+/* Botões Verdadeiro/Falso da revisão de um cartão "vf" — ficam no lugar
+   do "toque pra ver a resposta" dos outros tipos. Ao clicar, o botão
+   escolhido pinta de verde (acertou) ou vermelho (errou); se errar, o
+   botão com a resposta certa fica destacado também, pra mostrar qual era. */
+.flashcards-vf-botoes {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+}
+
+.flashcards-vf-btn {
+    flex: 1;
+    padding: 14px;
+    border-radius: var(--radius);
+    border: 2px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.flashcards-vf-btn:hover:not(:disabled) {
+    border-color: var(--primary);
+}
+
+.flashcards-vf-btn:disabled {
+    cursor: default;
+}
+
+.flashcards-vf-btn.vf-correto {
+    background: #16a34a;
+    border-color: #16a34a;
+    color: #fff;
+}
+
+.flashcards-vf-btn.vf-errado {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: #fff;
+}
+
+.flashcards-vf-btn.vf-resposta-certa {
+    border-color: #16a34a;
+    color: #16a34a;
 }
 
 .flashcards-respostas {

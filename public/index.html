@@ -438,6 +438,10 @@
                         <div class="flashcards-card-face" id="flashcards-card-frente"></div>
                         <div class="flashcards-card-face flashcards-card-verso" id="flashcards-card-verso" style="display:none;"></div>
                         <div class="flashcards-card-dica" id="flashcards-card-dica">Toque no cartão pra ver a resposta</div>
+                        <div class="flashcards-vf-botoes" id="flashcards-vf-botoes" style="display:none;">
+                            <button type="button" class="flashcards-vf-btn flashcards-vf-btn-verdadeiro" id="flashcards-vf-btn-verdadeiro" onclick="event.stopPropagation(); responderVF(true)">✅ Verdadeiro</button>
+                            <button type="button" class="flashcards-vf-btn flashcards-vf-btn-falso" id="flashcards-vf-btn-falso" onclick="event.stopPropagation(); responderVF(false)">❌ Falso</button>
+                        </div>
                     </div>
                     <div class="flashcards-respostas" id="flashcards-respostas" style="display:none;">
                         <button type="button" class="flashcards-resposta-btn flashcards-resposta-errei" onclick="responderRevisao(0)">Errei<span class="flashcards-resposta-preview" id="flashcards-preview-0"></span></button>
@@ -844,6 +848,7 @@
             <div class="cartao-tipo-selector" id="cartao-tipo-selector">
                 <button type="button" class="cartao-tipo-btn ativo" id="btn-tipo-basico" onclick="definirTipoCartao('basico')">📝 Básico</button>
                 <button type="button" class="cartao-tipo-btn" id="btn-tipo-cloze" onclick="definirTipoCartao('cloze')">🕳️ Omissão (cloze)</button>
+                <button type="button" class="cartao-tipo-btn" id="btn-tipo-vf" onclick="definirTipoCartao('vf')">✅❌ Verdadeiro/Falso</button>
             </div>
 
             <div id="cartao-campos-basico">
@@ -863,8 +868,8 @@
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarListaEditor('letras')" title="Lista com letras (a) b) c))">a)</button>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarListaEditor('marcadores')" title="Lista com traços (- - -)">−</button>
                         <span class="editor-toolbar-separador"></span>
-                        <input type="color" class="editor-toolbar-cor" title="Cor do texto" onchange="aplicarFormatoTexto('foreColor', this.value)">
-                        <input type="color" class="editor-toolbar-cor" title="Realce" value="#fff59d" onchange="aplicarFormatoTexto('hiliteColor', this.value)">
+                        <span class="editor-toolbar-cores" data-cor-tipo="texto"></span>
+                        <span class="editor-toolbar-cores" data-cor-tipo="realce"></span>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('removeFormat')" title="Limpar formatação">⌫</button>
                     </div>
                     <div id="cartao-frente-input" class="editor-campo" contenteditable="true" data-placeholder="Pergunta ou termo"
@@ -887,8 +892,8 @@
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarListaEditor('letras')" title="Lista com letras (a) b) c))">a)</button>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarListaEditor('marcadores')" title="Lista com traços (- - -)">−</button>
                         <span class="editor-toolbar-separador"></span>
-                        <input type="color" class="editor-toolbar-cor" title="Cor do texto" onchange="aplicarFormatoTexto('foreColor', this.value)">
-                        <input type="color" class="editor-toolbar-cor" title="Realce" value="#fff59d" onchange="aplicarFormatoTexto('hiliteColor', this.value)">
+                        <span class="editor-toolbar-cores" data-cor-tipo="texto"></span>
+                        <span class="editor-toolbar-cores" data-cor-tipo="realce"></span>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('removeFormat')" title="Limpar formatação">⌫</button>
                     </div>
                     <div id="cartao-verso-input" class="editor-campo" contenteditable="true" data-placeholder="Resposta ou explicação"
@@ -924,8 +929,8 @@
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarListaEditor('letras')" title="Lista com letras (a) b) c))">a)</button>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarListaEditor('marcadores')" title="Lista com traços (- - -)">−</button>
                         <span class="editor-toolbar-separador"></span>
-                        <input type="color" class="editor-toolbar-cor" title="Cor do texto" onchange="aplicarFormatoTexto('foreColor', this.value)">
-                        <input type="color" class="editor-toolbar-cor" title="Realce" value="#fff59d" onchange="aplicarFormatoTexto('hiliteColor', this.value)">
+                        <span class="editor-toolbar-cores" data-cor-tipo="texto"></span>
+                        <span class="editor-toolbar-cores" data-cor-tipo="realce"></span>
                         <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('removeFormat')" title="Limpar formatação">⌫</button>
                     </div>
                     <div id="cartao-cloze-input" class="editor-campo" contenteditable="true" data-placeholder="Ex: O prazo para recurso é de 15 dias úteis."
@@ -937,12 +942,53 @@
                     onmouseup="salvarSelecaoEditor(event)" onkeyup="salvarSelecaoEditor(event)" onfocus="salvarSelecaoEditor(event)"></div>
             </div>
 
+            <div id="cartao-campos-vf" style="display:none;">
+                <div class="editor-grupo">
+                    <label class="modal-label">Afirmação</label>
+                    <div class="editor-toolbar">
+                        <button type="button" class="editor-toolbar-desfazer" onmousedown="event.preventDefault()" onclick="desfazerEditor()" title="Desfazer a última alteração">↶ Desfazer</button>
+                        <span class="editor-toolbar-separador"></span>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('bold')" title="Negrito"><b>N</b></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('italic')" title="Itálico"><i>I</i></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('underline')" title="Sublinhado"><u>S</u></button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('superscript')" title="Sobrescrito">x²</button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('subscript')" title="Subscrito">x₂</button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="inserirCaractereEditor('°')" title="Inserir símbolo de grau (°)">°</button>
+                        <span class="editor-toolbar-separador"></span>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarListaEditor('numerada')" title="Lista numerada (1. 2. 3.)">1.</button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarListaEditor('letras')" title="Lista com letras (a) b) c))">a)</button>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarListaEditor('marcadores')" title="Lista com traços (- - -)">−</button>
+                        <span class="editor-toolbar-separador"></span>
+                        <span class="editor-toolbar-cores" data-cor-tipo="texto"></span>
+                        <span class="editor-toolbar-cores" data-cor-tipo="realce"></span>
+                        <button type="button" onmousedown="event.preventDefault()" onclick="aplicarFormatoTexto('removeFormat')" title="Limpar formatação">⌫</button>
+                    </div>
+                    <div id="cartao-vf-frente-input" class="editor-campo" contenteditable="true" data-placeholder="Escreva a afirmação (verdadeira ou falsa)"
+                        onmouseup="salvarSelecaoEditor(event)" onkeyup="salvarSelecaoEditor(event)" onfocus="salvarSelecaoEditor(event)"></div>
+                </div>
+
+                <label class="modal-label">Resposta correta</label>
+                <div class="cartao-vf-resposta-selector" id="cartao-vf-resposta-selector">
+                    <button type="button" class="cartao-vf-resposta-btn ativo" id="btn-vf-resposta-verdadeiro" onclick="definirRespostaVFCorreta(true)">✅ Verdadeiro</button>
+                    <button type="button" class="cartao-vf-resposta-btn" id="btn-vf-resposta-falso" onclick="definirRespostaVFCorreta(false)">❌ Falso</button>
+                </div>
+
+                <label class="modal-label">Explicação (opcional)</label>
+                <div id="cartao-vf-explicacao-input" class="editor-campo editor-campo-pequeno" contenteditable="true" data-placeholder="Alguma explicação extra que só aparece depois de responder"
+                    onmouseup="salvarSelecaoEditor(event)" onkeyup="salvarSelecaoEditor(event)" onfocus="salvarSelecaoEditor(event)"></div>
+            </div>
+
             <div class="modal-actions">
                 <button class="btn-cancelar" onclick="fecharModalCartao()">Cancelar</button>
                 <button onclick="salvarCartao()">Salvar</button>
             </div>
         </div>
     </div>
+
+    <!-- Seletor de cor nativo, reaproveitado por todas as paletas de cores
+         favoritas (texto e realce) — fica escondido, só abre quando a
+         pessoa clica no "+" de alguma paleta pra escolher uma cor nova. -->
+    <input type="color" id="cor-favorita-input-oculto" style="display:none;" onchange="corFavoritaEscolhida(this.value)">
 
     <!-- Modal: mover/copiar cartão pra outro baralho -->
     <div id="modal-mover-cartao-overlay" class="modal-overlay" style="display:none;">

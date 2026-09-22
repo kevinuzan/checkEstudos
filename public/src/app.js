@@ -62,6 +62,7 @@ async function iniciar() {
     renderizarSeletorTema();
     renderizarSeletorFundo();
     atualizarRotuloFonteEscala();
+    renderizarPaletasCores();
     configurarSeletorCorMateria();
     await carregarPlanos();
     await carregarEdital();
@@ -2603,8 +2604,9 @@ function renderizarCartoesDoBaralho() {
             ` : ''}
             <div class="cartao-item-conteudo">
                 ${c.tipo === 'cloze' ? `<span class="cartao-item-tipo-badge">🕳️ Omissão${c.clozeIndice ? ` c${c.clozeIndice}` : ''}</span>` : ''}
+                ${c.tipo === 'vf' ? `<span class="cartao-item-tipo-badge">✅❌ Verdadeiro/Falso</span>` : ''}
                 <div class="cartao-item-frente">${removerTagsHtmlFlashcard(c.frente)}</div>
-                <div class="cartao-item-verso">${removerTagsHtmlFlashcard(c.verso)}</div>
+                <div class="cartao-item-verso">${c.tipo === 'vf' ? `Resposta: ${c.respostaVF ? 'Verdadeiro ✅' : 'Falso ❌'}` : removerTagsHtmlFlashcard(c.verso)}</div>
             </div>
             ${modoSelecaoCartoes ? '' : `
                 <div class="cartao-item-acoes">
@@ -2699,6 +2701,80 @@ function aplicarListaEditor(tipo) {
             if (lista) lista.classList.add(tipo === 'letras' ? 'lista-letras' : 'lista-tracos');
         }
     }
+}
+
+// --- CORES FAVORITAS (texto e realce) ---
+// Em vez do seletor de cor "cru" do navegador toda vez, a pessoa tem uma
+// paleta de cores favoritas (6 de cada tipo) já prontas pra clicar — e pode
+// trocar/adicionar uma nova a qualquer momento pelo "+", que abre o seletor
+// nativo só pra ESCOLHER a cor nova; ela entra na paleta (na frente) e, se
+// já tiver 6 salvas, a mais antiga sai — ou seja, pode ir substituindo as
+// que já existem com o tempo, sem precisar de tela de configuração à parte.
+const CORES_FAVORITAS_KEY = { texto: 'checkestudos_cores_favoritas_texto', realce: 'checkestudos_cores_favoritas_realce' };
+const CORES_FAVORITAS_PADRAO = {
+    texto: ['#1e293b', '#dc2626', '#2563eb', '#16a34a', '#d97706', '#7c3aed'],
+    realce: ['#fff59d', '#bbf7d0', '#bfdbfe', '#fecdd3', '#fed7aa', '#e9d5ff']
+};
+const CORES_FAVORITAS_MAX = 6;
+
+function obterCoresFavoritas(tipo) {
+    try {
+        const salvo = JSON.parse(localStorage.getItem(CORES_FAVORITAS_KEY[tipo]));
+        if (Array.isArray(salvo) && salvo.length > 0) return salvo.slice(0, CORES_FAVORITAS_MAX);
+    } catch (err) { /* usa o padrão */ }
+    return CORES_FAVORITAS_PADRAO[tipo].slice();
+}
+
+function salvarCoresFavoritas(tipo, lista) {
+    try { localStorage.setItem(CORES_FAVORITAS_KEY[tipo], JSON.stringify(lista)); } catch (err) { /* segue sem salvar */ }
+}
+
+function adicionarCorFavorita(tipo, cor) {
+    let lista = obterCoresFavoritas(tipo).filter(c => c.toLowerCase() !== cor.toLowerCase());
+    lista.unshift(cor);
+    if (lista.length > CORES_FAVORITAS_MAX) lista = lista.slice(0, CORES_FAVORITAS_MAX);
+    salvarCoresFavoritas(tipo, lista);
+}
+
+function aplicarCorFavorita(tipo, cor) {
+    restaurarSelecaoEditor();
+    document.execCommand(tipo === 'realce' ? 'hiliteColor' : 'foreColor', false, cor);
+}
+
+// Guarda qual paleta (texto ou realce) pediu pra abrir o seletor nativo,
+// já que o mesmo <input type="color"> oculto é reaproveitado pelas duas.
+let corFavoritaTipoPendente = null;
+
+function abrirSeletorNovaCorFavorita(tipo) {
+    corFavoritaTipoPendente = tipo;
+    const input = document.getElementById('cor-favorita-input-oculto');
+    if (input) input.click();
+}
+
+function corFavoritaEscolhida(valor) {
+    const tipo = corFavoritaTipoPendente;
+    corFavoritaTipoPendente = null;
+    if (!tipo) return;
+    adicionarCorFavorita(tipo, valor);
+    aplicarCorFavorita(tipo, valor);
+    renderizarPaletasCores();
+}
+
+// Redesenha todas as paletas de cores favoritas presentes na tela agora
+// (uma pra cada campo de texto, já que cada um tem sua própria barra de
+// ferramentas) — chamado ao carregar a página e sempre que uma cor nova
+// é adicionada, pra manter todas sincronizadas.
+function renderizarPaletasCores() {
+    document.querySelectorAll('.editor-toolbar-cores').forEach(container => {
+        const tipo = container.dataset.corTipo === 'realce' ? 'realce' : 'texto';
+        const titulo = tipo === 'realce' ? 'Realce' : 'Cor do texto';
+        const cores = obterCoresFavoritas(tipo);
+        container.innerHTML = cores.map(cor => `
+            <button type="button" class="cor-favorita-swatch" style="background:${cor}" onmousedown="event.preventDefault()" onclick="aplicarCorFavorita('${tipo}', '${cor}')" title="${titulo}: ${cor}"></button>
+        `).join('') + `
+            <button type="button" class="cor-favorita-add" onmousedown="event.preventDefault()" onclick="abrirSeletorNovaCorFavorita('${tipo}')" title="Escolher uma cor nova e salvar como favorita">+</button>
+        `;
+    });
 }
 
 // "Desfazer" (tipo Ctrl+Z) pro campo de texto do cartão — no computador já
@@ -2845,19 +2921,37 @@ function converterClozeTextoParaEditorHtml(clozeTexto) {
 // --- MODAL: CRIAR/EDITAR CARTÃO ---
 
 // Tipo de cartão selecionado no momento no modal: "basico" (frente/verso
-// normais) ou "cloze" (texto único com trecho(s) omitidos, numerados).
+// normais), "cloze" (texto único com trecho(s) omitidos, numerados) ou "vf"
+// (afirmação + Verdadeiro/Falso).
 let cartaoTipoAtual = 'basico';
+// Resposta certa do cartão "vf" que está sendo criado/editado no momento
+// (true = Verdadeiro, false = Falso) — separado do resto do "corpo" do
+// cartão porque não vem de um campo de texto, e sim dos botões abaixo.
+let cartaoVFRespostaCorreta = true;
 // Quando o cartão está sendo editado a partir da tela de revisão (botão
 // "✏️ Editar cartão"), salvar não deve sair da revisão — só atualizar a
 // fila e continuar de onde estava.
 let cartaoEdicaoEmRevisao = false;
 
 function definirTipoCartao(tipo) {
-    cartaoTipoAtual = tipo === 'cloze' ? 'cloze' : 'basico';
+    cartaoTipoAtual = tipo === 'cloze' ? 'cloze' : (tipo === 'vf' ? 'vf' : 'basico');
     document.getElementById('btn-tipo-basico').classList.toggle('ativo', cartaoTipoAtual === 'basico');
     document.getElementById('btn-tipo-cloze').classList.toggle('ativo', cartaoTipoAtual === 'cloze');
+    document.getElementById('btn-tipo-vf').classList.toggle('ativo', cartaoTipoAtual === 'vf');
     document.getElementById('cartao-campos-basico').style.display = cartaoTipoAtual === 'basico' ? 'block' : 'none';
     document.getElementById('cartao-campos-cloze').style.display = cartaoTipoAtual === 'cloze' ? 'block' : 'none';
+    document.getElementById('cartao-campos-vf').style.display = cartaoTipoAtual === 'vf' ? 'block' : 'none';
+}
+
+// Alterna qual das duas opções (Verdadeiro/Falso) é a resposta certa do
+// cartão "vf" sendo criado/editado — só visual (classe "ativo" no botão
+// escolhido); o valor de verdade fica em cartaoVFRespostaCorreta.
+function definirRespostaVFCorreta(valor) {
+    cartaoVFRespostaCorreta = valor === true;
+    const btnV = document.getElementById('btn-vf-resposta-verdadeiro');
+    const btnF = document.getElementById('btn-vf-resposta-falso');
+    if (btnV) btnV.classList.toggle('ativo', cartaoVFRespostaCorreta === true);
+    if (btnF) btnF.classList.toggle('ativo', cartaoVFRespostaCorreta === false);
 }
 
 function abrirModalNovoCartao() {
@@ -2868,6 +2962,9 @@ function abrirModalNovoCartao() {
     document.getElementById('cartao-verso-input').innerHTML = '';
     document.getElementById('cartao-cloze-input').innerHTML = '';
     document.getElementById('cartao-cloze-extra-input').innerHTML = '';
+    document.getElementById('cartao-vf-frente-input').innerHTML = '';
+    document.getElementById('cartao-vf-explicacao-input').innerHTML = '';
+    definirRespostaVFCorreta(true);
     // Padrão agora é "Omissão (cloze)" em vez de "Básico" — é o tipo de
     // cartão mais usado, então já abre pronto pra digitar nesse modo.
     definirTipoCartao('cloze');
@@ -2878,12 +2975,16 @@ function abrirModalNovoCartao() {
 
 function preencherModalCartaoComDados(cartao) {
     const ehCloze = cartao.tipo === 'cloze';
+    const ehVF = cartao.tipo === 'vf';
     document.getElementById('modal-cartao-titulo').textContent = 'Editar cartão';
-    document.getElementById('cartao-frente-input').innerHTML = ehCloze ? '' : (cartao.frente || '');
-    document.getElementById('cartao-verso-input').innerHTML = ehCloze ? '' : (cartao.verso || '');
+    document.getElementById('cartao-frente-input').innerHTML = (!ehCloze && !ehVF) ? (cartao.frente || '') : '';
+    document.getElementById('cartao-verso-input').innerHTML = (!ehCloze && !ehVF) ? (cartao.verso || '') : '';
     document.getElementById('cartao-cloze-input').innerHTML = ehCloze ? converterClozeTextoParaEditorHtml(cartao.clozeTexto) : '';
     document.getElementById('cartao-cloze-extra-input').innerHTML = ehCloze ? (cartao.clozeExtra || '') : '';
-    definirTipoCartao(ehCloze ? 'cloze' : 'basico');
+    document.getElementById('cartao-vf-frente-input').innerHTML = ehVF ? (cartao.frente || '') : '';
+    document.getElementById('cartao-vf-explicacao-input').innerHTML = ehVF ? (cartao.verso || '') : '';
+    definirRespostaVFCorreta(ehVF ? !!cartao.respostaVF : true);
+    definirTipoCartao(ehCloze ? 'cloze' : (ehVF ? 'vf' : 'basico'));
     clozeNumeroAtivo = ehCloze ? maiorNumeroClozeNoTexto(cartao.clozeTexto) : 1;
     atualizarIndicadorClozeAtivo();
     document.getElementById('modal-cartao-overlay').style.display = 'flex';
@@ -2919,9 +3020,13 @@ function limparCamposModalCartaoParaProximo() {
     document.getElementById('cartao-verso-input').innerHTML = '';
     document.getElementById('cartao-cloze-input').innerHTML = '';
     document.getElementById('cartao-cloze-extra-input').innerHTML = '';
+    document.getElementById('cartao-vf-frente-input').innerHTML = '';
+    document.getElementById('cartao-vf-explicacao-input').innerHTML = '';
+    definirRespostaVFCorreta(true);
     clozeNumeroAtivo = 1;
     atualizarIndicadorClozeAtivo();
-    const campoFoco = document.getElementById(cartaoTipoAtual === 'cloze' ? 'cartao-cloze-input' : 'cartao-frente-input');
+    const idCampoFoco = cartaoTipoAtual === 'cloze' ? 'cartao-cloze-input' : (cartaoTipoAtual === 'vf' ? 'cartao-vf-frente-input' : 'cartao-frente-input');
+    const campoFoco = document.getElementById(idCampoFoco);
     if (campoFoco) campoFoco.focus();
 }
 
@@ -2937,6 +3042,16 @@ async function salvarCartao() {
         }
         corpo.clozeTexto = clozeTexto;
         corpo.clozeExtra = document.getElementById('cartao-cloze-extra-input').innerHTML.trim();
+    } else if (cartaoTipoAtual === 'vf') {
+        const frente = document.getElementById('cartao-vf-frente-input').innerHTML.trim();
+        const explicacao = document.getElementById('cartao-vf-explicacao-input').innerHTML.trim();
+        if (!frente || frente === '<br>') {
+            alert('Escreva a afirmação do cartão.');
+            return;
+        }
+        corpo.frente = frente;
+        corpo.verso = explicacao;
+        corpo.respostaVF = cartaoVFRespostaCorreta === true;
     } else {
         const frente = document.getElementById('cartao-frente-input').innerHTML.trim();
         const verso = document.getElementById('cartao-verso-input').innerHTML.trim();
@@ -3247,14 +3362,29 @@ function mostrarProximoCartaoRevisao() {
 
     cartaoRevisaoAtual = filaRevisaoCache[0];
     respostaRevisaoRevelada = false;
+    const ehVF = cartaoRevisaoAtual.tipo === 'vf';
 
     if (progresso) progresso.textContent = `${totalRestante} restante${totalRestante === 1 ? '' : 's'}`;
     document.getElementById('flashcards-card-frente').innerHTML = cartaoRevisaoAtual.frente;
     document.getElementById('flashcards-card-frente').style.display = 'block';
-    document.getElementById('flashcards-card-verso').innerHTML = cartaoRevisaoAtual.verso || '<em>(sem verso)</em>';
+    // Num cartão "vf", o "verso" guarda a Explicação (opcional) — se não
+    // tiver nenhuma, não faz sentido mostrar o "(sem verso)" de sempre.
+    document.getElementById('flashcards-card-verso').innerHTML = cartaoRevisaoAtual.verso || (ehVF ? '' : '<em>(sem verso)</em>');
     document.getElementById('flashcards-card-verso').style.display = 'none';
     document.getElementById('flashcards-card-verso').classList.remove('flashcards-card-verso-sozinho');
-    document.getElementById('flashcards-card-dica').style.display = 'block';
+
+    // Num cartão "vf" não tem "toque pra ver a resposta" — os botões
+    // Verdadeiro/Falso já ficam visíveis direto, e é neles que a pessoa
+    // responde (ver responderVF).
+    document.getElementById('flashcards-card-dica').style.display = ehVF ? 'none' : 'block';
+    const botoesVF = document.getElementById('flashcards-vf-botoes');
+    if (botoesVF) {
+        botoesVF.style.display = ehVF ? 'flex' : 'none';
+        botoesVF.querySelectorAll('.flashcards-vf-btn').forEach(btn => {
+            btn.classList.remove('vf-correto', 'vf-errado', 'vf-resposta-certa');
+            btn.disabled = false;
+        });
+    }
     document.getElementById('flashcards-respostas').style.display = 'none';
 
     // Mostra em cima de cada botão daqui a quanto tempo o cartão volta se
@@ -3275,7 +3405,10 @@ function mostrarProximoCartaoRevisao() {
 }
 
 function mostrarRespostaRevisao() {
-    if (respostaRevisaoRevelada || !cartaoRevisaoAtual) return;
+    // Cartão "vf" não revela nada ao tocar no corpo do cartão — a resposta
+    // só sai quando a pessoa clica em "Verdadeiro" ou "Falso" (ver
+    // responderVF), então esse clique genérico não faz nada aqui.
+    if (respostaRevisaoRevelada || !cartaoRevisaoAtual || cartaoRevisaoAtual.tipo === 'vf') return;
     respostaRevisaoRevelada = true;
 
     // Num cartão de omissão (cloze), a "frente" e o "verso" são a MESMA
@@ -3291,6 +3424,36 @@ function mostrarRespostaRevisao() {
     }
     document.getElementById('flashcards-card-verso').style.display = 'block';
     document.getElementById('flashcards-card-dica').style.display = 'none';
+    document.getElementById('flashcards-respostas').style.display = 'grid';
+}
+
+// Resposta de um cartão "vf": a pessoa clica em Verdadeiro ou Falso, o
+// botão escolhido fica verde (acertou) ou vermelho (errou) — e, quando
+// erra, o botão com a resposta certa também fica marcado, pra ela ver
+// qual era. Depois disso libera a nota de dificuldade de sempre (Errei/
+// Difícil/Bom/Fácil), igual nos outros tipos de cartão.
+function responderVF(escolhaVerdadeiro) {
+    if (respostaRevisaoRevelada || !cartaoRevisaoAtual || cartaoRevisaoAtual.tipo !== 'vf') return;
+    respostaRevisaoRevelada = true;
+
+    const respostaCerta = !!cartaoRevisaoAtual.respostaVF;
+    const acertou = escolhaVerdadeiro === respostaCerta;
+
+    const btnV = document.getElementById('flashcards-vf-btn-verdadeiro');
+    const btnF = document.getElementById('flashcards-vf-btn-falso');
+    const btnEscolhido = escolhaVerdadeiro ? btnV : btnF;
+    const btnCerto = respostaCerta ? btnV : btnF;
+
+    if (btnEscolhido) btnEscolhido.classList.add(acertou ? 'vf-correto' : 'vf-errado');
+    if (!acertou && btnCerto) btnCerto.classList.add('vf-resposta-certa');
+    if (btnV) btnV.disabled = true;
+    if (btnF) btnF.disabled = true;
+
+    // Se tiver uma Explicação (opcional) preenchida, mostra ela agora,
+    // igual ao verso dos outros tipos de cartão.
+    if (cartaoRevisaoAtual.verso) {
+        document.getElementById('flashcards-card-verso').style.display = 'block';
+    }
     document.getElementById('flashcards-respostas').style.display = 'grid';
 }
 

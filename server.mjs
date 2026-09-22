@@ -1374,6 +1374,15 @@ async function startServer() {
         const REGEX_CLOZE_ANKI = /\{\{c(\d+)::([\s\S]*?)\}\}/g;
         const REGEX_CLOZE_LEGADO = /\{\{([^{}:][^{}]*)\}\}/g;
 
+        // Tipo de cartão: "cloze" (omissão), "vf" (afirmação + Verdadeiro/
+        // Falso) ou "basico" (frente/verso) — qualquer outro valor cai em
+        // "basico" por padrão.
+        function tipoCartaoNormalizado(tipo) {
+            if (tipo === 'cloze') return 'cloze';
+            if (tipo === 'vf') return 'vf';
+            return 'basico';
+        }
+
         function indicesClozeDoTexto(texto) {
             const alvo = texto || '';
             const indices = new Set();
@@ -1809,7 +1818,7 @@ async function startServer() {
             const baralho = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
             if (!baralho) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
 
-            const tipo = req.body.tipo === 'cloze' ? 'cloze' : 'basico';
+            const tipo = tipoCartaoNormalizado(req.body.tipo);
             const agora = new Date();
 
             if (tipo === 'cloze') {
@@ -1833,6 +1842,19 @@ async function startServer() {
                 });
                 const resultado = await flashcardsCartoesColl.insertMany(docs);
                 res.json({ success: true, total: docs.length, cartoes: docs.map((d, i) => ({ ...d, _id: resultado.insertedIds[i] })) });
+            } else if (tipo === 'vf') {
+                const frente = (req.body.frente || '').trim();
+                const verso = (req.body.verso || '').trim();
+                const respostaVF = req.body.respostaVF === true || req.body.respostaVF === 'true';
+                if (!frente) return res.status(400).json({ success: false, error: 'A afirmação do cartão é obrigatória' });
+
+                const doc = {
+                    baralhoId: req.params.id, userId: req.userId, tipo, frente, verso, respostaVF,
+                    facilidade: 2.5, intervalo: 0, repeticoes: 0, etapaAprendizado: 0,
+                    dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
+                };
+                const resultado = await flashcardsCartoesColl.insertOne(doc);
+                res.json({ success: true, total: 1, cartao: { ...doc, _id: resultado.insertedId } });
             } else {
                 const frente = (req.body.frente || '').trim();
                 const verso = (req.body.verso || '').trim();
@@ -1916,7 +1938,7 @@ async function startServer() {
             const cartaoAtual = await flashcardsCartoesColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
             if (!cartaoAtual) return res.status(404).json({ success: false, error: 'Cartão não encontrado' });
 
-            const tipo = req.body.tipo === 'cloze' ? 'cloze' : 'basico';
+            const tipo = tipoCartaoNormalizado(req.body.tipo);
 
             if (tipo === 'cloze') {
                 const clozeTexto = (req.body.clozeTexto || '').trim();
@@ -1961,6 +1983,20 @@ async function startServer() {
 
                 await Promise.all(operacoes);
                 res.json({ success: true });
+            } else if (tipo === 'vf') {
+                const frente = (req.body.frente || '').trim();
+                const verso = (req.body.verso || '').trim();
+                const respostaVF = req.body.respostaVF === true || req.body.respostaVF === 'true';
+                if (!frente) return res.status(400).json({ success: false, error: 'A afirmação do cartão é obrigatória' });
+
+                await flashcardsCartoesColl.updateOne(
+                    { _id: cartaoAtual._id },
+                    {
+                        $set: { tipo, frente, verso, respostaVF },
+                        $unset: { clozeTexto: '', clozeExtra: '', clozeIndice: '', origemClozeId: '' }
+                    }
+                );
+                res.json({ success: true });
             } else {
                 const frente = (req.body.frente || '').trim();
                 const verso = (req.body.verso || '').trim();
@@ -1970,7 +2006,7 @@ async function startServer() {
                     { _id: cartaoAtual._id },
                     {
                         $set: { tipo, frente, verso },
-                        $unset: { clozeTexto: '', clozeExtra: '', clozeIndice: '', origemClozeId: '' }
+                        $unset: { clozeTexto: '', clozeExtra: '', clozeIndice: '', origemClozeId: '', respostaVF: '' }
                     }
                 );
                 res.json({ success: true });
@@ -2069,7 +2105,8 @@ async function startServer() {
                     nome: caminhoRelativo[caminhoRelativo.length - 1],
                     cartoes: cartoes.map(c => ({
                         tipo: c.tipo, frente: c.frente, verso: c.verso,
-                        ...(c.tipo === 'cloze' ? { clozeTexto: c.clozeTexto, clozeExtra: c.clozeExtra, clozeIndice: c.clozeIndice, origemClozeId: c.origemClozeId } : {})
+                        ...(c.tipo === 'cloze' ? { clozeTexto: c.clozeTexto, clozeExtra: c.clozeExtra, clozeIndice: c.clozeIndice, origemClozeId: c.origemClozeId } : {}),
+                        ...(c.tipo === 'vf' ? { respostaVF: c.respostaVF } : {})
                     }))
                 });
             }
@@ -2111,9 +2148,10 @@ async function startServer() {
                     .filter(c => (c.frente || '').trim() !== '')
                     .map(c => ({
                         baralhoId: String(resultadoBaralho.insertedId), userId: req.userId,
-                        tipo: c.tipo === 'cloze' ? 'cloze' : 'basico',
+                        tipo: tipoCartaoNormalizado(c.tipo),
                         frente: c.frente, verso: c.verso || '',
                         ...(c.tipo === 'cloze' ? { clozeTexto: c.clozeTexto, clozeExtra: c.clozeExtra, clozeIndice: c.clozeIndice, origemClozeId: c.origemClozeId } : {}),
+                        ...(c.tipo === 'vf' ? { respostaVF: !!c.respostaVF } : {}),
                         facilidade: 2.5, intervalo: 0, repeticoes: 0, etapaAprendizado: 0,
                         dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
                     }));
