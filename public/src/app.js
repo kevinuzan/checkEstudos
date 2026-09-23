@@ -2122,6 +2122,9 @@ let flashcardsPastasExpandidas = new Set();
 let filaRevisaoCache = []; // cartões pendentes na sessão de revisão atual
 let cartaoRevisaoAtual = null;
 let respostaRevisaoRevelada = false;
+// Timer usado quando o próximo cartão da fila ainda não "venceu" (só sobrou
+// cartão em aprendizado, com um passo de minutos) — ver mostrarProximoCartaoRevisao().
+let timeoutProximoCartaoRevisao = null;
 
 let cartaoEmEdicaoId = null; // null = criando um cartão novo no modal
 
@@ -3341,6 +3344,8 @@ async function iniciarRevisao(idOuIds) {
 
     mostrarTelaFlashcards('revisar');
     document.getElementById('flashcards-revisao-concluida').style.display = 'none';
+    const aguardandoEl = document.getElementById('flashcards-revisao-aguardando');
+    if (aguardandoEl) aguardandoEl.style.display = 'none';
     document.getElementById('flashcards-card-revisao').style.display = 'flex';
     document.getElementById('flashcards-respostas').style.display = 'none';
     const ultimaRespostaEl = document.getElementById('flashcards-revisar-ultima-resposta');
@@ -3349,18 +3354,59 @@ async function iniciarRevisao(idOuIds) {
 }
 
 function mostrarProximoCartaoRevisao() {
+    if (timeoutProximoCartaoRevisao) {
+        clearTimeout(timeoutProximoCartaoRevisao);
+        timeoutProximoCartaoRevisao = null;
+    }
+
+    // Reordena pela data de próxima revisão — é isso que faz um cartão que
+    // acabou de ser recolocado na fila (ver responderRevisao()) aparecer na
+    // hora certa, nem antes nem depois dos outros.
+    filaRevisaoCache.sort((a, b) => new Date(a.dataProximaRevisao) - new Date(b.dataProximaRevisao));
+
     const progresso = document.getElementById('flashcards-revisar-progresso');
     const totalRestante = filaRevisaoCache.length;
 
     if (totalRestante === 0) {
         document.getElementById('flashcards-card-revisao').style.display = 'none';
         document.getElementById('flashcards-respostas').style.display = 'none';
+        const aguardandoEl = document.getElementById('flashcards-revisao-aguardando');
+        if (aguardandoEl) aguardandoEl.style.display = 'none';
         document.getElementById('flashcards-revisao-concluida').style.display = 'flex';
         if (progresso) progresso.textContent = '';
         return;
     }
 
-    cartaoRevisaoAtual = filaRevisaoCache[0];
+    const proximo = filaRevisaoCache[0];
+    const esperaMs = new Date(proximo.dataProximaRevisao).getTime() - Date.now();
+
+    // O cartão da vez ainda não "venceu" — só sobrou cartão em aprendizado
+    // esperando o próprio passo (ex: os 10min do "Difícil"). Em vez de
+    // obrigar a pessoa a sair e voltar depois, mostra um aviso e agenda
+    // pra continuar sozinho assim que a hora chegar.
+    if (esperaMs > 250) {
+        cartaoRevisaoAtual = null;
+        document.getElementById('flashcards-card-revisao').style.display = 'none';
+        document.getElementById('flashcards-respostas').style.display = 'none';
+        const aguardandoEl = document.getElementById('flashcards-revisao-aguardando');
+        if (aguardandoEl) {
+            aguardandoEl.style.display = 'flex';
+            const tempoEl = document.getElementById('flashcards-revisao-aguardando-tempo');
+            if (tempoEl) tempoEl.textContent = formatarIntervaloPreviewLocal(esperaMs);
+        }
+        if (progresso) progresso.textContent = `${totalRestante} restante${totalRestante === 1 ? '' : 's'}`;
+        // Trava num teto alto só por segurança (setTimeout não aceita atraso
+        // absurdamente grande) — na prática esses cartões são sempre de
+        // minutos, nunca chega perto disso.
+        timeoutProximoCartaoRevisao = setTimeout(mostrarProximoCartaoRevisao, Math.min(esperaMs + 250, 2000000000));
+        return;
+    }
+
+    const aguardandoEl = document.getElementById('flashcards-revisao-aguardando');
+    if (aguardandoEl) aguardandoEl.style.display = 'none';
+    document.getElementById('flashcards-card-revisao').style.display = 'flex';
+
+    cartaoRevisaoAtual = proximo;
     respostaRevisaoRevelada = false;
     const ehVF = cartaoRevisaoAtual.tipo === 'vf';
 
@@ -3462,13 +3508,16 @@ const RESPOSTA_REVISAO_ROTULOS = ['❌ Errei', '😓 Difícil', '👍 Bom', '�
 async function responderRevisao(qualidade) {
     if (!cartaoRevisaoAtual) return;
     const cartaoRespondido = cartaoRevisaoAtual;
+    let cartaoAtualizado = null;
 
     try {
-        await fetch(`/api/flashcards/cards/${cartaoRespondido._id}/revisar`, {
+        const res = await fetch(`/api/flashcards/cards/${cartaoRespondido._id}/revisar`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ qualidade })
         });
+        const dados = await res.json();
+        if (dados && dados.cartao) cartaoAtualizado = dados.cartao;
     } catch (err) {
         console.error('Erro ao registrar revisão:', err);
     }
@@ -3484,10 +3533,24 @@ async function responderRevisao(qualidade) {
     }
 
     filaRevisaoCache = filaRevisaoCache.filter(c => c._id !== cartaoRespondido._id);
+
+    // Cartão ainda na fase de aprendizado (passo em minutos — "Errei",
+    // "Difícil" ainda repetindo passo, ou "Bom" indo pro próximo passo)
+    // volta pra fila da PRÓPRIA sessão, com o novo horário e os previews já
+    // recalculados — não precisa terminar tudo pra ele reaparecer. Só quando
+    // "gradua" pra fase de revisão (dias) é que ele sai de vez por hoje.
+    if (cartaoAtualizado && cartaoAtualizado.estado === 'aprendendo') {
+        filaRevisaoCache.push(cartaoAtualizado);
+    }
+
     mostrarProximoCartaoRevisao();
 }
 
 function sairRevisao() {
+    if (timeoutProximoCartaoRevisao) {
+        clearTimeout(timeoutProximoCartaoRevisao);
+        timeoutProximoCartaoRevisao = null;
+    }
     cartaoRevisaoAtual = null;
     filaRevisaoCache = [];
     revisaoIdsAtual = [];
@@ -3497,6 +3560,19 @@ function sairRevisao() {
 // ==================================================================
 // FORMATAÇÃO / UTILIDADES DE DATA E TEMPO
 // ==================================================================
+
+// Mesma lógica do formatarIntervaloPreview() do server.mjs, só que a
+// partir de uma diferença em milissegundos já calculada no cliente — usada
+// pra mostrar "volta em Xmin" na tela de espera da revisão (ver
+// mostrarProximoCartaoRevisao()), sem precisar de outra chamada ao servidor.
+function formatarIntervaloPreviewLocal(diffMs) {
+    const diffMin = diffMs / 60000;
+    if (diffMin < 60) return `<${Math.max(1, Math.ceil(diffMin))}min`;
+    const diffHoras = diffMin / 60;
+    if (diffHoras < 24) return `<${Math.max(1, Math.ceil(diffHoras))}h`;
+    const diffDias = Math.max(1, Math.round(diffHoras / 24));
+    return diffDias === 1 ? '1 dia' : `${diffDias} dias`;
+}
 
 function formatarHMS(totalMs) {
     const totalSeg = Math.floor(totalMs / 1000);
@@ -4548,12 +4624,28 @@ function rotuloDataHistorico(data) {
     return rotulo.charAt(0).toUpperCase() + rotulo.slice(1);
 }
 
+// Agrupa os tópicos de uma sessão pela matéria de cada um (ex: "Direito
+// Constitucional: Controle de Constitucionalidade, Direitos Fundamentais")
+// — antes só aparecia o nome do tópico, sem dar pra saber de cara a matéria
+// sem abrir a sessão.
+function formatarTopicosSessao(topicos) {
+    if (!topicos || topicos.length === 0) return 'Sem tópicos vinculados';
+    const porMateria = new Map();
+    topicos.forEach(t => {
+        const materia = (t.materia || '').trim();
+        const chave = materia || '__sem_materia__';
+        if (!porMateria.has(chave)) porMateria.set(chave, { materia, nomes: [] });
+        porMateria.get(chave).nomes.push(t.topico);
+    });
+    return [...porMateria.values()]
+        .map(({ materia, nomes }) => materia ? `${materia}: ${nomes.join(', ')}` : nomes.join(', '))
+        .join(' · ');
+}
+
 function renderizarCardHistorico(s) {
     const data = new Date(s.fim);
     const horario = data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    const topicosTexto = s.topicos && s.topicos.length > 0
-        ? s.topicos.map(t => t.topico).join(', ')
-        : 'Sem tópicos vinculados';
+    const topicosTexto = formatarTopicosSessao(s.topicos);
     let desempenho = '';
     if (s.acertos !== null && s.acertos !== undefined) {
         desempenho = `<span class="historico-badge">✔️ ${s.acertos} / ❌ ${s.erros || 0}</span>`;

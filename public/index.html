@@ -454,6 +454,14 @@
                         <p>Sessão concluída! Você revisou todos os cartões pendentes desse baralho.</p>
                         <button type="button" onclick="sairRevisao()">Voltar aos baralhos</button>
                     </div>
+                    <!-- Aparece quando só sobra cartão em aprendizado (que você acabou de
+                         errar ou marcar Difícil), esperando o próprio passo de minutos —
+                         a revisão continua sozinha assim que a hora chegar. -->
+                    <div class="flashcards-revisao-aguardando" id="flashcards-revisao-aguardando" style="display:none;">
+                        <span class="flashcards-revisao-aguardando-emoji">⏳</span>
+                        <p>Por enquanto é isso — um cartão que você acabou de responder volta em <strong id="flashcards-revisao-aguardando-tempo"></strong>, automaticamente.</p>
+                        <button type="button" class="btn-secundario" onclick="sairRevisao()">← Sair da revisão</button>
+                    </div>
                 </div>
 
             </div>

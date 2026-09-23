@@ -1505,12 +1505,15 @@ async function startServer() {
         function formatarIntervaloPreview(dataProximaRevisao) {
             const diffMs = new Date(dataProximaRevisao).getTime() - Date.now();
             const diffMin = diffMs / 60000;
+            // Usa o valor REAL calculado (arredondado pra cima, já que "<" indica
+            // "menos que isso") em vez de um "<10min" genérico pra tudo abaixo de
+            // 10 — senão um erro de 1min e um de 9min pareciam a mesma coisa.
             if (diffMin < 60) {
-                const min = Math.max(1, Math.round(diffMin));
-                return min < 10 ? '<10min' : `${min}min`;
+                const min = Math.max(1, Math.ceil(diffMin));
+                return `<${min}min`;
             }
             const diffHoras = diffMin / 60;
-            if (diffHoras < 24) return `${Math.max(1, Math.round(diffHoras))}h`;
+            if (diffHoras < 24) return `<${Math.max(1, Math.ceil(diffHoras))}h`;
             const diffDias = Math.max(1, Math.round(diffHoras / 24));
             return diffDias === 1 ? '1 dia' : `${diffDias} dias`;
         }
@@ -2193,7 +2196,15 @@ async function startServer() {
                 { _id: cartao._id },
                 { $set: novoEstado, $inc: { [campoHistorico]: 1, vezesRespondido: 1 } }
             );
-            res.json({ success: true, cartao: { ...cartao, ...novoEstado } });
+
+            // Vai junto o preview das PRÓXIMAS respostas possíveis (já calculado
+            // com o novo estado) — necessário pro cliente poder recolocar esse
+            // cartão de volta na fila da sessão quando ele ainda está na fase de
+            // aprendizado (ver mostrarProximoCartaoRevisao()/responderRevisao()
+            // no app.js), com os tempos certos em cima dos botões.
+            const cartaoAtualizado = { ...cartao, ...novoEstado };
+            cartaoAtualizado.previews = calcularPreviewsRevisaoCartao(cartaoAtualizado);
+            res.json({ success: true, cartao: cartaoAtualizado });
         });
 
         // Mapa de dificuldades dos flashcards: ranking dos baralhos com maior
