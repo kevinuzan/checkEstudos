@@ -3029,25 +3029,26 @@ input[type="checkbox"] {
     }
 
     .baralho-arvore-contagens {
-        gap: 6px;
+        gap: 5px;
         font-size: 11px;
     }
 
-    .baralho-arvore-contagens .contagem-novo { width: 18px; }
-    .baralho-arvore-contagens .contagem-aprender { width: 24px; }
-    .baralho-arvore-contagens .contagem-revisar { width: 18px; }
+    .baralho-arvore-contagens .contagem-novo { width: 32px; }
+    .baralho-arvore-contagens .contagem-aprender { width: 38px; }
+    .baralho-arvore-contagens .contagem-revisar { width: 32px; }
 
-    /* No cabeçalho, "Aprender"/"Revisar" por extenso não cabem mais nessas
-       colunas estreitas — troca pelo texto abreviado guardado no atributo
-       "data-curto" de cada span (ver renderizarBaralhos() no app.js). */
-    .baralho-arvore-cabecalho .baralho-arvore-contagens span {
-        font-size: 0;
+    /* As siglas "Nv"/"Apr"/"Rev" do cabeçalho eram difíceis de entender de
+       cara — em vez de exigir decorar uma legenda, cada número passa a vir
+       com um ícone que já indica o que é (novo / aprendendo / pra revisar),
+       então o cabeçalho de texto fica desnecessário e sai de cena no
+       celular, sobrando mais espaço útil pra lista em si. */
+    .baralho-arvore-cabecalho {
+        display: none;
     }
 
-    .baralho-arvore-cabecalho .baralho-arvore-contagens span::after {
-        content: attr(data-curto);
-        font-size: 10px;
-    }
+    .baralho-arvore-contagens .contagem-novo::before { content: "🆕"; margin-right: 2px; }
+    .baralho-arvore-contagens .contagem-aprender::before { content: "⏳"; margin-right: 2px; }
+    .baralho-arvore-contagens .contagem-revisar::before { content: "🔁"; margin-right: 2px; }
 
     .baralho-arvore-acoes {
         width: auto;
@@ -3540,6 +3541,37 @@ input[type="checkbox"] {
     background: var(--card);
     color: var(--text);
     margin-bottom: 14px;
+}
+
+/* Texto colado (Ctrl+V) de fora — Word, um site, outro cartão — costuma
+   trazer junto um "font-size" próprio dentro do HTML colado, que bagunça
+   o tamanho da letra ali dentro (fica maior/menor que o resto do texto).
+   Essas regras forçam TODO o conteúdo dos campos de texto — e também da
+   revisão dos flashcards e da "Observação" — a usar sempre o mesmo
+   tamanho, ignorando qualquer font-size que tenha vindo colado (o negrito,
+   itálico, cor e realce continuam funcionando normal). Sobrescrito/
+   subscrito são a única exceção de propósito, porque eles PRECISAM ficar
+   menores que o resto — por isso entram nomeados por último, restaurando
+   o tamanho reduzido só pra eles. */
+.editor-campo *,
+.flashcards-card-face *,
+.cloze-extra-render *,
+.cartao-item-frente *,
+.cartao-item-verso * {
+    font-size: inherit !important;
+}
+
+.editor-campo sup,
+.editor-campo sub,
+.flashcards-card-face sup,
+.flashcards-card-face sub,
+.cloze-extra-render sup,
+.cloze-extra-render sub,
+.cartao-item-frente sup,
+.cartao-item-frente sub,
+.cartao-item-verso sup,
+.cartao-item-verso sub {
+    font-size: smaller !important;
 }
 
 /* Listas criadas pelos botões "1.", "-" e "a)" da barra de ferramentas —
