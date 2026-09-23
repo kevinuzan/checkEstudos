@@ -105,6 +105,9 @@
                 <button class="view-tab" id="tab-estatisticas" onclick="trocarView('estatisticas')">
                     <span class="view-tab-icone">📊</span> Estatísticas
                 </button>
+                <button class="view-tab" id="tab-analise" onclick="trocarView('analise')">
+                    <span class="view-tab-icone">🧠</span> Análise
+                </button>
                 <button class="view-tab" id="tab-conquistas" onclick="trocarView('conquistas')">
                     <span class="view-tab-icone">🏅</span> Conquistas
                 </button>
@@ -563,6 +566,79 @@
                 <div class="estat-vazio" id="estat-vazio" style="display:none;">
                     Ainda não há sessões registradas com questões (acertos/erros) suficientes para montar os gráficos. Estude um pouco e registre suas sessões pra ver as estatísticas aqui!
                 </div>
+
+            </div>
+
+            <!-- ===================== VIEW: ANÁLISE DE DESEMPENHO ===================== -->
+            <div id="view-analise" style="display:none;">
+
+                <section class="painel-bloco">
+                    <div class="analise-header">
+                        <div>
+                            <h2 class="analise-header-titulo">🧠 Análise de desempenho</h2>
+                            <span class="painel-bloco-sub">Um resumo gerado a partir dos seus estudos, flashcards e revisões.</span>
+                        </div>
+                        <div class="analise-header-acao">
+                            <button type="button" class="analise-btn-atualizar" id="btn-analise-atualizar" onclick="gerarAnaliseDesempenho()">Atualizar análise</button>
+                            <span class="analise-meta" id="analise-meta">—</span>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="estat-vazio" id="analise-vazio" style="display:none;">
+                    Ainda não há dados suficientes (sessões de estudo ou flashcards respondidos) pra gerar uma análise. Estude um pouco e volte aqui!
+                </div>
+
+                <section class="analise-insights-grid" id="analise-insights-grid" style="display:none;">
+                    <div class="analise-insight-card analise-insight-forte">
+                        <div class="analise-insight-titulo">✅ Pontos fortes</div>
+                        <ul class="analise-insight-lista" id="analise-lista-fortes"></ul>
+                    </div>
+                    <div class="analise-insight-card analise-insight-atencao">
+                        <div class="analise-insight-titulo">⚠️ Pontos de atenção</div>
+                        <ul class="analise-insight-lista" id="analise-lista-atencao"></ul>
+                    </div>
+                    <div class="analise-insight-card analise-insight-foco">
+                        <div class="analise-insight-titulo">🎯 Foco recomendado</div>
+                        <ul class="analise-insight-lista" id="analise-lista-foco"></ul>
+                    </div>
+                </section>
+
+                <section class="dashboard-grid" id="analise-stat-grid"></section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Tempo dedicado por matéria</h2>
+                    </div>
+                    <div class="chart-card chart-card-canvas">
+                        <canvas id="chart-analise-tempo"></canvas>
+                    </div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Taxa de acerto por matéria</h2>
+                        <span class="painel-bloco-sub">Questões respondidas nas sessões de estudo</span>
+                    </div>
+                    <div class="chart-card chart-card-canvas">
+                        <canvas id="chart-analise-acerto"></canvas>
+                    </div>
+                </section>
+
+                <section class="painel-bloco painel-bloco-duas-colunas">
+                    <div class="painel-bloco-coluna">
+                        <div class="painel-bloco-header">
+                            <h2>Cartões que você mais erra</h2>
+                        </div>
+                        <div class="chart-card analise-dificeis-lista" id="analise-dificeis-lista"></div>
+                    </div>
+                    <div class="painel-bloco-coluna">
+                        <div class="painel-bloco-header">
+                            <h2>Cobertura do edital por matéria</h2>
+                        </div>
+                        <div class="chart-card analise-cobertura-lista" id="analise-cobertura-lista"></div>
+                    </div>
+                </section>
 
             </div>
 

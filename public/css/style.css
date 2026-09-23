@@ -2161,12 +2161,24 @@ input[type="checkbox"] {
 }
 
 .historico-data-cabecalho {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
     font-size: 12.5px;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: var(--text-faint);
     padding-left: 2px;
+}
+
+.historico-data-cabecalho-total {
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--primary);
 }
 
 .historico-data-linha {
@@ -2388,6 +2400,193 @@ input[type="checkbox"] {
     color: var(--text-muted);
     font-size: 13px;
     margin-top: 4px;
+}
+
+/* --- Aba "Análise de desempenho" --- */
+
+.analise-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.analise-header-titulo {
+    margin: 0 0 4px 0;
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -0.01em;
+}
+
+.analise-header-acao {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+}
+
+.analise-btn-atualizar {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    font-size: 13.5px;
+    font-weight: 700;
+    padding: 9px 16px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.analise-btn-atualizar:hover {
+    background: var(--primary-dark);
+}
+
+.analise-btn-atualizar:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.analise-meta {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    text-align: right;
+}
+
+.analise-insights-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 26px;
+}
+
+.analise-insight-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.analise-insight-titulo {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text);
+}
+
+.analise-insight-lista {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.analise-insight-lista li {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.analise-insight-vazio {
+    font-style: italic;
+    color: var(--text-faint);
+}
+
+.analise-dificeis-lista,
+.analise-cobertura-lista {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.analise-lista-vazia {
+    font-size: 12.5px;
+    color: var(--text-faint);
+    text-align: center;
+    padding: 12px 4px;
+}
+
+.analise-dificil-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 2px;
+    border-bottom: 1px solid var(--border);
+}
+
+.analise-dificil-item:last-child {
+    border-bottom: none;
+}
+
+.analise-dificil-ponto {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.analise-dificil-texto {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.analise-dificil-topico {
+    font-size: 12.5px;
+    color: var(--text);
+}
+
+.analise-dificil-materia {
+    font-size: 11px;
+    color: var(--text-faint);
+}
+
+.analise-dificil-taxa {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.analise-cobertura-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 7px 2px;
+}
+
+.analise-cobertura-topo {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12.5px;
+    color: var(--text-muted);
+}
+
+.analise-meter {
+    background: var(--surface-muted);
+    border-radius: 4px;
+    height: 8px;
+    overflow: hidden;
+}
+
+.analise-meter-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 4px;
+}
+
+@media (max-width: 700px) {
+    .analise-insights-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .chart-bars {
@@ -2993,22 +3192,25 @@ input[type="checkbox"] {
 }
 
 /* No celular a tela é estreita demais pra caber nome + 3 colunas de
-   contagem (220px) + ações (66px) na largura de sempre — em vez de jogar
-   contagens/ações pra uma segunda linha (que ficava com um vão gigante e
-   feio), a solução é encolher tudo e manter numa linha só: nome com
-   reticências se não couber, colunas de contagem bem mais estreitas (só
-   o número, sem "Aprender" etc. por extenso) e botões de ação menores. */
+   contagem (220px) + ações (66px) numa linha só sem cortar o nome no meio
+   (ex: "Direito Constitucional" virando "Dir..."), o que fica ilegível —
+   em vez disso, o nome ocupa a linha inteira pra si (sem reticências) e
+   contagens + ações descem pra uma segunda linha, alinhadas à direita. O
+   elemento ".baralho-arvore-quebra" (já existia pra forçar essa mesma
+   quebra no computador quando necessário) é reaproveitado aqui como o
+   ponto de quebra entre as duas linhas. */
 @media (max-width: 600px) {
     .baralho-arvore-cabecalho,
     .baralho-arvore-pasta-header,
     .baralho-arvore-linha {
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         gap: 6px;
+        row-gap: 4px;
     }
 
     .baralho-arvore-pasta-header,
     .baralho-arvore-linha {
-        padding: 8px 8px 8px calc(8px + var(--profundidade, 0) * 14px);
+        padding: 9px 8px 9px calc(8px + var(--profundidade, 0) * 14px);
     }
 
     .baralho-arvore-cabecalho {
@@ -3017,20 +3219,25 @@ input[type="checkbox"] {
 
     .baralho-arvore-pasta-nome,
     .baralho-arvore-linha-nome {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        min-width: 36px;
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+        line-height: 1.35;
+        min-width: 0;
     }
 
-    /* No celular a quebra não é mais necessária (tudo cabe numa linha só). */
+    /* Força contagens + ações pra uma segunda linha, sempre que o nome
+       (que agora quebra livremente) já não tiver feito isso sozinho. */
     .baralho-arvore-quebra {
-        display: none;
+        display: block;
+        flex-basis: 100%;
+        height: 0;
     }
 
     .baralho-arvore-contagens {
         gap: 5px;
         font-size: 11px;
+        margin-left: auto;
     }
 
     .baralho-arvore-contagens .contagem-novo { width: 32px; }

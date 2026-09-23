@@ -1376,6 +1376,7 @@ async function trocarView(nome) {
     document.getElementById('view-flashcards').style.display = nome === 'flashcards' ? 'block' : 'none';
     document.getElementById('view-jogo').style.display = nome === 'jogo' ? 'block' : 'none';
     document.getElementById('view-estatisticas').style.display = nome === 'estatisticas' ? 'block' : 'none';
+    document.getElementById('view-analise').style.display = nome === 'analise' ? 'block' : 'none';
     document.getElementById('view-conquistas').style.display = nome === 'conquistas' ? 'block' : 'none';
     document.getElementById('view-configuracoes').style.display = nome === 'configuracoes' ? 'block' : 'none';
     document.getElementById('tab-resumo').classList.toggle('ativo', nome === 'resumo');
@@ -1384,6 +1385,7 @@ async function trocarView(nome) {
     document.getElementById('tab-flashcards').classList.toggle('ativo', nome === 'flashcards');
     document.getElementById('tab-jogo').classList.toggle('ativo', nome === 'jogo');
     document.getElementById('tab-estatisticas').classList.toggle('ativo', nome === 'estatisticas');
+    document.getElementById('tab-analise').classList.toggle('ativo', nome === 'analise');
     document.getElementById('tab-conquistas').classList.toggle('ativo', nome === 'conquistas');
     document.getElementById('tab-configuracoes').classList.toggle('ativo', nome === 'configuracoes');
 
@@ -1407,6 +1409,7 @@ async function trocarView(nome) {
     if (nome === 'flashcards') await carregarFlashcards();
     if (nome === 'jogo') { mostrarSelecaoJogo(); await carregarPontuacaoJogo(); }
     if (nome === 'estatisticas') await carregarEstatisticas();
+    if (nome === 'analise') await carregarAnaliseDesempenho();
     if (nome === 'conquistas') await abrirConquistas();
     if (nome === 'configuracoes') await abrirConfiguracoes();
 }
@@ -1841,6 +1844,256 @@ async function carregarEstatisticas() {
         renderizarGraficoEstatEvolucao();
     } catch (err) {
         console.error('Erro ao carregar estatísticas:', err);
+    }
+}
+
+// ===================== ANÁLISE DE DESEMPENHO =====================
+
+let analiseDesempenhoCache = null;
+
+async function carregarAnaliseDesempenho() {
+    try {
+        const res = await fetch('/api/analise-desempenho');
+        const dados = await res.json();
+        analiseDesempenhoCache = dados;
+        renderizarAnaliseDesempenho(dados);
+    } catch (err) {
+        console.error('Erro ao carregar análise de desempenho:', err);
+    }
+}
+
+function formatarMinutosAnalise(min) {
+    const h = Math.floor(min / 60);
+    const m = Math.round(min % 60);
+    if (h === 0) return `${m}min`;
+    if (m === 0) return `${h}h`;
+    return `${h}h${String(m).padStart(2, '0')}`;
+}
+
+// Verde/âmbar/vermelho por faixa — mesma lógica visual da barra de
+// contagem "revisar" (âmbar) e "sucesso" (verde) já usadas no resto do app.
+function corPorTaxaAcerto(pct) {
+    if (pct >= 75) return corCssVar('--success', '#16a34a');
+    if (pct >= 60) return '#d97706';
+    return '#dc2626';
+}
+
+function formatarAtualizadaEmAnalise(data) {
+    const diffMin = Math.floor((Date.now() - data.getTime()) / 60000);
+    if (diffMin < 1) return 'agora mesmo';
+    if (diffMin < 60) return `há ${diffMin} min`;
+    const horas = Math.floor(diffMin / 60);
+    if (horas < 24) return `há ${horas}h`;
+    const dias = Math.floor(horas / 24);
+    return `há ${dias} dia${dias === 1 ? '' : 's'}`;
+}
+
+function renderizarAnaliseDesempenho(dados) {
+    const { resumo, analise, geradoEm } = dados;
+
+    const temDados = resumo.tempoPorMateria.length > 0 || resumo.cartoesMaisDificeis.length > 0;
+    const vazioEl = document.getElementById('analise-vazio');
+    if (vazioEl) vazioEl.style.display = temDados ? 'none' : 'block';
+
+    const metaEl = document.getElementById('analise-meta');
+    if (metaEl) {
+        metaEl.textContent = geradoEm
+            ? `Atualizada ${formatarAtualizadaEmAnalise(new Date(geradoEm))}`
+            : 'Ainda não gerada — clique em "Atualizar análise"';
+    }
+
+    const gridInsights = document.getElementById('analise-insights-grid');
+    if (analise) {
+        if (gridInsights) gridInsights.style.display = 'grid';
+        preencherListaInsightAnalise('analise-lista-fortes', analise.pontosFortes);
+        preencherListaInsightAnalise('analise-lista-atencao', analise.pontosAtencao);
+        preencherListaInsightAnalise('analise-lista-foco', analise.focoRecomendado);
+    } else if (gridInsights) {
+        gridInsights.style.display = 'none';
+    }
+
+    const statGrid = document.getElementById('analise-stat-grid');
+    if (statGrid) {
+        const deltaMin = resumo.minutosUltimos7Dias - resumo.minutos7DiasAnteriores;
+        const deltaTexto = deltaMin === 0 ? '' : `${deltaMin > 0 ? '+' : '-'}${formatarMinutosAnalise(Math.abs(deltaMin))} vs. semana passada`;
+        const mediaAcerto = resumo.acertoPorMateria.length
+            ? Math.round(resumo.acertoPorMateria.reduce((s, m) => s + m.taxaAcerto, 0) / resumo.acertoPorMateria.length)
+            : null;
+
+        statGrid.innerHTML = `
+            <div class="stat-card">
+                <span class="stat-card-label">Tempo estudado (7 dias)</span>
+                <span class="stat-card-valor">${formatarMinutosAnalise(resumo.minutosUltimos7Dias)}</span>
+                ${deltaTexto ? `<span class="stat-card-extra">${deltaTexto}</span>` : ''}
+            </div>
+            <div class="stat-card">
+                <span class="stat-card-label">Sequência de estudo</span>
+                <span class="stat-card-valor">${resumo.streakDias} dia${resumo.streakDias === 1 ? '' : 's'}</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-card-label">Acerto médio em questões</span>
+                <span class="stat-card-valor">${mediaAcerto !== null ? mediaAcerto + '%' : '—'}</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-card-label">Revisões em dia</span>
+                <span class="stat-card-valor">${resumo.percentualRevisoesEmDia !== null ? resumo.percentualRevisoesEmDia + '%' : '—'}</span>
+            </div>
+        `;
+    }
+
+    renderizarGraficoAnaliseTempo(resumo.tempoPorMateria);
+    renderizarGraficoAnaliseAcerto(resumo.acertoPorMateria);
+    renderizarAnaliseDificeis(resumo.cartoesMaisDificeis);
+    renderizarAnaliseCobertura(resumo.coberturaEdital);
+}
+
+function preencherListaInsightAnalise(id, itens) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (!itens || itens.length === 0) {
+        el.innerHTML = '<li class="analise-insight-vazio">Nada relevante por aqui ainda.</li>';
+        return;
+    }
+    el.innerHTML = itens.map(txt => `<li>${escaparHtml(txt)}</li>`).join('');
+}
+
+function renderizarGraficoAnaliseTempo(lista) {
+    const canvas = document.getElementById('chart-analise-tempo');
+    if (!canvas || typeof Chart === 'undefined') return;
+    destruirGraficoEstatistica('analiseTempo');
+    if (!lista || lista.length === 0) return;
+
+    graficosEstatisticas.analiseTempo = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: lista.map(x => x.materia),
+            datasets: [{
+                data: lista.map(x => x.minutos),
+                backgroundColor: corCssVar('--primary', '#2563eb'),
+                borderRadius: 4,
+                maxBarThickness: 22
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => formatarMinutosAnalise(ctx.parsed.x) } }
+            },
+            scales: {
+                x: {
+                    ticks: { color: corCssVar('--text-faint', '#94a3b8'), callback: v => formatarMinutosAnalise(v) },
+                    grid: { color: corCssVar('--border', '#e5e9f2') }
+                },
+                y: { ticks: { color: corCssVar('--text', '#0f172a') }, grid: { display: false } }
+            }
+        }
+    });
+}
+
+function renderizarGraficoAnaliseAcerto(lista) {
+    const canvas = document.getElementById('chart-analise-acerto');
+    if (!canvas || typeof Chart === 'undefined') return;
+    destruirGraficoEstatistica('analiseAcerto');
+    if (!lista || lista.length === 0) return;
+
+    graficosEstatisticas.analiseAcerto = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: lista.map(x => x.materia),
+            datasets: [{
+                data: lista.map(x => x.taxaAcerto),
+                backgroundColor: lista.map(x => corPorTaxaAcerto(x.taxaAcerto)),
+                borderRadius: 4,
+                maxBarThickness: 22
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => `${ctx.parsed.x}% de acerto` } }
+            },
+            scales: {
+                x: {
+                    min: 0, max: 100,
+                    ticks: { color: corCssVar('--text-faint', '#94a3b8'), callback: v => v + '%' },
+                    grid: { color: corCssVar('--border', '#e5e9f2') }
+                },
+                y: { ticks: { color: corCssVar('--text', '#0f172a') }, grid: { display: false } }
+            }
+        }
+    });
+}
+
+function renderizarAnaliseDificeis(lista) {
+    const el = document.getElementById('analise-dificeis-lista');
+    if (!el) return;
+    if (!lista || lista.length === 0) {
+        el.innerHTML = '<div class="analise-lista-vazia">Ainda não há cartões respondidos o suficiente pra apontar dificuldades.</div>';
+        return;
+    }
+    el.innerHTML = lista.map(c => `
+        <div class="analise-dificil-item">
+            <span class="analise-dificil-ponto" style="background:${corPorTaxaAcerto(100 - c.taxaErroPct)}"></span>
+            <div class="analise-dificil-texto">
+                <span class="analise-dificil-topico">${escaparHtml(c.topico)}</span>
+                <span class="analise-dificil-materia">${escaparHtml(c.materia)}</span>
+            </div>
+            <span class="analise-dificil-taxa">${c.taxaErroPct}%</span>
+        </div>
+    `).join('');
+}
+
+function renderizarAnaliseCobertura(lista) {
+    const el = document.getElementById('analise-cobertura-lista');
+    if (!el) return;
+    if (!lista || lista.length === 0) {
+        el.innerHTML = '<div class="analise-lista-vazia">Vincule tópicos do edital às suas sessões pra ver a cobertura aqui.</div>';
+        return;
+    }
+    el.innerHTML = lista.map(c => `
+        <div class="analise-cobertura-item">
+            <div class="analise-cobertura-topo">
+                <span>${escaparHtml(c.materia)}</span>
+                <span>${c.percentualConcluido}%</span>
+            </div>
+            <div class="analise-meter"><div class="analise-meter-fill" style="width:${c.percentualConcluido}%"></div></div>
+        </div>
+    `).join('');
+}
+
+async function gerarAnaliseDesempenho() {
+    const btn = document.getElementById('btn-analise-atualizar');
+    const metaEl = document.getElementById('analise-meta');
+    if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
+    if (metaEl) metaEl.textContent = 'Analisando seu desempenho... isso pode levar alguns segundos.';
+
+    try {
+        const res = await fetch('/api/analise-desempenho/gerar', { method: 'POST' });
+        const resultado = await res.json();
+
+        if (!resultado.success) {
+            alert(resultado.error || 'Não foi possível gerar a análise agora.');
+            if (metaEl) {
+                metaEl.textContent = analiseDesempenhoCache?.geradoEm
+                    ? `Atualizada ${formatarAtualizadaEmAnalise(new Date(analiseDesempenhoCache.geradoEm))}`
+                    : 'Ainda não gerada — clique em "Atualizar análise"';
+            }
+            return;
+        }
+
+        analiseDesempenhoCache = resultado;
+        renderizarAnaliseDesempenho(resultado);
+    } catch (err) {
+        console.error('Erro ao gerar análise de desempenho:', err);
+        alert('Não foi possível gerar a análise agora.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Atualizar análise'; }
     }
 }
 
@@ -4700,14 +4953,20 @@ function renderizarHistorico() {
         grupoAtual.itens.push(s);
     });
 
-    lista.innerHTML = grupos.map(grupo => `
+    lista.innerHTML = grupos.map(grupo => {
+        const totalSegundosDia = grupo.itens.reduce((soma, s) => soma + (s.duracaoSegundos || 0), 0);
+        return `
         <div class="historico-data-grupo">
-            <div class="historico-data-cabecalho">${rotuloDataHistorico(grupo.data)}</div>
+            <div class="historico-data-cabecalho">
+                <span>${rotuloDataHistorico(grupo.data)}</span>
+                <span class="historico-data-cabecalho-total">⏱ ${formatarDuracaoCurta(totalSegundosDia)} no dia</span>
+            </div>
             <div class="historico-data-linha">
                 ${grupo.itens.map(s => renderizarCardHistorico(s)).join('')}
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 async function excluirSessao(id) {
