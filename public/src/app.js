@@ -2372,11 +2372,18 @@ let baralhoEmEdicaoId = null; // null = criando um baralho novo no modal
 // "ENAM::Direito Administrativo") de cada pasta aberta. Não persiste.
 let flashcardsPastasExpandidas = new Set();
 
-let filaRevisaoCache = []; // cartões pendentes na sessão de revisão atual
+let filaRevisaoCache = []; // cartões ainda não vistos nesta sessão, na ordem original (mais atrasado primeiro)
+// Cartões já respondidos nesta sessão que voltaram pro passo de aprendizado
+// (minutos) e estão aguardando a própria vez — mantida SEPARADA da fila
+// original e ordenada por horário, pra poder intercalar: assim que o
+// horário de um deles vence, ele entra na frente do próximo cartão "novo"
+// da fila original, em vez de só reaparecer depois que ela acabar (ver
+// mostrarProximoCartaoRevisao()).
+let filaAprendizadoCache = [];
 let cartaoRevisaoAtual = null;
 let respostaRevisaoRevelada = false;
-// Timer usado quando o próximo cartão da fila ainda não "venceu" (só sobrou
-// cartão em aprendizado, com um passo de minutos) — ver mostrarProximoCartaoRevisao().
+// Timer usado quando não sobra cartão "novo" pra mostrar e o próximo de
+// aprendizado ainda não "venceu" — ver mostrarProximoCartaoRevisao().
 let timeoutProximoCartaoRevisao = null;
 
 let cartaoEmEdicaoId = null; // null = criando um cartão novo no modal
@@ -3587,6 +3594,7 @@ async function buscarFilaRevisaoParaIds(ids) {
 async function iniciarRevisao(idOuIds) {
     const ids = Array.isArray(idOuIds) ? idOuIds : [idOuIds];
     filaRevisaoCache = await buscarFilaRevisaoParaIds(ids);
+    filaAprendizadoCache = [];
 
     revisaoIdsAtual = ids;
     baralhoAtualId = ids.length === 1 ? ids[0] : null;
@@ -3612,13 +3620,13 @@ function mostrarProximoCartaoRevisao() {
         timeoutProximoCartaoRevisao = null;
     }
 
-    // Reordena pela data de próxima revisão — é isso que faz um cartão que
-    // acabou de ser recolocado na fila (ver responderRevisao()) aparecer na
-    // hora certa, nem antes nem depois dos outros.
-    filaRevisaoCache.sort((a, b) => new Date(a.dataProximaRevisao) - new Date(b.dataProximaRevisao));
+    // A fila de aprendizado pode ter cartões com passos diferentes (1min,
+    // 10min...), então essa (só ela, bem menor) precisa ficar ordenada por
+    // horário pra sempre saber qual delas "vence" primeiro.
+    filaAprendizadoCache.sort((a, b) => new Date(a.dataProximaRevisao) - new Date(b.dataProximaRevisao));
 
     const progresso = document.getElementById('flashcards-revisar-progresso');
-    const totalRestante = filaRevisaoCache.length;
+    const totalRestante = filaRevisaoCache.length + filaAprendizadoCache.length;
 
     if (totalRestante === 0) {
         document.getElementById('flashcards-card-revisao').style.display = 'none';
@@ -3630,14 +3638,27 @@ function mostrarProximoCartaoRevisao() {
         return;
     }
 
-    const proximo = filaRevisaoCache[0];
-    const esperaMs = new Date(proximo.dataProximaRevisao).getTime() - Date.now();
+    // Intercala: um cartão que voltou da fila de aprendizado e já "venceu"
+    // tem prioridade sobre o próximo cartão ainda não visto — é isso que faz
+    // um cartão errado (ex: passo de 1min) reaparecer NO MEIO do baralho,
+    // pouco depois de errado, em vez de só no final, depois de todos os
+    // outros já vistos (o que acontecia antes, porque a fila inteira era
+    // reordenada pela data de próxima revisão, e cartões ainda não vistos
+    // quase sempre têm essa data no passado — logo "furavam a fila" na
+    // frente de qualquer cartão recém-errado, com data no futuro próximo).
+    const proximoAprendizado = filaAprendizadoCache[0];
+    const aprendizadoPronto = proximoAprendizado && new Date(proximoAprendizado.dataProximaRevisao).getTime() <= Date.now();
 
-    // O cartão da vez ainda não "venceu" — só sobrou cartão em aprendizado
-    // esperando o próprio passo (ex: os 10min do "Difícil"). Em vez de
-    // obrigar a pessoa a sair e voltar depois, mostra um aviso e agenda
-    // pra continuar sozinho assim que a hora chegar.
-    if (esperaMs > 250) {
+    let proximo;
+    if (aprendizadoPronto) {
+        proximo = filaAprendizadoCache.shift();
+    } else if (filaRevisaoCache.length > 0) {
+        proximo = filaRevisaoCache.shift();
+    } else {
+        // Não sobrou cartão "novo" pra mostrar enquanto o(s) de aprendizado
+        // não vencem — mostra um aviso e agenda pra continuar sozinho assim
+        // que a hora chegar.
+        const esperaMs = new Date(proximoAprendizado.dataProximaRevisao).getTime() - Date.now();
         cartaoRevisaoAtual = null;
         document.getElementById('flashcards-card-revisao').style.display = 'none';
         document.getElementById('flashcards-respostas').style.display = 'none';
@@ -3785,15 +3806,17 @@ async function responderRevisao(qualidade) {
         ultimaRespostaEl.style.display = 'block';
     }
 
-    filaRevisaoCache = filaRevisaoCache.filter(c => c._id !== cartaoRespondido._id);
-
-    // Cartão ainda na fase de aprendizado (passo em minutos — "Errei",
-    // "Difícil" ainda repetindo passo, ou "Bom" indo pro próximo passo)
-    // volta pra fila da PRÓPRIA sessão, com o novo horário e os previews já
-    // recalculados — não precisa terminar tudo pra ele reaparecer. Só quando
-    // "gradua" pra fase de revisão (dias) é que ele sai de vez por hoje.
+    // cartaoRespondido já saiu de qualquer fila no momento em que foi
+    // mostrado (ver mostrarProximoCartaoRevisao) — só falta recolocá-lo na
+    // fila de APRENDIZADO se ele ainda não tiver "graduado". Cartão ainda na
+    // fase de aprendizado (passo em minutos — "Errei", "Difícil" ainda
+    // repetindo passo, ou "Bom" indo pro próximo passo) volta com o novo
+    // horário e os previews já recalculados, e intercala de volta na sessão
+    // assim que a própria vez chegar — não precisa terminar tudo pra ele
+    // reaparecer. Só quando "gradua" pra fase de revisão (dias) é que ele
+    // sai de vez por hoje.
     if (cartaoAtualizado && cartaoAtualizado.estado === 'aprendendo') {
-        filaRevisaoCache.push(cartaoAtualizado);
+        filaAprendizadoCache.push(cartaoAtualizado);
     }
 
     mostrarProximoCartaoRevisao();
@@ -3806,6 +3829,7 @@ function sairRevisao() {
     }
     cartaoRevisaoAtual = null;
     filaRevisaoCache = [];
+    filaAprendizadoCache = [];
     revisaoIdsAtual = [];
     carregarFlashcards();
 }
