@@ -7,8 +7,18 @@
 //
 // Solução: antes de minificar, varremos os dois arquivos HTML E os dois
 // arquivos JS-fonte atrás de qualquer on(click|change|input|load|mousedown|
-// mouseup|keyup|focus)="..." e extraímos os nomes de função chamados lá
-// dentro. Esses nomes viram a lista "reserved" do mangle — ficam com o nome
+// mouseup|keyup|focus)="..." e extraímos TODO IDENTIFICADOR solto ali dentro
+// — não só o nome da função chamada, mas também qualquer variável passada
+// como argumento (ex: onclick="iniciarRevisao(baralhoAtualId)" precisa
+// proteger tanto "iniciarRevisao" quanto "baralhoAtualId": se só a função for
+// protegida, o terser renomeia a variável global "baralhoAtualId" pra um nome
+// curto tipo "a", mas o texto dentro do onclick continua dizendo
+// "baralhoAtualId" — que não existe mais no JS minificado — e o clique quebra
+// com "ReferenceError: baralhoAtualId is not defined"). Palavras dentro de
+// aspas simples (ex: 'básico', '${chaveEscapada}') também acabam sendo
+// capturadas por essa varredura mais ampla — não tem problema, só reserva uns
+// nomes a mais do que o estritamente necessário, sem custo nenhum.
+// Esses nomes viram a lista "reserved" do mangle — ficam com o nome
 // original, protegidos. Todo o resto (variáveis locais, funções internas não
 // referenciadas via HTML) É ofuscado de verdade (nomes viram a, b, c...).
 //
@@ -19,7 +29,11 @@ import { minify } from 'terser';
 import { readFile, writeFile } from 'node:fs/promises';
 
 const HANDLER_ATTR_REGEX = /on(?:click|change|input|load|mousedown|mouseup|keyup|focus)="([^"]*)"/g;
-const CALL_REGEX = /([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g;
+// Qualquer identificador solto (função OU variável) dentro do handler —
+// exceto quando vem logo depois de um "." (acesso a propriedade, tipo
+// "event.target", que não é um nome de topo do nosso JS e não precisa/deve
+// ser reservado).
+const IDENTIFICADOR_REGEX = /(?<!\.)\b[a-zA-Z_$][a-zA-Z0-9_$]*\b/g;
 
 async function nomesReservados(arquivos) {
     const reservados = new Set();
@@ -29,8 +43,8 @@ async function nomesReservados(arquivos) {
         while ((m = HANDLER_ATTR_REGEX.exec(texto))) {
             const corpo = m[1];
             let c;
-            while ((c = CALL_REGEX.exec(corpo))) {
-                reservados.add(c[1]);
+            while ((c = IDENTIFICADOR_REGEX.exec(corpo))) {
+                reservados.add(c[0]);
             }
         }
     }
