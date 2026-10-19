@@ -87,6 +87,11 @@ window.fetch = async function (...args) {
     if (resposta.status === 401) {
         mostrarTelaLogin();
     }
+    // 402 = conta em modo somente leitura (sem assinatura ativa): em vez de
+    // falhar em silêncio, abre a tela de assinatura.
+    if (resposta.status === 402) {
+        carregarAssinatura(true);
+    }
     return resposta;
 };
 
@@ -100,6 +105,8 @@ async function iniciarApp() {
             if (!appJaIniciado) {
                 appJaIniciado = true;
                 await iniciar();
+                await carregarAssinatura(true);
+                tratarRetornoDaStripe();
             }
             return;
         }
@@ -198,6 +205,193 @@ async function aoReceberCredencialGoogle(resposta) {
             erroEl.textContent = 'Não foi possível entrar. Tente novamente.';
             erroEl.style.display = 'block';
         }
+    }
+}
+
+
+// ==================================================================
+// ASSINATURA (Stripe) — status, paywall, portal e encerramento de conta.
+// O servidor é quem decide o acesso; aqui só mostramos o estado e
+// levamos a pessoa pro checkout/portal hospedados pela Stripe.
+// ==================================================================
+
+let statusAssinatura = null;
+
+function formatarDataAssinatura(valor) {
+    if (!valor) return '';
+    return new Date(valor).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+async function carregarAssinatura(mostrarPaywallSeSemAcesso) {
+    try {
+        const res = await fetchOriginal('/api/assinatura/status');
+        if (!res.ok) return;
+        const dados = await res.json();
+        if (!dados.success) return;
+        statusAssinatura = dados;
+        renderizarAssinatura();
+        if (mostrarPaywallSeSemAcesso && dados.cobrancaAtiva && !dados.acesso) abrirPaywall();
+    } catch (err) {
+        console.error('Erro ao carregar assinatura:', err);
+    }
+}
+
+function textoStatusAssinatura(s) {
+    const preco = s.precoTexto ? ` (${s.precoTexto})` : '';
+    if (s.motivo === 'cortesia') return 'Seu acesso está liberado, sem cobrança.';
+    if (s.status === 'trialing') {
+        if (s.cancelaNoFim) return `Teste grátis até ${formatarDataAssinatura(s.fimDoTrial)}. Você cancelou, então não haverá cobrança.`;
+        return `Teste grátis até ${formatarDataAssinatura(s.fimDoTrial)}. Depois disso, a cobrança mensal começa automaticamente${preco}. Cancele quando quiser.`;
+    }
+    if (s.status === 'active') {
+        if (s.cancelaNoFim) return `Assinatura cancelada. Você continua com acesso até ${formatarDataAssinatura(s.fimDoPeriodo)}.`;
+        return `Assinatura ativa${preco}. Próxima cobrança em ${formatarDataAssinatura(s.fimDoPeriodo)}.`;
+    }
+    if (s.status === 'past_due') return 'Não conseguimos cobrar seu cartão. Atualize a forma de pagamento em “Gerenciar assinatura” para não perder o acesso.';
+    if (!s.acesso) return 'Sua conta está em modo somente leitura: você vê tudo o que já estudou, mas precisa assinar para registrar novos estudos.';
+    return '';
+}
+
+function renderizarAssinatura() {
+    const s = statusAssinatura;
+    if (!s) return;
+    const bloco = document.getElementById('config-bloco-assinatura');
+    const faixa = document.getElementById('faixa-assinatura');
+    if (bloco) bloco.style.display = s.cobrancaAtiva ? '' : 'none';
+    if (!s.cobrancaAtiva) { if (faixa) faixa.style.display = 'none'; return; }
+
+    const txt = document.getElementById('assinatura-status-texto');
+    if (txt) txt.textContent = textoStatusAssinatura(s);
+    const btnAssinar = document.getElementById('btn-config-assinar');
+    const btnGerenciar = document.getElementById('btn-config-gerenciar');
+    const ajuda = document.getElementById('assinatura-ajuda-gerenciar');
+    const podeAssinar = s.motivo !== 'cortesia' && !s.temAssinatura;
+    if (btnAssinar) {
+        btnAssinar.style.display = podeAssinar ? '' : 'none';
+        btnAssinar.textContent = s.jaTeveTrial ? 'Assinar' : `Começar teste grátis de ${s.diasTrial} dias`;
+    }
+    if (btnGerenciar) btnGerenciar.style.display = s.temCliente && s.motivo !== 'cortesia' ? '' : 'none';
+    if (ajuda) ajuda.style.display = s.temCliente && s.motivo !== 'cortesia' ? '' : 'none';
+
+    if (faixa) {
+        if (!s.acesso) {
+            faixa.innerHTML = '';
+            const span = document.createElement('span');
+            span.textContent = 'Modo somente leitura — assine para voltar a registrar seus estudos.';
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = 'btn-assinar btn-assinar-pequeno'; b.textContent = 'Assinar';
+            b.addEventListener('click', abrirPaywall);
+            faixa.append(span, b);
+            faixa.style.display = 'flex';
+        } else if (s.status === 'past_due') {
+            faixa.textContent = 'Não conseguimos cobrar seu cartão. Atualize a forma de pagamento em Config. › Minha assinatura.';
+            faixa.style.display = 'flex';
+        } else {
+            faixa.style.display = 'none';
+        }
+    }
+}
+
+function abrirPaywall() {
+    const s = statusAssinatura || {};
+    const overlay = document.getElementById('assinatura-overlay');
+    if (!overlay) return;
+    const jaTeve = !!s.jaTeveTrial;
+    const preco = s.precoTexto || '';
+    document.getElementById('paywall-titulo').textContent = jaTeve ? 'Assine o Direto à Posse' : `Teste grátis por ${s.diasTrial || 7} dias`;
+    document.getElementById('paywall-sub').textContent = 'Registre estudos, use flashcards, jogos e a análise com IA, de qualquer aparelho.';
+    document.getElementById('btn-paywall-assinar').textContent = jaTeve ? 'Assinar' : 'Começar teste grátis';
+    document.getElementById('paywall-aviso').textContent = jaTeve
+        ? `${preco ? preco + '. ' : ''}Cancele quando quiser.`
+        : `Pedimos o cartão agora, mas só cobramos ${preco ? preco + ' ' : ''}depois dos ${s.diasTrial || 7} dias — e a cobrança é automática. Cancele antes do fim do teste e não pagará nada.`;
+    document.getElementById('paywall-erro').style.display = 'none';
+    overlay.style.display = 'flex';
+}
+
+function fecharPaywall() {
+    const overlay = document.getElementById('assinatura-overlay');
+    if (overlay) overlay.style.display = 'none';
+}
+
+function mostrarErroAssinatura(idEl, msg) {
+    const el = document.getElementById(idEl);
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+
+async function irParaUrlStripe(endpoint, idErro) {
+    try {
+        const res = await fetchOriginal(endpoint, { method: 'POST' });
+        const dados = await res.json();
+        if (!dados.success || !dados.url) throw new Error(dados.error || 'Falha');
+        window.location.href = dados.url;
+    } catch (err) {
+        console.error('Erro ao abrir a Stripe:', err);
+        mostrarErroAssinatura(idErro, err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível continuar agora. Tente novamente.');
+    }
+}
+
+async function assinarAgora() {
+    const emPaywall = document.getElementById('assinatura-overlay')?.style.display === 'flex';
+    await irParaUrlStripe('/api/assinatura/checkout', emPaywall ? 'paywall-erro' : 'assinatura-erro');
+}
+
+async function gerenciarAssinatura() {
+    await irParaUrlStripe('/api/assinatura/portal', 'assinatura-erro');
+}
+
+// Ao voltar do checkout (?assinatura=ok) o webhook pode levar alguns segundos
+// pra chegar; consulta o status algumas vezes até o acesso aparecer.
+async function aguardarConfirmacaoAssinatura() {
+    for (let i = 0; i < 10; i++) {
+        await carregarAssinatura(false);
+        if (statusAssinatura && statusAssinatura.acesso && statusAssinatura.temAssinatura) break;
+        await new Promise(r => setTimeout(r, 2000));
+    }
+}
+
+async function tratarRetornoDaStripe() {
+    const params = new URLSearchParams(location.search);
+    const retorno = params.get('assinatura');
+    if (!retorno) return;
+    history.replaceState(null, '', location.pathname);
+    if (retorno === 'ok') {
+        fecharPaywall();
+        await aguardarConfirmacaoAssinatura();
+    } else {
+        await carregarAssinatura(false);
+    }
+}
+
+async function baixarMeusDados() {
+    try {
+        const res = await fetch('/api/conta/exportar');
+        if (!res.ok) throw new Error('Falha');
+        baixarArquivoJson(await res.json(), 'meus-dados-direto-a-posse.json');
+    } catch (err) {
+        console.error('Erro ao baixar dados:', err);
+        mostrarErroAssinatura('conta-erro', 'Não foi possível baixar seus dados agora.');
+    }
+}
+
+async function encerrarConta() {
+    if (!confirm('Encerrar a conta cancela sua assinatura e apaga TODOS os seus dados, de forma definitiva. Quer continuar?')) return;
+    const resposta = prompt('Para confirmar, digite ENCERRAR (em maiúsculas):');
+    if (resposta !== 'ENCERRAR') return;
+    try {
+        const res = await fetchOriginal('/api/conta', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirmacao: 'ENCERRAR' })
+        });
+        const dados = await res.json();
+        if (!dados.success) throw new Error(dados.error || 'Falha');
+        appJaIniciado = false;
+        location.reload();
+    } catch (err) {
+        console.error('Erro ao encerrar conta:', err);
+        mostrarErroAssinatura('conta-erro', err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível encerrar a conta agora.');
     }
 }
 
@@ -1427,6 +1621,7 @@ function atualizarCabecalhoPlanoAtual() {
 async function abrirConfiguracoes() {
     renderizarSeletorTema();
     renderizarSeletorFundo();
+    carregarAssinatura(false);
     const input = document.getElementById('config-apelido-input');
     if (!input) return;
     try {

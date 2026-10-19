@@ -55,6 +55,18 @@
         </div>
     </div>
 
+    <!-- ===================== PAYWALL / ASSINATURA ===================== -->
+    <div id="assinatura-overlay" class="login-overlay" style="display:none;">
+        <div class="login-card">
+            <h1 id="paywall-titulo">Teste grátis por 7 dias</h1>
+            <p class="login-sub" id="paywall-sub">Assine para registrar estudos, usar flashcards, jogos e a análise com IA.</p>
+            <button type="button" class="btn-assinar" id="btn-paywall-assinar" onclick="assinarAgora()">Começar teste grátis</button>
+            <p class="assinatura-aviso" id="paywall-aviso"></p>
+            <button type="button" class="btn-link-discreto" onclick="fecharPaywall()">Só ver meus dados por enquanto</button>
+            <p id="paywall-erro" class="login-erro" style="display:none;"></p>
+        </div>
+    </div>
+
     <div class="layout">
 
         <!-- ===================== BARRA LATERAL (menu/desktop) / TOPO (mobile) ===================== -->
@@ -127,6 +139,8 @@
 
         <!-- ===================== CONTEÚDO PRINCIPAL ===================== -->
         <main class="content">
+
+            <div id="faixa-assinatura" class="faixa-assinatura" style="display:none;"></div>
 
             <!-- --- CRONÔMETRO DE ESTUDO: bolha flutuante + painel (sempre presente, ocupando pouco espaço) --- -->
             <button type="button" class="timer-bolha" id="timer-bolha" onclick="alternarPainelTimer()" title="Cronômetro de estudo">
@@ -660,6 +674,21 @@
             <!-- ===================== VIEW: CONFIGURAÇÕES ===================== -->
             <div id="view-configuracoes" style="display:none;">
 
+                <section class="painel-bloco" id="config-bloco-assinatura" style="display:none;">
+                    <div class="painel-bloco-header">
+                        <h2>Minha assinatura</h2>
+                    </div>
+                    <div class="config-card">
+                        <p class="assinatura-status" id="assinatura-status-texto">Carregando…</p>
+                        <div class="assinatura-acoes">
+                            <button type="button" class="btn-assinar" id="btn-config-assinar" style="display:none;" onclick="assinarAgora()">Assinar</button>
+                            <button type="button" class="btn-secundario" id="btn-config-gerenciar" style="display:none;" onclick="gerenciarAssinatura()">Gerenciar assinatura</button>
+                        </div>
+                        <p class="config-texto-ajuda" id="assinatura-ajuda-gerenciar" style="display:none;">Em “Gerenciar assinatura” você cancela, atualiza o cartão e vê suas faturas.</p>
+                        <p id="assinatura-erro" class="login-erro" style="display:none;"></p>
+                    </div>
+                </section>
+
                 <section class="painel-bloco">
                     <div class="painel-bloco-header">
                         <h2>Perfil</h2>
@@ -701,6 +730,24 @@
                             </div>
                             <p class="config-texto-ajuda">Vale pro app inteiro (todas as abas), e fica salvo nesse aparelho.</p>
                         </div>
+                    </div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Minha conta</h2>
+                    </div>
+                    <div class="config-card">
+                        <p class="config-card-sub">Baixe uma cópia dos seus dados (edital, estudos e flashcards) quando quiser.</p>
+                        <div class="assinatura-acoes">
+                            <button type="button" class="btn-secundario" onclick="baixarMeusDados()">Baixar meus dados</button>
+                        </div>
+                        <label class="modal-label">Encerrar conta</label>
+                        <p class="config-card-sub">Cancela sua assinatura e apaga todos os seus dados de forma definitiva. Não dá para desfazer.</p>
+                        <div class="assinatura-acoes">
+                            <button type="button" class="btn-perigo" onclick="encerrarConta()">Encerrar minha conta</button>
+                        </div>
+                        <p id="conta-erro" class="login-erro" style="display:none;"></p>
                     </div>
                 </section>
 

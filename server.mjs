@@ -20,6 +20,7 @@ import AdmZip from 'adm-zip';
 import initSqlJs from 'sql.js';
 import { decompress as decompressZstd } from 'fzstd';
 import pdfParse from 'pdf-parse';
+import Stripe from 'stripe';
 
 // --- CONFIGURAÇÕES BÁSICAS ---
 const app = express();
@@ -82,6 +83,10 @@ app.use(cors({
         return callback(new Error('Origem não permitida pelo CORS'));
     }
 }));
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+    if (!tratarWebhookStripe) return res.status(503).send('Servidor iniciando');
+    return tratarWebhookStripe(req, res);
+});
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
@@ -267,6 +272,31 @@ const ANALISE_DESEMPENHO_COLLECTION = "analises_desempenho";
 //   4 editais nesse pior caso: 4 × 95.300 ≈ 381.000 tokens/mês.
 // Arredondando pra um número redondo e com uma pequena folga:
 const LIMITE_TOKENS_IA_MENSAL = 380000;
+
+// --- ASSINATURA (Stripe) ---
+// A chave secreta vem SEMPRE do ambiente (STRIPE_SECRET no Railway) — nunca
+// no código. Sem a chave, o app continua funcionando normalmente e só as
+// rotas de assinatura respondem "não configurado".
+const stripe = process.env.STRIPE_SECRET ? new Stripe(process.env.STRIPE_SECRET) : null;
+if (!stripe) console.warn('STRIPE_SECRET ausente: assinatura desativada.');
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+const STRIPE_EVENTOS_COLLECTION = "stripe_eventos";
+const DIAS_TRIAL = 7;
+// Dias de tolerância depois que a cobrança falha (cartão recusado etc.): a
+// Stripe tenta cobrar de novo sozinha, então não cortamos o acesso de cara.
+const DIAS_CARENCIA_PAGAMENTO = 3;
+// A cobrança só vale quando COBRANCA_INICIO (data ISO, ex.: 2026-11-01) está
+// definida no Railway. Quem já tinha conta antes dessa data vira "cortesia"
+// (acesso livre). Sem a variável, NADA muda no app — dá pra subir o código
+// com segurança e ligar a cobrança depois.
+const COBRANCA_INICIO = process.env.COBRANCA_INICIO ? new Date(process.env.COBRANCA_INICIO) : null;
+const COBRANCA_ATIVA = !!(COBRANCA_INICIO && !isNaN(COBRANCA_INICIO.getTime()));
+
+// A Stripe assina o corpo CRU da requisição; se o express.json() mexer nele
+// antes, a verificação falha. Por isso esta rota é registrada ANTES do
+// express.json() global e usa express.raw. O tratamento de verdade (que
+// precisa do banco) é plugado depois, dentro do startServer.
+let tratarWebhookStripe = null;
 const PLANO_PADRAO = "TRT";
 const FORMATO_EDITAL_EXPORTADO = "checkestudos-edital-v1";
 const FORMATO_BARALHO_EXPORTADO = "checkestudos-baralho-v1";
@@ -471,6 +501,380 @@ async function startServer() {
         // Expõe o client id do Google publicamente, pra tela de login montar o botão.
         app.get('/api/auth/config', (req, res) => {
             res.json({ googleClientId: GOOGLE_CLIENT_ID });
+        });
+
+        // ==================================================================
+        // ASSINATURA (Stripe Billing) — trial de 7 dias com cartão, plano
+        // mensal. O STATUS da assinatura só muda pelo webhook (fonte da
+        // verdade); a página de sucesso do checkout nunca libera acesso.
+        // ==================================================================
+
+        const stripeEventosColl = db.collection(STRIPE_EVENTOS_COLLECTION);
+        await stripeEventosColl.createIndex({ em: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 30 }).catch(() => {});
+
+        // Quem já existia antes da cobrança começar fica com acesso livre.
+        if (COBRANCA_ATIVA) {
+            const r = await usuariosColl.updateMany(
+                {
+                    cortesia: { $exists: false },
+                    assinatura: { $exists: false },
+                    $or: [{ criadoEm: { $exists: false } }, { criadoEm: { $lt: COBRANCA_INICIO } }]
+                },
+                { $set: { cortesia: true } }
+            );
+            if (r.modifiedCount > 0) console.log(`Cobrança: ${r.modifiedCount} conta(s) antiga(s) marcadas como cortesia.`);
+        }
+
+        const STATUS_COM_ACESSO = ['trialing', 'active'];
+        const STATUS_ASSINATURA_VIVA = ['trialing', 'active', 'past_due'];
+
+        function acessoDoUsuario(usuario) {
+            if (!COBRANCA_ATIVA) return { permitido: true, motivo: 'cobranca_desligada' };
+            if (usuario.email === EMAIL_MIGRACAO_INICIAL || usuario.cortesia) return { permitido: true, motivo: 'cortesia' };
+            const a = usuario.assinatura || {};
+            if (STATUS_COM_ACESSO.includes(a.status)) return { permitido: true, motivo: a.status };
+            if (a.status === 'past_due' && a.pagamentoFalhouEm) {
+                const limite = new Date(a.pagamentoFalhouEm).getTime() + DIAS_CARENCIA_PAGAMENTO * 24 * 60 * 60 * 1000;
+                if (Date.now() < limite) return { permitido: true, motivo: 'carencia' };
+            }
+            return { permitido: false, motivo: a.status ? 'assinatura_encerrada' : 'sem_assinatura' };
+        }
+
+        // Modo "somente leitura": sem acesso, toda rota que ESCREVE (POST, PUT,
+        // DELETE, inclusive IA e jogo) responde 402. Leitura continua liberada
+        // — o aluno nunca perde o que já estudou. Rotas de login, perfil,
+        // assinatura e encerramento de conta ficam sempre liberadas.
+        app.use(async (req, res, next) => {
+            try {
+                if (!COBRANCA_ATIVA) return next();
+                if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+                const p = req.path;
+                if (p.startsWith('/api/auth/') || p.startsWith('/api/perfil/') ||
+                    p.startsWith('/api/assinatura/') || p.startsWith('/api/conta') ||
+                    p === '/api/stripe/webhook') return next();
+                const token = req.cookies && req.cookies.sessao;
+                if (!token) return next(); // sem sessão: o requireAuth responde 401
+                let dados;
+                try { dados = jwt.verify(token, SESSION_SECRET); } catch { return next(); }
+                const usuario = await usuariosColl.findOne({ _id: new ObjectId(dados.userId) });
+                if (!usuario) return next();
+                if (acessoDoUsuario(usuario).permitido) return next();
+                return res.status(402).json({
+                    success: false,
+                    codigo: 'ASSINATURA_NECESSARIA',
+                    error: 'Sua conta está em modo somente leitura. Assine para voltar a registrar estudos.'
+                });
+            } catch (err) {
+                console.error('Erro na checagem de assinatura:', err);
+                return next(err);
+            }
+        });
+
+        function urlBaseApp() {
+            return (process.env.APP_URL || 'https://www.diretoaposse.com.br').replace(/\/+$/, '');
+        }
+
+        // Descobre o preço mensal ativo. Prioridade: STRIPE_PRICE_MENSAL (id
+        // fixo) → o preço mensal em BRL mais recente e ativo do produto em
+        // STRIPE_PRODUCT_ID. Assim, pra subir de R$ 14,90 para R$ 19,90 basta
+        // criar o novo preço na Stripe e arquivar o antigo — sem mexer no código.
+        let cachePrecoMensal = null;
+        async function obterPrecoMensal() {
+            if (!stripe) throw new Error('Stripe não configurada');
+            if (cachePrecoMensal && cachePrecoMensal.ate > Date.now()) return cachePrecoMensal.preco;
+            let preco = null;
+            if (process.env.STRIPE_PRICE_MENSAL) {
+                preco = await stripe.prices.retrieve(process.env.STRIPE_PRICE_MENSAL);
+            } else if (process.env.STRIPE_PRODUCT_ID) {
+                const lista = await stripe.prices.list({
+                    product: process.env.STRIPE_PRODUCT_ID, active: true, type: 'recurring', limit: 20
+                });
+                preco = lista.data
+                    .filter(p => p.currency === 'brl' && p.recurring?.interval === 'month' && (p.recurring.interval_count || 1) === 1)
+                    .sort((a, b) => b.created - a.created)[0] || null;
+            }
+            if (!preco) throw new Error('Preço mensal não encontrado (defina STRIPE_PRICE_MENSAL ou STRIPE_PRODUCT_ID).');
+            cachePrecoMensal = { preco, ate: Date.now() + 5 * 60 * 1000 };
+            return preco;
+        }
+
+        function formatarPreco(preco) {
+            if (!preco || preco.unit_amount == null) return null;
+            return (preco.unit_amount / 100).toLocaleString('pt-BR', { style: 'currency', currency: (preco.currency || 'brl').toUpperCase() }) + '/mês';
+        }
+
+        function dadosAssinaturaDeStripe(sub, anterior = {}) {
+            const item = sub.items?.data?.[0];
+            const fimPeriodoSeg = item?.current_period_end ?? sub.current_period_end ?? null;
+            return {
+                status: sub.status,
+                subscriptionId: sub.id,
+                fimDoTrial: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
+                fimDoPeriodo: fimPeriodoSeg ? new Date(fimPeriodoSeg * 1000) : null,
+                cancelaNoFim: !!(sub.cancel_at_period_end || sub.cancel_at),
+                pagamentoFalhouEm: sub.status === 'past_due' ? (anterior.pagamentoFalhouEm || new Date()) : null,
+                atualizadoEm: new Date()
+            };
+        }
+
+        async function acharUsuarioDaAssinatura(customerId, userIdMeta) {
+            let u = customerId ? await usuariosColl.findOne({ stripeCustomerId: customerId }) : null;
+            if (!u && userIdMeta && ObjectId.isValid(userIdMeta)) u = await usuariosColl.findOne({ _id: new ObjectId(userIdMeta) });
+            return u;
+        }
+
+        async function sincronizarAssinatura(sub) {
+            const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
+            const u = await acharUsuarioDaAssinatura(customerId, sub.metadata?.userId);
+            if (!u) { console.warn('Webhook Stripe: assinatura sem usuário correspondente', sub.id); return; }
+            const atual = u.assinatura || {};
+            // Evento atrasado de uma assinatura ANTIGA (já cancelada) não pode
+            // derrubar uma assinatura nova que o aluno acabou de fazer.
+            if (atual.subscriptionId && atual.subscriptionId !== sub.id &&
+                STATUS_ASSINATURA_VIVA.includes(atual.status) && !STATUS_ASSINATURA_VIVA.includes(sub.status)) return;
+            const set = { assinatura: dadosAssinaturaDeStripe(sub, atual), stripeCustomerId: customerId };
+            if (sub.trial_start || sub.trial_end) set.jaTeveTrial = true;
+            await usuariosColl.updateOne({ _id: u._id }, { $set: set });
+        }
+
+        async function sincronizarPorId(subId, fallback) {
+            let sub = fallback;
+            try { sub = await stripe.subscriptions.retrieve(subId); } catch (err) {
+                if (!fallback) throw err;
+                console.warn('Webhook Stripe: usando o objeto do evento (retrieve falhou):', err.message);
+            }
+            await sincronizarAssinatura(sub);
+        }
+
+        tratarWebhookStripe = async (req, res) => {
+            if (!stripe || !STRIPE_WEBHOOK_SECRET) return res.status(503).send('Webhook não configurado');
+            let evento;
+            try {
+                evento = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], STRIPE_WEBHOOK_SECRET);
+            } catch (err) {
+                console.warn('Webhook Stripe: assinatura inválida:', err.message);
+                return res.status(400).send('Assinatura inválida');
+            }
+            // Idempotência: a Stripe pode reenviar o mesmo evento.
+            try {
+                await stripeEventosColl.insertOne({ _id: evento.id, tipo: evento.type, em: new Date() });
+            } catch (err) {
+                if (err.code === 11000) return res.json({ received: true, duplicado: true });
+                console.error('Webhook Stripe: erro ao registrar evento:', err);
+                return res.status(500).send('Erro interno');
+            }
+            try {
+                const obj = evento.data.object;
+                switch (evento.type) {
+                    case 'checkout.session.completed': {
+                        if (obj.mode === 'subscription' && obj.subscription) {
+                            const subId = typeof obj.subscription === 'string' ? obj.subscription : obj.subscription.id;
+                            if (obj.client_reference_id && obj.customer && ObjectId.isValid(obj.client_reference_id)) {
+                                await usuariosColl.updateOne(
+                                    { _id: new ObjectId(obj.client_reference_id) },
+                                    { $set: { stripeCustomerId: typeof obj.customer === 'string' ? obj.customer : obj.customer.id } }
+                                );
+                            }
+                            await sincronizarPorId(subId);
+                        }
+                        break;
+                    }
+                    case 'customer.subscription.created':
+                    case 'customer.subscription.updated':
+                        await sincronizarPorId(obj.id, obj);
+                        break;
+                    case 'customer.subscription.deleted':
+                        await sincronizarAssinatura({ ...obj, status: 'canceled' });
+                        break;
+                    case 'invoice.paid': {
+                        const cliente = typeof obj.customer === 'string' ? obj.customer : obj.customer?.id;
+                        if (cliente) await usuariosColl.updateOne({ stripeCustomerId: cliente }, { $set: { 'assinatura.pagamentoFalhouEm': null } });
+                        break;
+                    }
+                    case 'invoice.payment_failed': {
+                        const cliente = typeof obj.customer === 'string' ? obj.customer : obj.customer?.id;
+                        if (cliente) await usuariosColl.updateOne(
+                            { stripeCustomerId: cliente, 'assinatura.pagamentoFalhouEm': null },
+                            { $set: { 'assinatura.pagamentoFalhouEm': new Date() } }
+                        );
+                        break;
+                    }
+                    default:
+                        break;
+                }
+                res.json({ received: true });
+            } catch (err) {
+                // Libera o id pra a Stripe poder reenviar e tentarmos de novo.
+                await stripeEventosColl.deleteOne({ _id: evento.id }).catch(() => {});
+                console.error('Webhook Stripe: erro ao processar', evento.type, err);
+                res.status(500).send('Erro ao processar');
+            }
+        };
+
+        app.get('/api/assinatura/status', requireAuth, async (req, res) => {
+            try {
+                const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) });
+                if (!usuario) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
+                const a = usuario.assinatura || {};
+                const acesso = acessoDoUsuario(usuario);
+                let precoTexto = null;
+                if (stripe) { try { precoTexto = formatarPreco(await obterPrecoMensal()); } catch (err) { console.warn('Preço indisponível:', err.message); } }
+                res.json({
+                    success: true,
+                    cobrancaAtiva: COBRANCA_ATIVA,
+                    acesso: acesso.permitido,
+                    motivo: acesso.motivo,
+                    status: a.status || null,
+                    fimDoTrial: a.fimDoTrial || null,
+                    fimDoPeriodo: a.fimDoPeriodo || null,
+                    cancelaNoFim: !!a.cancelaNoFim,
+                    jaTeveTrial: !!usuario.jaTeveTrial,
+                    temAssinatura: STATUS_ASSINATURA_VIVA.includes(a.status),
+                    temCliente: !!usuario.stripeCustomerId,
+                    diasTrial: DIAS_TRIAL,
+                    precoTexto,
+                    stripeConfigurada: !!stripe
+                });
+            } catch (err) {
+                console.error('Erro ao ler status da assinatura:', err);
+                res.status(500).json({ success: false, error: 'Erro ao carregar assinatura' });
+            }
+        });
+
+        app.post('/api/assinatura/checkout', requireAuth, async (req, res) => {
+            try {
+                if (!stripe) return res.status(503).json({ success: false, error: 'Os pagamentos ainda não estão configurados.' });
+                const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) });
+                if (!usuario) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
+                if (STATUS_ASSINATURA_VIVA.includes(usuario.assinatura?.status)) {
+                    return res.status(409).json({ success: false, error: 'Você já tem uma assinatura. Use "Gerenciar assinatura".' });
+                }
+                const preco = await obterPrecoMensal();
+                let customerId = usuario.stripeCustomerId;
+                if (!customerId) {
+                    const cliente = await stripe.customers.create({
+                        email: usuario.email, name: usuario.nome, metadata: { userId: req.userId }
+                    });
+                    customerId = cliente.id;
+                    await usuariosColl.updateOne({ _id: usuario._id }, { $set: { stripeCustomerId: customerId } });
+                }
+                const base = urlBaseApp();
+                const sufixo = Array.from({ length: 8 }, () => String.fromCharCode(97 + Math.floor(Math.random() * 26))).join('');
+                const parametros = {
+                    mode: 'subscription',
+                    customer: customerId,
+                    client_reference_id: req.userId,
+                    locale: 'pt-BR',
+                    line_items: [{ price: preco.id, quantity: 1 }],
+                    subscription_data: {
+                        // Só dá trial uma vez por conta (evita trial infinito).
+                        ...(usuario.jaTeveTrial ? {} : { trial_period_days: DIAS_TRIAL }),
+                        metadata: { userId: req.userId }
+                    },
+                    allow_promotion_codes: true,
+                    success_url: `${base}/?assinatura=ok`,
+                    cancel_url: `${base}/?assinatura=cancelada`,
+                    integration_identifier: `direto-a-posse-${sufixo}`
+                };
+                let sessao;
+                try {
+                    sessao = await stripe.checkout.sessions.create(parametros);
+                } catch (err) {
+                    if (/integration_identifier/i.test(err.message || '')) {
+                        delete parametros.integration_identifier;
+                        sessao = await stripe.checkout.sessions.create(parametros);
+                    } else throw err;
+                }
+                res.json({ success: true, url: sessao.url });
+            } catch (err) {
+                console.error('Erro ao criar checkout:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível abrir o pagamento agora. Tente novamente.' });
+            }
+        });
+
+        app.post('/api/assinatura/portal', requireAuth, async (req, res) => {
+            try {
+                if (!stripe) return res.status(503).json({ success: false, error: 'Os pagamentos ainda não estão configurados.' });
+                const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) });
+                if (!usuario?.stripeCustomerId) return res.status(400).json({ success: false, error: 'Você ainda não tem assinatura.' });
+                const sessao = await stripe.billingPortal.sessions.create({
+                    customer: usuario.stripeCustomerId,
+                    return_url: `${urlBaseApp()}/?assinatura=portal`
+                });
+                res.json({ success: true, url: sessao.url });
+            } catch (err) {
+                console.error('Erro ao abrir portal:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível abrir o gerenciamento agora. Tente novamente.' });
+            }
+        });
+
+        // --- ENCERRAR CONTA ---
+
+        async function coletarDadosDaConta(userId) {
+            const filtro = { userId };
+            const [edital, planos, tiposEstudo, sessoes, materiasCor, baralhos, cartoes, pontuacoes] = await Promise.all([
+                editalColl.find(filtro).toArray(), planosColl.find(filtro).toArray(),
+                tiposEstudoColl.find(filtro).toArray(), sessoesColl.find(filtro).toArray(),
+                materiasCorColl.find(filtro).toArray(), flashcardsBaralhosColl.find(filtro).toArray(),
+                flashcardsCartoesColl.find(filtro).toArray(), jogoPontuacoesColl.find(filtro).toArray()
+            ]);
+            return { edital, planos, tiposEstudo, sessoes, materiasCor, baralhos, cartoes, pontuacoes };
+        }
+
+        app.get('/api/conta/exportar', requireAuth, async (req, res) => {
+            try {
+                const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) });
+                if (!usuario) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
+                const dados = await coletarDadosDaConta(req.userId);
+                res.set('Content-Disposition', 'attachment; filename="meus-dados-direto-a-posse.json"');
+                res.json({
+                    exportadoEm: new Date().toISOString(),
+                    conta: { nome: usuario.nome, apelido: usuario.apelido || null, email: usuario.email, criadoEm: usuario.criadoEm },
+                    ...dados
+                });
+            } catch (err) {
+                console.error('Erro ao exportar dados da conta:', err);
+                res.status(500).json({ success: false, error: 'Erro ao exportar seus dados' });
+            }
+        });
+
+        // Apaga TUDO da pessoa. Antes, cancela a assinatura na Stripe — se isso
+        // falhar, NÃO apaga nada (senão a pessoa continuaria sendo cobrada sem
+        // ter mais conta). Exige confirmação explícita no corpo da requisição.
+        app.delete('/api/conta', requireAuth, async (req, res) => {
+            try {
+                if ((req.body?.confirmacao || '') !== 'ENCERRAR') {
+                    return res.status(400).json({ success: false, error: 'Confirmação ausente.' });
+                }
+                const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) });
+                if (!usuario) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
+
+                if (stripe && usuario.stripeCustomerId) {
+                    try {
+                        const subs = await stripe.subscriptions.list({ customer: usuario.stripeCustomerId, status: 'all', limit: 20 });
+                        for (const sub of subs.data) {
+                            if (sub.status !== 'canceled' && sub.status !== 'incomplete_expired') {
+                                await stripe.subscriptions.cancel(sub.id);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Erro ao cancelar assinatura no encerramento da conta:', err);
+                        return res.status(502).json({ success: false, error: 'Não conseguimos cancelar sua assinatura agora, então a conta NÃO foi encerrada. Tente novamente em instantes.' });
+                    }
+                }
+
+                const filtro = { userId: req.userId };
+                const colecoes = [editalColl, planosColl, tiposEstudoColl, sessoesColl, materiasCorColl,
+                    jogoPontuacoesColl, jogoRodadasColl, flashcardsBaralhosColl, flashcardsCartoesColl,
+                    iaUsoColl, analiseDesempenhoColl];
+                for (const colecao of colecoes) await colecao.deleteMany(filtro);
+                await usuariosColl.deleteOne({ _id: usuario._id });
+                res.clearCookie('sessao');
+                res.json({ success: true });
+            } catch (err) {
+                console.error('Erro ao encerrar conta:', err);
+                res.status(500).json({ success: false, error: 'Erro ao encerrar a conta' });
+            }
         });
 
         // --- PLANOS (metas de estudo, ex: TRT, ENAM) ---

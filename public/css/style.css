@@ -4527,3 +4527,98 @@ input[type="checkbox"] {
         height: calc(100vh - 40px);
     }
 }
+
+/* ============================================================ */
+/* ASSINATURA (paywall, faixa de aviso, botões)                   */
+/* ============================================================ */
+
+.btn-assinar {
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    padding: 12px 18px;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    width: 100%;
+    transition: background 0.15s;
+}
+
+.btn-assinar:hover {
+    background: var(--primary-dark);
+}
+
+.assinatura-acoes .btn-assinar {
+    width: auto;
+}
+
+.btn-assinar-pequeno {
+    width: auto;
+    padding: 6px 12px;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.btn-perigo {
+    background: var(--danger-light);
+    color: var(--danger);
+    border: none;
+    padding: 7px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: filter 0.15s;
+}
+
+.btn-perigo:hover {
+    filter: brightness(0.95);
+}
+
+.btn-link-discreto {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 6px;
+    margin-top: 8px;
+}
+
+.assinatura-aviso {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: 12px 0 0;
+}
+
+.assinatura-status {
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.5;
+    margin: 0;
+}
+
+.assinatura-acoes {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.faixa-assinatura {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--warning-light);
+    color: var(--text);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 13px;
+    line-height: 1.4;
+    margin-bottom: 14px;
+}
