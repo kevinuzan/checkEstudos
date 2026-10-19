@@ -570,6 +570,19 @@ async function startServer() {
             }
         });
 
+        // A IA (custo por uso) é só para quem já é assinante pago — o teste
+        // grátis NÃO inclui IA. Contas "cortesia" e o modo sem cobrança seguem
+        // liberados. Durante a carência de um pagamento recusado (que só
+        // acontece com assinatura já paga) a IA continua liberada.
+        const MSG_IA_SOMENTE_ASSINANTES = 'A IA está disponível só para assinantes. Assine para liberar (o teste grátis não inclui IA).';
+        async function usuarioTemAcessoIa(userId) {
+            const usuario = await usuariosColl.findOne({ _id: new ObjectId(userId) });
+            if (!usuario) return false;
+            const acesso = acessoDoUsuario(usuario);
+            if (!acesso.permitido) return false;
+            return ['cobranca_desligada', 'cortesia', 'active', 'carencia'].includes(acesso.motivo);
+        }
+
         function urlBaseApp() {
             return (process.env.APP_URL || 'https://www.diretoaposse.com.br').replace(/\/+$/, '');
         }
@@ -759,9 +772,21 @@ async function startServer() {
                     await usuariosColl.updateOne({ _id: usuario._id }, { $set: { stripeCustomerId: customerId } });
                 }
                 const base = urlBaseApp();
-                const sufixo = Array.from({ length: 8 }, () => String.fromCharCode(97 + Math.floor(Math.random() * 26))).join('');
+                // Parâmetros de exibição definidos no Checkout Studio da Stripe
+                // (valores fixos — não mudar aqui sem mudar lá). O submit_type
+                // "auto" é o comportamento padrão e só vale para mode "payment",
+                // por isso não é enviado em assinatura.
                 const parametros = {
+                    ui_mode: 'hosted_page', // SDK >= 21; em versões antigas era 'hosted'
                     mode: 'subscription',
+                    billing_address_collection: 'auto',
+                    phone_number_collection: { enabled: false },
+                    automatic_tax: { enabled: false },
+                    allow_promotion_codes: false,
+                    payment_method_collection: 'always', // trial exige cartão já no cadastro
+                    integration_identifier: 'hosted_web_0001',
+                    origin_context: 'web',
+                    // --- específicos do app (ligam a sessão ao aluno e ao trial) ---
                     customer: customerId,
                     client_reference_id: req.userId,
                     locale: 'pt-BR',
@@ -771,20 +796,10 @@ async function startServer() {
                         ...(usuario.jaTeveTrial ? {} : { trial_period_days: DIAS_TRIAL }),
                         metadata: { userId: req.userId }
                     },
-                    allow_promotion_codes: true,
                     success_url: `${base}/?assinatura=ok`,
-                    cancel_url: `${base}/?assinatura=cancelada`,
-                    integration_identifier: `direto-a-posse-${sufixo}`
+                    cancel_url: `${base}/?assinatura=cancelada`
                 };
-                let sessao;
-                try {
-                    sessao = await stripe.checkout.sessions.create(parametros);
-                } catch (err) {
-                    if (/integration_identifier/i.test(err.message || '')) {
-                        delete parametros.integration_identifier;
-                        sessao = await stripe.checkout.sessions.create(parametros);
-                    } else throw err;
-                }
+                const sessao = await stripe.checkout.sessions.create(parametros);
                 res.json({ success: true, url: sessao.url });
             } catch (err) {
                 console.error('Erro ao criar checkout:', err);
@@ -1293,6 +1308,9 @@ async function startServer() {
             }
             if (!process.env.API_CLAUDE) {
                 return res.status(500).json({ success: false, error: 'A chave da API de IA não está configurada no servidor.' });
+            }
+            if (!(await usuarioTemAcessoIa(req.userId))) {
+                return res.status(403).json({ success: false, codigo: 'IA_SOMENTE_ASSINANTES', error: MSG_IA_SOMENTE_ASSINANTES });
             }
 
             // Corta ANTES de gastar qualquer coisa nesse mês, se a cota já
@@ -2778,6 +2796,9 @@ async function startServer() {
         app.post('/api/analise-desempenho/gerar', requireAuth, async (req, res) => {
             if (!process.env.API_CLAUDE) {
                 return res.status(500).json({ success: false, error: 'A chave da API de IA não está configurada no servidor.' });
+            }
+            if (!(await usuarioTemAcessoIa(req.userId))) {
+                return res.status(403).json({ success: false, codigo: 'IA_SOMENTE_ASSINANTES', error: MSG_IA_SOMENTE_ASSINANTES });
             }
 
             const docAtual = await analiseDesempenhoColl.findOne({ userId: req.userId });
