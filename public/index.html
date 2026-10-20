@@ -169,6 +169,7 @@
                     <button class="timer-btn timer-btn-pause" id="btn-timer-pausar" onclick="pausarCronometro()" style="display:none;">⏸ Pausar</button>
                     <button class="timer-btn timer-btn-resume" id="btn-timer-retomar" onclick="retomarCronometro()" style="display:none;">▶ Retomar</button>
                     <button class="timer-btn timer-btn-stop" id="btn-timer-finalizar" onclick="abrirModalSessao()" style="display:none;">⏹ Finalizar</button>
+                    <button class="timer-btn timer-btn-descartar" id="btn-timer-descartar" onclick="abrirModalDescartarCronometro()" style="display:none;">🗑 Descartar</button>
                 </div>
             </section>
 
@@ -911,6 +912,18 @@
 
             <div class="modal-actions">
                 <button onclick="fecharModalTipos()">Concluído</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de confirmação: descartar o cronômetro/pomodoro em andamento (sem salvar sessão) -->
+    <div id="modal-descartar-cronometro-overlay" class="modal-overlay" style="display:none;">
+        <div class="modal modal-confirm-cronometro">
+            <h3>Descartar o cronômetro?</h3>
+            <p class="modal-confirm-texto" id="descartar-cronometro-texto">O tempo registrado será perdido e nenhuma sessão de estudo será salva.</p>
+            <div class="modal-actions">
+                <button class="btn-cancelar" onclick="fecharModalDescartarCronometro()">Não, continuar</button>
+                <button class="btn-perigo-modal" onclick="confirmarDescartarCronometro()">Sim, descartar</button>
             </div>
         </div>
     </div>
