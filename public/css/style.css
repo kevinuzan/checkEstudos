@@ -786,6 +786,10 @@ h1, h2, h3 { font-family: inherit; }
     transition: background 0.3s ease, transform 0.15s ease;
 }
 
+.sem-sessao .timer-bolha {
+    display: none;
+}
+
 .timer-bolha:hover {
     transform: translateY(-1px);
 }
@@ -4634,7 +4638,10 @@ input[type="checkbox"] {
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
-    background: var(--warning-light);
+    /* Fundo = amarelo suave misturado ao card, assim o texto (var(--text))
+       tem contraste tanto no tema claro quanto no escuro. O --warning-light
+       puro é sempre claro e deixava o texto branco ilegível no escuro. */
+    background: color-mix(in srgb, var(--warning) 16%, var(--card));
     color: var(--text);
     border: 1px solid var(--warning);
     border-radius: var(--radius-sm);

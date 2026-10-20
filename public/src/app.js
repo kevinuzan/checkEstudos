@@ -141,6 +141,9 @@ let tentativasEsperaGoogle = 0;
 async function mostrarTelaLogin() {
     const overlay = document.getElementById('login-overlay');
     if (overlay) overlay.style.display = 'flex';
+    // Sem sessão não há cronômetro: esconde a bolha flutuante (que fica
+    // acima da tela de login) pra ela não aparecer sobre o login.
+    document.body.classList.add('sem-sessao');
 
     if (googleSignInIniciado) return;
 
@@ -185,6 +188,7 @@ async function mostrarTelaLogin() {
 function esconderTelaLogin() {
     const overlay = document.getElementById('login-overlay');
     if (overlay) overlay.style.display = 'none';
+    document.body.classList.remove('sem-sessao');
 }
 
 async function aoReceberCredencialGoogle(resposta) {
@@ -4258,6 +4262,10 @@ function atualizarBotoesCronometro() {
     // foco acumulado (senão não tem o que salvar como sessão ainda).
     const temFocoParaSalvar = emPomodoro && calcularFocoTotalPomodoroMs() > 0;
     btnFinalizar.style.display = (cronometroEstado.status !== 'parado' || temFocoParaSalvar) ? 'inline-flex' : 'none';
+    // "Descartar" aparece junto com o "Finalizar": só faz sentido quando há
+    // algo em andamento (ou foco acumulado de pomodoro) pra jogar fora.
+    const btnDescartar = document.getElementById('btn-timer-descartar');
+    if (btnDescartar) btnDescartar.style.display = btnFinalizar.style.display;
 
     if (emPomodoro && pomodoroEstado.fase) {
         btnIniciar.textContent = `▶ Iniciar ${NOMES_FASE_POMODORO[pomodoroEstado.fase].toLowerCase()}`;
@@ -4311,7 +4319,20 @@ function pararIntervaloCronometro() {
     cronometroIntervalId = null;
 }
 
+// Sem assinatura ativa (modo somente leitura) o cronômetro não deve nem
+// começar: a sessão não poderia ser salva no fim e o aluno perderia o tempo.
+// Mostra a tela de assinatura em vez de iniciar.
+function cronometroBloqueadoPorAssinatura() {
+    const s = statusAssinatura;
+    if (s && s.cobrancaAtiva && !s.acesso) {
+        abrirPaywall();
+        return true;
+    }
+    return false;
+}
+
 function iniciarCronometro() {
+    if (cronometroBloqueadoPorAssinatura()) return;
     if (obterModoCronometro() === 'pomodoro' && !pomodoroEstado.fase) {
         // Início de um pomodoro novo (não é retomada de uma fase seguinte)
         pomodoroEstado = { fase: 'foco', cicloAtual: 0, focoAcumuladoMs: 0 };
@@ -4342,6 +4363,28 @@ function retomarCronometro() {
     salvarCronometroEstado();
     atualizarBotoesCronometro();
     iniciarIntervaloCronometro();
+}
+
+// Descartar o cronômetro/pomodoro (ex.: foi iniciado sem querer). Pede
+// confirmação, mostrando quanto tempo seria perdido, e depois zera tudo
+// SEM salvar sessão de estudo.
+function abrirModalDescartarCronometro() {
+    const emPomodoro = obterModoCronometro() === 'pomodoro';
+    const totalMs = emPomodoro ? calcularFocoTotalPomodoroMs() : calcularElapsedMs();
+    const texto = document.getElementById('descartar-cronometro-texto');
+    if (texto) {
+        texto.textContent = `Você vai perder ${formatarHMS(totalMs)} de tempo registrado e nenhuma sessão de estudo será salva. Essa ação não pode ser desfeita.`;
+    }
+    document.getElementById('modal-descartar-cronometro-overlay').style.display = 'flex';
+}
+
+function fecharModalDescartarCronometro() {
+    document.getElementById('modal-descartar-cronometro-overlay').style.display = 'none';
+}
+
+function confirmarDescartarCronometro() {
+    fecharModalDescartarCronometro();
+    resetarCronometro();
 }
 
 function resetarCronometro() {
