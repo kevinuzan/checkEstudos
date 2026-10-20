@@ -299,7 +299,7 @@ function abrirPaywall() {
     const jaTeve = !!s.jaTeveTrial;
     const preco = s.precoTexto || '';
     document.getElementById('paywall-titulo').textContent = jaTeve ? 'Assine o Direto à Posse' : `Teste grátis por ${s.diasTrial || 7} dias`;
-    document.getElementById('paywall-sub').textContent = 'Registre estudos, use flashcards, jogos e a análise com IA, de qualquer aparelho.';
+    document.getElementById('paywall-sub').textContent = 'Registre estudos, use flashcards e jogos, de qualquer aparelho. A análise com IA é liberada para assinantes (o teste grátis não inclui IA).';
     document.getElementById('btn-paywall-assinar').textContent = jaTeve ? 'Assinar' : 'Começar teste grátis';
     document.getElementById('paywall-aviso').textContent = jaTeve
         ? `${preco ? preco + '. ' : ''}Cancele quando quiser.`

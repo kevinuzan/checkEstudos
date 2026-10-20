@@ -914,6 +914,27 @@ h1, h2, h3 { font-family: inherit; }
     color: white;
 }
 
+.timer-btn-descartar {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.92);
+    border: 1.5px solid rgba(255, 255, 255, 0.45);
+    box-shadow: none;
+}
+
+.timer-btn-descartar:hover {
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: none;
+}
+
+.btn-perigo-modal {
+    background: var(--danger);
+    color: #fff;
+}
+
+.btn-perigo-modal:hover {
+    filter: brightness(0.92);
+}
+
 .timer-modo-row {
     display: flex;
     gap: 8px;
