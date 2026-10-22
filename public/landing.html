@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Direto à Posse — Estude para concursos pelo seu edital</title>
+    <meta name="description" content="Organize o edital em matérias e tópicos, registre cada sessão de estudo, revise com flashcards de repetição espaçada e acompanhe seu progresso. 7 dias grátis.">
+    <meta name="theme-color" content="#2563eb">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Direto à Posse — Estude para concursos pelo seu edital">
+    <meta property="og:description" content="Edital organizado, cronômetro, flashcards com repetição espaçada, estatísticas e análise com IA. 7 dias grátis.">
+    <meta property="og:locale" content="pt_BR">
+    <link rel="icon" type="image/svg+xml" href="/img/logo.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        // Define claro/escuro ANTES de desenhar a página (evita "piscar"). Respeita o
+        // tema que a pessoa já escolheu no app (ids "escuro-*" = escuro); se ela nunca
+        // escolheu nada, segue a preferência do aparelho.
+        (function () {
+            var modo = '';
+            try {
+                var tema = localStorage.getItem('checkestudos_tema') || '';
+                if (tema.indexOf('escuro') === 0) modo = 'escuro';
+                else if (tema) modo = 'claro';
+            } catch (e) { /* localStorage indisponível — cai na preferência do aparelho */ }
+            if (!modo && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) modo = 'escuro';
+            document.documentElement.setAttribute('data-modo', modo || 'claro');
+        })();
+    </script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --primary-light: #dbeafe;
+            --ouro: #c9962b;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --surface-muted: #eef2f7;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --text-muted: #475569;
+            --success: #059669;
+            --hero-glow: rgba(37, 99, 235, .12);
+            --shadow: 0 10px 30px rgba(15, 23, 42, .08);
+            --radius: 16px;
+            --radius-sm: 10px;
+        }
+        :root[data-modo="escuro"] {
+            --primary: #3b82f6;
+            --primary-dark: #2563eb;
+            --primary-light: #1e3a8a;
+            --ouro: #f6d365;
+            --bg: #0b1220;
+            --card: #111a2e;
+            --surface-muted: #16213a;
+            --border: #22304d;
+            --text: #e8eefc;
+            --text-muted: #a3b1cc;
+            --success: #34d399;
+            --hero-glow: rgba(59, 130, 246, .18);
+            --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+        a { color: inherit; }
+        img, svg { max-width: 100%; display: block; }
+        :focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; border-radius: 6px; }
+        .container { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+        .acento { color: var(--primary); }
+        .brand-acento { color: var(--ouro); }
+
+        /* ---------- Botões ---------- */
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            padding: 12px 22px; border-radius: 999px; border: 2px solid transparent;
+            font: inherit; font-weight: 700; font-size: 1rem; text-decoration: none; cursor: pointer;
+            transition: transform .15s ease, background .15s ease, border-color .15s ease;
+        }
+        .btn:active { transform: translateY(1px); }
+        .btn-primario { background: var(--primary); color: #fff; box-shadow: 0 6px 16px rgba(37, 99, 235, .3); }
+        .btn-primario:hover { background: var(--primary-dark); }
+        .btn-contorno { background: transparent; color: var(--primary); border-color: var(--primary); }
+        .btn-contorno:hover { background: var(--primary-light); }
+        .btn-grande { padding: 15px 30px; font-size: 1.05rem; }
+
+        /* ---------- Topo ---------- */
+        .topo {
+            position: sticky; top: 0; z-index: 10;
+            background: color-mix(in srgb, var(--bg) 88%, transparent);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+        }
+        .topo-linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 64px; }
+        .marca { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 800; font-size: 1.15rem; letter-spacing: -.01em; }
+        .marca svg { width: 34px; height: 34px; flex: none; }
+        .topo-nav { display: none; gap: 26px; }
+        .topo-nav a { text-decoration: none; font-weight: 600; font-size: .95rem; color: var(--text-muted); }
+        .topo-nav a:hover { color: var(--primary); }
+        .topo .btn { padding: 9px 20px; }
+
+        /* ---------- Hero ---------- */
+        .hero { padding: 40px 0 56px; background: radial-gradient(900px 420px at 80% -10%, var(--hero-glow), transparent 70%); }
+        .hero-grade { display: grid; gap: 40px; align-items: center; }
+        .selo {
+            display: inline-block; padding: 6px 14px; border-radius: 999px; font-size: .85rem; font-weight: 600;
+            background: var(--card); border: 1px solid var(--border); color: var(--text-muted); margin-bottom: 18px;
+        }
+        h1 { font-size: clamp(2rem, 7vw, 3.1rem); line-height: 1.12; letter-spacing: -.025em; font-weight: 800; }
+        .hero-sub { margin-top: 18px; font-size: 1.08rem; color: var(--text-muted); max-width: 34em; }
+        .hero-acoes { margin-top: 28px; display: flex; flex-direction: column; gap: 12px; }
+        .nota-preco { margin-top: 14px; font-size: .9rem; color: var(--text-muted); }
+
+        /* Ilustração do app (HTML/CSS, valores de exemplo) */
+        .mock { position: relative; }
+        .mock-janela {
+            background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 16px; max-width: 460px; margin: 0 auto;
+        }
+        .mock-barra { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; font-size: .8rem; color: var(--text-muted); font-weight: 600; }
+        .mock-pontos { display: flex; gap: 6px; }
+        .mock-pontos i { width: 9px; height: 9px; border-radius: 50%; background: var(--border); display: block; }
+        .mock-topo { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: stretch; }
+        .mock-timer { background: var(--surface-muted); border-radius: var(--radius-sm); padding: 12px 14px; }
+        .mock-timer small, .mock-streak small { display: block; font-size: .72rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+        .mock-timer strong { font-size: 1.7rem; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+        .mock-streak { background: var(--surface-muted); border-radius: var(--radius-sm); padding: 12px 16px; text-align: center; }
+        .mock-streak strong { font-size: 1.5rem; }
+        .mock-lista { margin-top: 14px; display: grid; gap: 11px; }
+        .mock-item { font-size: .82rem; }
+        .mock-item-topo { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 4px; }
+        .mock-item-topo span:last-child { color: var(--text-muted); font-weight: 500; }
+        .mock-trilho { height: 8px; border-radius: 999px; background: var(--surface-muted); overflow: hidden; }
+        .mock-trilho i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--primary), #60a5fa); }
+        .mock-card {
+            margin-top: 14px; border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 12px 14px; font-size: .82rem;
+            display: flex; gap: 10px; align-items: center;
+        }
+        .mock-card b { color: var(--success); }
+        .mock-legenda { text-align: center; margin-top: 10px; font-size: .75rem; color: var(--text-muted); }
+
+        /* ---------- Seções ---------- */
+        section { padding: 56px 0; }
+        .secao-alt { background: var(--surface-muted); }
+        .secao-titulo { text-align: center; max-width: 38em; margin: 0 auto 36px; }
+        .secao-titulo h2 { font-size: clamp(1.5rem, 5vw, 2.1rem); letter-spacing: -.02em; line-height: 1.2; font-weight: 800; }
+        .secao-titulo p { margin-top: 10px; color: var(--text-muted); }
+
+        .recursos { display: grid; gap: 16px; }
+        .recurso { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
+        .recurso .icone { font-size: 1.6rem; line-height: 1; margin-bottom: 12px; display: block; }
+        .recurso h3 { font-size: 1.05rem; margin-bottom: 6px; }
+        .recurso p { color: var(--text-muted); font-size: .95rem; }
+
+        .passos { display: grid; gap: 16px; counter-reset: passo; }
+        .passo { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 22px 22px 70px; }
+        .passo::before {
+            counter-increment: passo; content: counter(passo);
+            position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%;
+            display: grid; place-items: center; font-weight: 800; color: #fff; background: var(--primary);
+        }
+        .passo h3 { font-size: 1.05rem; margin-bottom: 4px; }
+        .passo p { color: var(--text-muted); font-size: .95rem; }
+
+        /* ---------- Plano ---------- */
+        .plano {
+            max-width: 460px; margin: 0 auto; background: var(--card); border: 2px solid var(--primary);
+            border-radius: 20px; padding: 28px 24px; box-shadow: var(--shadow); text-align: center;
+        }
+        .plano-etiqueta { display: inline-block; background: var(--primary); color: #fff; font-size: .78rem; font-weight: 700; padding: 4px 12px; border-radius: 999px; letter-spacing: .03em; }
+        .plano h3 { margin-top: 14px; font-size: 1.2rem; }
+        .plano-preco { margin-top: 6px; font-size: clamp(2rem, 9vw, 2.6rem); font-weight: 800; letter-spacing: -.02em; min-height: 1.3em; }
+        .plano-trial { color: var(--success); font-weight: 700; margin-top: 2px; }
+        .plano ul { list-style: none; text-align: left; margin: 22px 0; display: grid; gap: 10px; }
+        .plano li { display: flex; gap: 10px; font-size: .95rem; }
+        .plano li::before { content: "✓"; color: var(--success); font-weight: 800; flex: none; }
+        .plano .btn { width: 100%; }
+        .plano-aviso { margin-top: 14px; font-size: .82rem; color: var(--text-muted); }
+
+        /* ---------- FAQ ---------- */
+        .faq { max-width: 720px; margin: 0 auto; display: grid; gap: 10px; }
+        .faq details { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 18px; }
+        .faq summary { cursor: pointer; font-weight: 600; padding: 16px 0; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+        .faq summary::-webkit-details-marker { display: none; }
+        .faq summary::after { content: "+"; font-weight: 700; color: var(--primary); font-size: 1.2rem; line-height: 1; }
+        .faq details[open] summary::after { content: "–"; }
+        .faq details p { padding: 0 0 16px; color: var(--text-muted); font-size: .95rem; }
+
+        .cta-final { text-align: center; }
+        .cta-final h2 { font-size: clamp(1.5rem, 5vw, 2.1rem); letter-spacing: -.02em; font-weight: 800; }
+        .cta-final p { margin: 10px auto 24px; color: var(--text-muted); max-width: 32em; }
+
+        footer { border-top: 1px solid var(--border); padding: 28px 0; font-size: .88rem; color: var(--text-muted); }
+        .rodape-linha { display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; }
+
+        /* ---------- Telas maiores ---------- */
+        @media (min-width: 760px) {
+            .container { padding: 0 24px; }
+            .topo-nav { display: flex; }
+            .hero { padding: 72px 0 80px; }
+            .hero-grade { grid-template-columns: 1.1fr .9fr; gap: 48px; }
+            .hero-acoes { flex-direction: row; }
+            .recursos { grid-template-columns: repeat(2, 1fr); }
+            .passos { grid-template-columns: repeat(2, 1fr); }
+            section { padding: 80px 0; }
+            .rodape-linha { flex-direction: row; justify-content: space-between; text-align: left; }
+        }
+        @media (min-width: 1000px) {
+            .recursos { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            html { scroll-behavior: auto; }
+            .btn { transition: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===================== TOPO ===================== -->
+    <header class="topo">
+        <div class="container topo-linha">
+            <a class="marca" href="/" aria-label="Direto à Posse — início">
+                <svg viewBox="0 0 64 64" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="lp-azul" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#3b82f6" />
+                            <stop offset="100%" stop-color="#1d4ed8" />
+                        </linearGradient>
+                        <linearGradient id="lp-ouro" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#f6d365" />
+                            <stop offset="100%" stop-color="#c9962b" />
+                        </linearGradient>
+                    </defs>
+                    <circle cx="32" cy="32" r="29" fill="url(#lp-azul)" />
+                    <circle cx="32" cy="32" r="29" fill="none" stroke="url(#lp-ouro)" stroke-width="3" />
+                    <path d="M19 33 L28 42 L46 22" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span>Direto <span class="brand-acento">à Posse</span></span>
+            </a>
+            <nav class="topo-nav" aria-label="Seções da página">
+                <a href="#recursos">Recursos</a>
+                <a href="#como-funciona">Como funciona</a>
+                <a href="#plano">Plano</a>
+                <a href="#duvidas">Dúvidas</a>
+            </nav>
+            <a class="btn btn-contorno" href="/app">Entrar</a>
+        </div>
+    </header>
+
+    <main>
+        <!-- ===================== HERO ===================== -->
+        <div class="hero">
+            <div class="container hero-grade">
+                <div>
+                    <span class="selo">Para quem estuda para concursos públicos</span>
+                    <h1>Estude pelo seu edital, revise na hora certa e <span class="acento">veja seu progresso de verdade.</span></h1>
+                    <p class="hero-sub">O Direto à Posse organiza as matérias e tópicos do seu edital, registra cada sessão de estudo e agenda suas revisões com flashcards. Tudo em um só lugar, no celular ou no computador.</p>
+                    <div class="hero-acoes">
+                        <a class="btn btn-primario btn-grande" href="/app">Começar 7 dias grátis</a>
+                        <a class="btn btn-contorno btn-grande" href="/app">Já tenho conta</a>
+                    </div>
+                    <p class="nota-preco" id="nota-preco">7 dias grátis. Cancele quando quiser.</p>
+                </div>
+
+                <!-- Ilustração do app: valores apenas de exemplo -->
+                <div class="mock" aria-hidden="true">
+                    <div class="mock-janela">
+                        <div class="mock-barra">
+                            <span class="mock-pontos"><i></i><i></i><i></i></span>
+                            <span>Estudos de hoje</span>
+                        </div>
+                        <div class="mock-topo">
+                            <div class="mock-timer"><small>Cronômetro</small><strong>01:24:10</strong></div>
+                            <div class="mock-streak"><small>Ofensiva</small><strong>🔥 12</strong></div>
+                        </div>
+                        <div class="mock-lista">
+                            <div class="mock-item">
+                                <div class="mock-item-topo"><span>Direito Constitucional</span><span>82%</span></div>
+                                <div class="mock-trilho"><i style="width:82%"></i></div>
+                            </div>
+                            <div class="mock-item">
+                                <div class="mock-item-topo"><span>Direito do Trabalho</span><span>64%</span></div>
+                                <div class="mock-trilho"><i style="width:64%"></i></div>
+                            </div>
+                            <div class="mock-item">
+                                <div class="mock-item-topo"><span>Língua Portuguesa</span><span>47%</span></div>
+                                <div class="mock-trilho"><i style="width:47%"></i></div>
+                            </div>
+                        </div>
+                        <div class="mock-card">🗂️ <span><b>18 cartões</b> para revisar hoje</span></div>
+                    </div>
+                    <p class="mock-legenda">Ilustração com dados de exemplo</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===================== RECURSOS ===================== -->
+        <section id="recursos" class="secao-alt">
+            <div class="container">
+                <div class="secao-titulo">
+                    <h2>Tudo o que você precisa para estudar com método</h2>
+                    <p>Do edital à revisão, cada ferramenta conversa com as outras.</p>
+                </div>
+                <div class="recursos">
+                    <article class="recurso">
+                        <span class="icone" aria-hidden="true">📋</span>
+                        <h3>Edital organizado</h3>
+                        <p>Matérias, tópicos e subtópicos com marcação de concluído. Depois do teste grátis, você também pode importar a estrutura a partir de um PDF, com ajuda de IA.</p>
+                    </article>
+                    <article class="recurso">
+                        <span class="icone" aria-hidden="true">⏱️</span>
+                        <h3>Cronômetro e histórico</h3>
+                        <p>Estude no modo livre ou com pomodoro, registre acertos, erros ou páginas lidas e veja o total estudado em cada dia.</p>
+                    </article>
+                    <article class="recurso">
+                        <span class="icone" aria-hidden="true">🗂️</span>
+                        <h3>Flashcards com repetição espaçada</h3>
+                        <p>Cartões básicos, de omissão e de verdadeiro ou falso. O app mostra quando cada um volta, e você pode importar baralhos do Anki.</p>
+                    </article>
+                    <article class="recurso">
+                        <span class="icone" aria-hidden="true">🎮</span>
+                        <h3>Jogos de memorização</h3>
+                        <p>Mnemônicos, competências e lacunas da Constituição em formato de jogo, com pontuação e rodadas por dia.</p>
+                    </article>
+                    <article class="recurso">
+                        <span class="icone" aria-hidden="true">📊</span>
+                        <h3>Estatísticas</h3>
+                        <p>Gráficos por dia, semana, mês ou período que você escolher: tempo por matéria, planos e evolução.</p>
+                    </article>
+                    <article class="recurso">
+                        <span class="icone" aria-hidden="true">🧠</span>
+                        <h3>Análise com IA</h3>
+                        <p>Um resumo dos seus números com pontos fortes, pontos de atenção e sugestão de foco. Disponível para assinantes, depois do teste grátis.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== COMO FUNCIONA ===================== -->
+        <section id="como-funciona">
+            <div class="container">
+                <div class="secao-titulo">
+                    <h2>Como funciona</h2>
+                    <p>Quatro passos para transformar o edital em rotina.</p>
+                </div>
+                <div class="passos">
+                    <div class="passo">
+                        <h3>Monte o seu edital</h3>
+                        <p>Cadastre as matérias e os tópicos do concurso que você vai prestar. Como assinante, você também pode importar a estrutura de um PDF com IA.</p>
+                    </div>
+                    <div class="passo">
+                        <h3>Estude e registre</h3>
+                        <p>Inicie o cronômetro, escolha o que está estudando e finalize a sessão com acertos, erros e observações.</p>
+                    </div>
+                    <div class="passo">
+                        <h3>Revise no tempo certo</h3>
+                        <p>Transforme o que você aprendeu em flashcards e deixe a repetição espaçada decidir o que revisar hoje.</p>
+                    </div>
+                    <div class="passo">
+                        <h3>Acompanhe o progresso</h3>
+                        <p>Veja suas estatísticas, sua ofensiva de dias seguidos e a análise de desempenho para ajustar o foco.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== PLANO ===================== -->
+        <section id="plano" class="secao-alt">
+            <div class="container">
+                <div class="secao-titulo">
+                    <h2>Um plano, tudo incluído</h2>
+                    <p>Um preço só, sem pacotes escondidos.</p>
+                </div>
+                <div class="plano">
+                    <span class="plano-etiqueta">PLANO MENSAL</span>
+                    <h3>Direto à Posse</h3>
+                    <p class="plano-preco" id="plano-preco" aria-live="polite">…</p>
+                    <p class="plano-trial" id="plano-trial">7 dias grátis</p>
+                    <ul>
+                        <li>Edital organizado em matérias, tópicos e subtópicos</li>
+                        <li>Cronômetro livre e pomodoro, com histórico por dia</li>
+                        <li>Flashcards com repetição espaçada e importação do Anki</li>
+                        <li>Jogos de memorização</li>
+                        <li>Estatísticas por período, matéria e plano</li>
+                        <li>Análise de desempenho e importação de edital por PDF, com IA (liberadas após o teste, com cota mensal de uso)</li>
+                        <li>Conquistas e ofensiva de dias seguidos</li>
+                        <li>Seus dados em qualquer aparelho, com login Google</li>
+                    </ul>
+                    <a class="btn btn-primario btn-grande" href="/app">Começar 7 dias grátis</a>
+                    <p class="plano-aviso" id="plano-aviso">Pedimos o cartão para iniciar o teste. Cancele antes do fim dos 7 dias e você não paga nada.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== DÚVIDAS ===================== -->
+        <section id="duvidas">
+            <div class="container">
+                <div class="secao-titulo">
+                    <h2>Dúvidas frequentes</h2>
+                </div>
+                <div class="faq">
+                    <details>
+                        <summary>Preciso informar o cartão para o teste grátis?</summary>
+                        <p>Sim. O cartão é pedido para iniciar o teste de 7 dias, e a cobrança mensal só começa depois dele. Se você cancelar antes do fim do teste, nada é cobrado.</p>
+                    </details>
+                    <details>
+                        <summary>Como faço para cancelar?</summary>
+                        <p>Dentro do app, em Configurações, na parte de assinatura. Você gerencia o cartão e cancela quando quiser, sem precisar falar com ninguém.</p>
+                    </details>
+                    <details>
+                        <summary>Como eu entro?</summary>
+                        <p>Com a sua conta Google. Não há senha nova para criar, e seus estudos ficam disponíveis em qualquer aparelho em que você entrar.</p>
+                    </details>
+                    <details>
+                        <summary>Funciona para qualquer concurso?</summary>
+                        <p>Sim. O edital é seu: você cadastra as matérias e os tópicos do concurso que escolher, ou, como assinante, importa a estrutura de um PDF com IA. Você pode manter mais de um plano de estudo.</p>
+                    </details>
+                    <details>
+                        <summary>O teste grátis inclui a IA?</summary>
+                        <p>Não. Durante o teste você usa os recursos de estudo (edital, cronômetro, flashcards, jogos e estatísticas). A análise de desempenho e a importação de edital por PDF, que usam IA, ficam disponíveis para assinantes depois do teste.</p>
+                    </details>
+                    <details>
+                        <summary>Posso usar no celular?</summary>
+                        <p>Pode. O Direto à Posse funciona no navegador do celular e do computador, e você pode adicioná-lo à tela inicial do aparelho.</p>
+                    </details>
+                    <details>
+                        <summary>Posso levar meus flashcards do Anki?</summary>
+                        <p>Pode. O app importa baralhos do Anki (arquivos .apkg) e também de arquivo de texto, e você pode exportar os seus quando quiser.</p>
+                    </details>
+                    <details>
+                        <summary>Outras pessoas veem os meus dados?</summary>
+                        <p>Não. Cada conta enxerga apenas os próprios estudos, flashcards e estatísticas.</p>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===================== CHAMADA FINAL ===================== -->
+        <section class="secao-alt">
+            <div class="container cta-final">
+                <h2>Comece hoje o estudo que leva você à posse</h2>
+                <p>Teste por 7 dias antes da primeira cobrança.</p>
+                <a class="btn btn-primario btn-grande" href="/app">Começar 7 dias grátis</a>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container rodape-linha">
+            <span>© <span id="ano">2026</span> Direto à Posse</span>
+            <a href="/app">Entrar no app</a>
+        </div>
+    </footer>
+
+    <script>
+        // Preenche o preço com o valor REAL da Stripe (rota pública, sem dados de
+        // usuário). Nada de número fixo aqui: se o preço mudar na Stripe, a página
+        // acompanha sozinha. Se a consulta falhar, a página continua honesta.
+        (function () {
+            var elPreco = document.getElementById('plano-preco');
+            var elTrial = document.getElementById('plano-trial');
+            var elNota = document.getElementById('nota-preco');
+            try { document.getElementById('ano').textContent = new Date().getFullYear(); } catch (e) { /* mantém o ano padrão */ }
+
+            function semPreco() {
+                elPreco.textContent = 'Veja o valor ao assinar';
+                elPreco.style.fontSize = '1.2rem';
+            }
+
+            fetch('/api/assinatura/preco', { headers: { 'Accept': 'application/json' } })
+                .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+                .then(function (d) {
+                    var dias = parseInt(d && d.diasTrial, 10) || 7;
+                    elTrial.textContent = dias + ' dias grátis';
+                    if (d && d.precoTexto) {
+                        elPreco.textContent = d.precoTexto;
+                        elNota.textContent = dias + ' dias grátis, depois ' + d.precoTexto + '. Cancele quando quiser.';
+                    } else {
+                        semPreco();
+                    }
+                })
+                .catch(semPreco);
+        })();
+    </script>
+</body>
+</html>

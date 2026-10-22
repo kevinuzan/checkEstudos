@@ -114,7 +114,35 @@ async function servirHtmlComVersao(res, caminhoArquivo, substituicoes) {
     }
 }
 
-app.get(['/', '/index.html'], (req, res) => {
+// Só olha se o cookie de sessão é válido (assinatura do JWT), sem ir ao banco:
+// serve apenas pra decidir se "/" mostra a página de apresentação ou manda a
+// pessoa direto pro app. Quem de fato protege os dados é o requireAuth.
+function temSessaoValida(req) {
+    try {
+        const token = req.cookies && req.cookies.sessao;
+        if (!token) return false;
+        jwt.verify(token, SESSION_SECRET);
+        return true;
+    } catch (err) {
+        return false;
+    }
+}
+
+// "/" é a página de apresentação (pública). Vão direto pro app: quem já tem
+// sessão (inclusive ao abrir pela notificação push, que aponta pra "/") e os
+// retornos da Stripe (?assinatura=ok|cancelada|portal), mantendo a query.
+app.get('/', (req, res) => {
+    if (req.query.assinatura || temSessaoValida(req)) {
+        const i = req.originalUrl.indexOf('?');
+        res.set('Cache-Control', 'no-store');
+        return res.redirect(302, '/app' + (i >= 0 ? req.originalUrl.slice(i) : ''));
+    }
+    servirHtmlComVersao(res, path.join(__dirname, 'public/landing.html'), []);
+});
+
+// O app em si. "/index.html" continua valendo (é o start_url do app instalado
+// no celular e o que o service worker guarda em cache).
+app.get(['/app', '/app/', '/index.html'], (req, res) => {
     servirHtmlComVersao(res, path.join(__dirname, 'public/index.html'), [
         ['/src/app.min.js', `/src/app.min.js?v=${VERSAO_ASSETS}`],
         ['/css/style.min.css', `/css/style.min.css?v=${VERSAO_ASSETS}`]
@@ -754,6 +782,21 @@ async function startServer() {
             }
         });
 
+        // Rota PÚBLICA de propósito (a página de apresentação roda sem login, então
+        // não usa requireAuth). Devolve só o texto do preço e os dias de trial,
+        // nada de dados de usuário. O preço vem da Stripe (cache de 5 min).
+        app.get('/api/assinatura/preco', async (req, res) => {
+            try {
+                let precoTexto = null;
+                if (stripe) { try { precoTexto = formatarPreco(await obterPrecoMensal()); } catch (err) { console.warn('Preço indisponível:', err.message); } }
+                res.set('Cache-Control', 'public, max-age=300');
+                res.json({ success: true, precoTexto, diasTrial: DIAS_TRIAL });
+            } catch (err) {
+                console.error('Erro ao ler preço público:', err);
+                res.status(500).json({ success: false, error: 'Preço indisponível' });
+            }
+        });
+
         app.post('/api/assinatura/checkout', requireAuth, async (req, res) => {
             try {
                 if (!stripe) return res.status(503).json({ success: false, error: 'Os pagamentos ainda não estão configurados.' });
@@ -796,8 +839,8 @@ async function startServer() {
                         ...(usuario.jaTeveTrial ? {} : { trial_period_days: DIAS_TRIAL }),
                         metadata: { userId: req.userId }
                     },
-                    success_url: `${base}/?assinatura=ok`,
-                    cancel_url: `${base}/?assinatura=cancelada`
+                    success_url: `${base}/app?assinatura=ok`,
+                    cancel_url: `${base}/app?assinatura=cancelada`
                 };
                 const sessao = await stripe.checkout.sessions.create(parametros);
                 res.json({ success: true, url: sessao.url });
@@ -814,7 +857,7 @@ async function startServer() {
                 if (!usuario?.stripeCustomerId) return res.status(400).json({ success: false, error: 'Você ainda não tem assinatura.' });
                 const sessao = await stripe.billingPortal.sessions.create({
                     customer: usuario.stripeCustomerId,
-                    return_url: `${urlBaseApp()}/?assinatura=portal`
+                    return_url: `${urlBaseApp()}/app?assinatura=portal`
                 });
                 res.json({ success: true, url: sessao.url });
             } catch (err) {
