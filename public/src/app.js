@@ -1796,7 +1796,7 @@ async function iniciarSessaoQuestoes(listaPronta) {
     }
     questoesSessao = {
         lista, indice: 0, resultados: [], segundosAtivos: 0, inicioQuestao: Date.now(),
-        registrada: false, finalizada: false, respondendo: false, iniciadaEm: new Date()
+        registrada: false, finalizada: false, respondendo: false, selecionada: null, iniciadaEm: new Date()
     };
     renderizarQuestoesSessao();
 }
@@ -1818,7 +1818,6 @@ function renderizarQuestaoAtual() {
     if (!el || !s) return;
     const q = s.lista[s.indice];
     const r = s.resultados[s.indice] || null;
-    if (!r) s.inicioQuestao = Date.now();
 
     const letras = q.tipo === 'certo_errado'
         ? [['C', 'Certo'], ['E', 'Errado']]
@@ -1834,14 +1833,22 @@ function renderizarQuestaoAtual() {
                 expl = `<span class="questoes-alt-expl">${escaparHtml(r.retorno.explicacoes[letra])}</span>`;
             }
         }
+        if (!r && s.selecionada === letra) classe = 'questoes-alt-selecionada';
         return `
-            <button type="button" class="questoes-alt ${classe}" ${r ? 'disabled' : ''} onclick="questoesResponder('${letra}')">
+            <button type="button" class="questoes-alt ${classe}" ${r ? 'disabled' : ''} onclick="questoesSelecionar('${letra}')">
                 <span class="questoes-alt-letra">${escaparHtml(letra)}</span>
                 <span class="questoes-alt-texto">${escaparHtml(texto)}${expl}</span>
             </button>`;
     }).join('');
 
+    // Antes de responder: só marca a alternativa; a resposta só vale ao confirmar.
     let retornoHtml = '';
+    if (!r) {
+        retornoHtml = `
+            <button type="button" class="questoes-btn-proxima" ${s.selecionada ? '' : 'disabled'} onclick="questoesConfirmar()">
+                ${s.selecionada ? 'Confirmar resposta' : 'Escolha uma alternativa'}
+            </button>`;
+    }
     if (r) {
         const ret = r.retorno;
         retornoHtml = `
@@ -1882,9 +1889,17 @@ function renderizarQuestaoAtual() {
     if (r) el.scrollIntoView({ block: 'start' });
 }
 
-async function questoesResponder(letra) {
+function questoesSelecionar(letra) {
     const s = questoesSessao;
     if (!s || s.respondendo || s.resultados[s.indice]) return;
+    s.selecionada = letra;
+    renderizarQuestaoAtual();
+}
+
+async function questoesConfirmar() {
+    const s = questoesSessao;
+    if (!s || s.respondendo || s.resultados[s.indice] || !s.selecionada) return;
+    const letra = s.selecionada;
     s.respondendo = true;
     const q = s.lista[s.indice];
     try {
@@ -1910,6 +1925,8 @@ async function questoesResponder(letra) {
 function questoesProxima() {
     const s = questoesSessao;
     if (!s) return;
+    s.selecionada = null;
+    s.inicioQuestao = Date.now();
     if (s.indice < s.lista.length - 1) s.indice++;
     else s.finalizada = true;
     renderizarQuestoesSessao();
@@ -5831,6 +5848,7 @@ async function carregarResumo() {
     renderizarIndicadoresMaterias();
     renderizarMapaDificuldades();
     renderizarMapaDificuldadesFlashcards();
+    renderizarMapaDificuldadesQuestoes();
     renderizarConquistas();
 }
 
@@ -5862,6 +5880,40 @@ async function renderizarMapaDificuldadesFlashcards() {
                 <div class="dificuldade-nomes">
                     <div class="dificuldade-topico" title="${b.nome}">📘 ${b.nome}</div>
                     ${subtitulo ? `<div class="dificuldade-materia">${subtitulo}</div>` : ''}
+                    <div class="dificuldade-barra-fundo">
+                        <div class="dificuldade-barra" style="width:${perc}%"></div>
+                    </div>
+                </div>
+                <div class="dificuldade-taxa">${perc}% erro</div>
+            </div>
+        `;
+    }).join('');
+}
+
+// ==================================================================
+// MAPA DE DIFICULDADES DAS QUESTÕES (banco de questões, por súmula)
+// ==================================================================
+async function renderizarMapaDificuldadesQuestoes() {
+    const container = document.getElementById('mapa-dificuldades-questoes');
+    if (!container) return;
+    let lista = [];
+    try {
+        const res = await fetch('/api/questoes/dificuldades');
+        lista = await res.json();
+    } catch (err) {
+        console.error('Erro ao carregar mapa de dificuldades das questões:', err);
+    }
+    if (!Array.isArray(lista) || lista.length === 0) {
+        container.innerHTML = `<div class="lista-vazia">Responda pelo menos algumas questões na aba Questões pra ver esse mapa aqui.</div>`;
+        return;
+    }
+    container.innerHTML = lista.map(x => {
+        const perc = Math.round(x.taxaErro * 100);
+        return `
+            <div class="dificuldade-linha">
+                <div class="dificuldade-nomes">
+                    <div class="dificuldade-topico">⚖️ Súmula Vinculante ${escaparHtml(x.sumulaNumero)}</div>
+                    <div class="dificuldade-materia">${escaparHtml(x.area)} · ${escaparHtml(x.erros)} erro(s) em ${escaparHtml(x.tentativas)} respostas</div>
                     <div class="dificuldade-barra-fundo">
                         <div class="dificuldade-barra" style="width:${perc}%"></div>
                     </div>

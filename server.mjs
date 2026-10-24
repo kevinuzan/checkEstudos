@@ -1688,6 +1688,36 @@ async function startServer() {
             return new Map(lista.map(r => [r.chave, r]));
         }
 
+        // Mapa de dificuldades das questões: ranking das súmulas com maior taxa
+        // de erro, somando todas as tentativas (mínimo de 2 respostas pra entrar,
+        // senão um erro isolado distorceria o percentual).
+        app.get('/api/questoes/dificuldades', requireAuth, async (req, res) => {
+            try {
+                const [banco, respostas] = await Promise.all([
+                    questoesColl.find({}, { projection: { chave: 1, sumulaNumero: 1, area: 1, topico: 1 } }).toArray(),
+                    respostasDoUsuario(req.userId)
+                ]);
+                const porSumula = {};
+                banco.forEach(q => {
+                    const r = respostas.get(q.chave);
+                    if (!r || !r.tentativas) return;
+                    const k = q.sumulaNumero;
+                    if (!porSumula[k]) porSumula[k] = { sumulaNumero: k, area: q.area, tentativas: 0, erros: 0 };
+                    porSumula[k].tentativas += r.tentativas;
+                    porSumula[k].erros += r.erros || 0;
+                });
+                const lista = Object.values(porSumula)
+                    .filter(x => x.tentativas >= 2)
+                    .map(x => ({ ...x, taxaErro: x.erros / x.tentativas }))
+                    .sort((x, y) => y.taxaErro - x.taxaErro || y.tentativas - x.tentativas)
+                    .slice(0, 8);
+                res.json(lista);
+            } catch (err) {
+                console.error('Erro no mapa de dificuldades das questões:', err);
+                res.status(500).json({ success: false, error: 'Erro ao montar o mapa de dificuldades' });
+            }
+        });
+
         // Resumo da tela inicial: por tópico, total/respondidas/acertos, com
         // quebra por área do direito e a lista de súmulas (pro filtro).
         app.get('/api/questoes/resumo', requireAuth, async (req, res) => {

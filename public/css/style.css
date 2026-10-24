@@ -4706,3 +4706,6 @@ input[type="checkbox"] {
 .questoes-chip-pulada { color: var(--text-muted); }
 .questoes-acoes { display: grid; gap: 8px; }
 .questoes-acoes button { width: 100%; padding: 11px; }
+
+.questoes-alt-selecionada { border-color: var(--primary); background: var(--primary-light); box-shadow: 0 0 0 1px var(--primary); }
+.questoes-btn-proxima:disabled { opacity: .55; cursor: not-allowed; }
