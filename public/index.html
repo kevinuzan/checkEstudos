@@ -111,6 +111,9 @@
                 <button class="view-tab" id="tab-flashcards" onclick="trocarView('flashcards')">
                     <span class="view-tab-icone">🃏</span> Flashcards
                 </button>
+                <button class="view-tab" id="tab-questoes" onclick="trocarView('questoes')">
+                    <span class="view-tab-icone">📝</span> Questões
+                </button>
                 <button class="view-tab" id="tab-jogo" onclick="trocarView('jogo')">
                     <span class="view-tab-icone">🎮</span> Jogo
                 </button>
@@ -485,6 +488,10 @@
             </div>
 
             <!-- ===================== VIEW: JOGO (gamificação) ===================== -->
+            <div id="view-questoes" style="display:none;">
+                <div id="questoes-conteudo"><!-- telas de Questões inseridas via JS --></div>
+            </div>
+
             <div id="view-jogo" style="display:none;">
                 <section class="jogo-bloco">
                     <div class="jogo-pontuacao-barra">

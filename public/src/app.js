@@ -43,7 +43,7 @@ let itensSelecionadosEdital = new Set();
 // Tópicos com subtópicos expandidos no Edital (não persiste — some ao recarregar a página)
 let topicosExpandidosEdital = new Set();
 
-// View ativa: "resumo", "edital" ou "estudos"
+// View ativa: "resumo", "edital", "estudos", "flashcards", "questoes"...
 let viewAtual = 'resumo';
 
 // Jogo escolhido na tela de seleção, aguardando a resposta do modal
@@ -1600,6 +1600,7 @@ async function trocarView(nome) {
     document.getElementById('view-edital').style.display = nome === 'edital' ? 'block' : 'none';
     document.getElementById('view-estudos').style.display = nome === 'estudos' ? 'block' : 'none';
     document.getElementById('view-flashcards').style.display = nome === 'flashcards' ? 'block' : 'none';
+    document.getElementById('view-questoes').style.display = nome === 'questoes' ? 'block' : 'none';
     document.getElementById('view-jogo').style.display = nome === 'jogo' ? 'block' : 'none';
     document.getElementById('view-estatisticas').style.display = nome === 'estatisticas' ? 'block' : 'none';
     document.getElementById('view-analise').style.display = nome === 'analise' ? 'block' : 'none';
@@ -1609,6 +1610,7 @@ async function trocarView(nome) {
     document.getElementById('tab-edital').classList.toggle('ativo', nome === 'edital');
     document.getElementById('tab-estudos').classList.toggle('ativo', nome === 'estudos');
     document.getElementById('tab-flashcards').classList.toggle('ativo', nome === 'flashcards');
+    document.getElementById('tab-questoes').classList.toggle('ativo', nome === 'questoes');
     document.getElementById('tab-jogo').classList.toggle('ativo', nome === 'jogo');
     document.getElementById('tab-estatisticas').classList.toggle('ativo', nome === 'estatisticas');
     document.getElementById('tab-analise').classList.toggle('ativo', nome === 'analise');
@@ -1633,6 +1635,7 @@ async function trocarView(nome) {
     if (nome === 'resumo') await carregarResumo();
     if (nome === 'estudos') await carregarPainelEstudos();
     if (nome === 'flashcards') await carregarFlashcards();
+    if (nome === 'questoes') await carregarQuestoes();
     if (nome === 'jogo') { mostrarSelecaoJogo(); await carregarPontuacaoJogo(); }
     if (nome === 'estatisticas') await carregarEstatisticas();
     if (nome === 'analise') await carregarAnaliseDesempenho();
@@ -1644,6 +1647,383 @@ async function trocarView(nome) {
 function atualizarCabecalhoPlanoAtual() {
     const el = document.getElementById('cabecalho-plano-atual-nome');
     if (el) el.textContent = planoAtual || '—';
+}
+
+// ==================================================================
+// VIEW: QUESTÕES (banco de questões — por enquanto, Súmulas Vinculantes)
+// O gabarito só chega do servidor DEPOIS que a pessoa marca a alternativa
+// (rota /responder), então nada de resposta fica escondido no JS da página.
+// ==================================================================
+
+let questoesResumo = null;   // topicos devolvidos por /api/questoes/resumo
+let questoesFiltro = { topico: 'sumulas-vinculantes', area: '', sumula: '', modo: 'todas', ordem: 'aleatoria', limite: 10 };
+let questoesSessao = null;   // sessão em andamento (ou resultado ainda aberto)
+
+function questoesContainer() {
+    return document.getElementById('questoes-conteudo');
+}
+
+function questoesFormatarTempo(segundos) {
+    const s = Math.max(0, Math.round(segundos || 0));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    if (m === 0) return `${r} s`;
+    return r === 0 ? `${m} min` : `${m} min ${r} s`;
+}
+
+// Ao abrir a aba: se há uma sessão em andamento (a pessoa só trocou de aba),
+// volta exatamente de onde parou; senão mostra a tela inicial com o progresso.
+async function carregarQuestoes() {
+    const el = questoesContainer();
+    if (!el) return;
+    if (questoesSessao) { renderizarQuestoesSessao(); return; }
+    el.innerHTML = '<div class="questoes-vazio">Carregando…</div>';
+    try {
+        const res = await fetch('/api/questoes/resumo');
+        const dados = await res.json();
+        if (!res.ok || !dados.success) throw new Error(dados.error || 'Falha ao carregar');
+        questoesResumo = dados.topicos || [];
+    } catch (err) {
+        console.error('Erro ao carregar questões:', err);
+        el.innerHTML = '<div class="questoes-vazio">Não foi possível carregar as questões agora. Tente novamente em instantes.</div>';
+        return;
+    }
+    renderizarQuestoesInicio();
+}
+
+function renderizarQuestoesInicio() {
+    const el = questoesContainer();
+    if (!el) return;
+    const t = (questoesResumo || []).find(x => x.id === questoesFiltro.topico) || (questoesResumo || [])[0];
+    if (!t) {
+        el.innerHTML = '<div class="questoes-vazio">Ainda não há questões disponíveis.</div>';
+        return;
+    }
+    questoesFiltro.topico = t.id;
+    const pct = t.total > 0 ? Math.round((t.respondidas / t.total) * 100) : 0;
+
+    const areasHtml = t.areas.map(a => {
+        const p = a.total > 0 ? Math.round((a.respondidas / a.total) * 100) : 0;
+        return `
+            <div class="questoes-area-linha">
+                <span class="questoes-area-nome">${escaparHtml(a.nome)}</span>
+                <span class="questoes-area-num">${a.respondidas}/${a.total}</span>
+                <div class="questoes-progresso questoes-progresso-fino"><div class="questoes-progresso-barra" style="width:${p}%"></div></div>
+            </div>`;
+    }).join('');
+
+    const opcoesArea = ['<option value="">Todas as áreas</option>']
+        .concat(t.areas.map(a => `<option value="${escaparHtml(a.nome)}" ${questoesFiltro.area === a.nome ? 'selected' : ''}>${escaparHtml(a.nome)}</option>`)).join('');
+    const sumulasVisiveis = t.sumulas.filter(s => !questoesFiltro.area || s.area === questoesFiltro.area);
+    const opcoesSumula = ['<option value="">Todas as súmulas</option>']
+        .concat(sumulasVisiveis.map(s => `<option value="${s.numero}" ${String(questoesFiltro.sumula) === String(s.numero) ? 'selected' : ''}>SV ${s.numero}</option>`)).join('');
+    const opcao = (valor, atual, rotulo) => `<option value="${valor}" ${String(atual) === String(valor) ? 'selected' : ''}>${rotulo}</option>`;
+
+    el.innerHTML = `
+        <section class="painel-bloco">
+            <div class="painel-bloco-header">
+                <h2>📝 Questões</h2>
+                <span class="painel-bloco-sub">Pratique e veja o gabarito comentado na hora</span>
+            </div>
+
+            <div class="questoes-topico-card">
+                <div class="questoes-topico-titulo">⚖️ ${escaparHtml(t.nome)}</div>
+                <div class="questoes-topico-sub">${t.total} questões · ${t.respondidas} respondidas · ${t.acertando} acertando</div>
+                <div class="questoes-progresso"><div class="questoes-progresso-barra" style="width:${pct}%"></div></div>
+                <div class="questoes-areas">${areasHtml}</div>
+            </div>
+
+            <div class="questoes-filtros">
+                <label class="questoes-filtro"><span>Área</span>
+                    <select onchange="questoesAtualizarFiltro('area', this.value)">${opcoesArea}</select></label>
+                <label class="questoes-filtro"><span>Súmula</span>
+                    <select onchange="questoesAtualizarFiltro('sumula', this.value)">${opcoesSumula}</select></label>
+                <label class="questoes-filtro"><span>Quais questões</span>
+                    <select onchange="questoesAtualizarFiltro('modo', this.value)">
+                        ${opcao('todas', questoesFiltro.modo, 'Todas')}
+                        ${opcao('novas', questoesFiltro.modo, 'Ainda não respondidas')}
+                        ${opcao('erradas', questoesFiltro.modo, 'Que eu errei')}
+                    </select></label>
+                <label class="questoes-filtro"><span>Ordem</span>
+                    <select onchange="questoesAtualizarFiltro('ordem', this.value)">
+                        ${opcao('aleatoria', questoesFiltro.ordem, 'Aleatória')}
+                        ${opcao('sequencial', questoesFiltro.ordem, 'Em sequência (SV 1, 2, 3…)')}
+                    </select></label>
+                <label class="questoes-filtro"><span>Quantidade</span>
+                    <select onchange="questoesAtualizarFiltro('limite', this.value)">
+                        ${[5, 10, 20, 50].map(n => opcao(n, questoesFiltro.limite, n + ' questões')).join('')}
+                    </select></label>
+            </div>
+
+            <button type="button" class="questoes-btn-comecar" onclick="iniciarSessaoQuestoes()">▶ Começar</button>
+            <p class="questoes-aviso">São questões autorais no estilo FGV, feitas para treinar as súmulas — não são questões oficiais de provas.</p>
+        </section>`;
+}
+
+function questoesAtualizarFiltro(campo, valor) {
+    if (campo === 'limite') questoesFiltro.limite = parseInt(valor, 10) || 10;
+    else questoesFiltro[campo] = valor;
+    if (campo === 'area') {
+        // Se a súmula escolhida não é da nova área, volta pra "todas".
+        const t = (questoesResumo || []).find(x => x.id === questoesFiltro.topico);
+        const s = t && t.sumulas.find(x => String(x.numero) === String(questoesFiltro.sumula));
+        if (!s || (valor && s.area !== valor)) questoesFiltro.sumula = '';
+    }
+    renderizarQuestoesInicio();
+}
+
+async function iniciarSessaoQuestoes(listaPronta) {
+    let lista = listaPronta;
+    if (!lista) {
+        const f = questoesFiltro;
+        const params = new URLSearchParams({ topico: f.topico, modo: f.modo, ordem: f.ordem, limite: String(f.limite) });
+        if (f.area) params.set('area', f.area);
+        if (f.sumula) params.set('sumula', f.sumula);
+        try {
+            const res = await fetch('/api/questoes?' + params.toString());
+            const dados = await res.json();
+            if (!res.ok || !dados.success) throw new Error(dados.error || 'Falha');
+            lista = dados.questoes || [];
+        } catch (err) {
+            console.error('Erro ao buscar questões:', err);
+            return alert('Não foi possível buscar as questões agora. Tente novamente.');
+        }
+    }
+    if (lista.length === 0) {
+        return alert(questoesFiltro.modo === 'erradas'
+            ? 'Você ainda não tem questões erradas nesse filtro. Bom sinal! 🎉'
+            : 'Nenhuma questão encontrada com esses filtros.');
+    }
+    questoesSessao = {
+        lista, indice: 0, resultados: [], segundosAtivos: 0, inicioQuestao: Date.now(),
+        registrada: false, finalizada: false, respondendo: false, iniciadaEm: new Date()
+    };
+    renderizarQuestoesSessao();
+}
+
+function renderizarQuestoesSessao() {
+    if (!questoesSessao) return;
+    if (questoesSessao.finalizada) renderizarQuestoesFinal();
+    else renderizarQuestaoAtual();
+}
+
+function questoesRotuloGabarito(q, letra) {
+    if (q.tipo === 'certo_errado') return letra === 'C' ? 'Certo' : 'Errado';
+    return `${letra}) ${q.alternativas[letra] || ''}`;
+}
+
+function renderizarQuestaoAtual() {
+    const el = questoesContainer();
+    const s = questoesSessao;
+    if (!el || !s) return;
+    const q = s.lista[s.indice];
+    const r = s.resultados[s.indice] || null;
+    if (!r) s.inicioQuestao = Date.now();
+
+    const letras = q.tipo === 'certo_errado'
+        ? [['C', 'Certo'], ['E', 'Errado']]
+        : Object.keys(q.alternativas).sort().map(l => [l, q.alternativas[l]]);
+
+    const altsHtml = letras.map(([letra, texto]) => {
+        let classe = '';
+        let expl = '';
+        if (r) {
+            if (letra === r.retorno.gabarito) classe = 'questoes-alt-certa';
+            else if (letra === r.resposta) classe = 'questoes-alt-errada';
+            if (r.retorno.explicacoes && r.retorno.explicacoes[letra]) {
+                expl = `<span class="questoes-alt-expl">${escaparHtml(r.retorno.explicacoes[letra])}</span>`;
+            }
+        }
+        return `
+            <button type="button" class="questoes-alt ${classe}" ${r ? 'disabled' : ''} onclick="questoesResponder('${letra}')">
+                <span class="questoes-alt-letra">${escaparHtml(letra)}</span>
+                <span class="questoes-alt-texto">${escaparHtml(texto)}${expl}</span>
+            </button>`;
+    }).join('');
+
+    let retornoHtml = '';
+    if (r) {
+        const ret = r.retorno;
+        retornoHtml = `
+            <div class="questoes-feedback ${ret.acertou ? 'questoes-feedback-ok' : 'questoes-feedback-erro'}">
+                <strong>${ret.acertou ? '✅ Você acertou!' : '❌ Você errou.'}</strong>
+                ${ret.acertou ? '' : `Resposta certa: ${escaparHtml(q.tipo === 'certo_errado' ? (ret.gabarito === 'C' ? 'Certo' : 'Errado') : ret.gabarito)}.`}
+                ${ret.explicacao ? `<div class="questoes-feedback-texto">${escaparHtml(ret.explicacao)}</div>` : ''}
+            </div>
+            <div class="questoes-sumula">
+                <div class="questoes-sumula-titulo">📌 Súmula Vinculante nº ${escaparHtml(ret.sumulaNumero)}</div>
+                <div>${escaparHtml(ret.sumulaTexto)}</div>
+                <div class="questoes-crianca"><strong>Em palavras de criança:</strong> ${escaparHtml(ret.palavrasDeCrianca)}</div>
+            </div>
+            <button type="button" class="questoes-btn-proxima" onclick="questoesProxima()">
+                ${s.indice < s.lista.length - 1 ? 'Próxima →' : 'Ver resultado'}
+            </button>`;
+    }
+
+    const feitas = s.resultados.filter(Boolean).length;
+    const pct = Math.round((feitas / s.lista.length) * 100);
+    el.innerHTML = `
+        <section class="painel-bloco">
+            <div class="questoes-topo">
+                <button type="button" class="btn-secundario" onclick="questoesEncerrar()">← Encerrar</button>
+                <span class="questoes-contador">Questão ${s.indice + 1} de ${s.lista.length}</span>
+            </div>
+            <div class="questoes-progresso"><div class="questoes-progresso-barra" style="width:${pct}%"></div></div>
+            <div class="questoes-cartao">
+                <div class="questoes-meta">
+                    <span>SV ${escaparHtml(q.sumulaNumero)} · ${escaparHtml(q.area)}</span>
+                    <span class="questoes-selo">${escaparHtml(q.origem || 'Questão autoral')}</span>
+                </div>
+                <p class="questoes-enunciado">${escaparHtml(q.enunciado)}</p>
+                <div class="questoes-alternativas">${altsHtml}</div>
+                ${retornoHtml}
+            </div>
+        </section>`;
+    if (r) el.scrollIntoView({ block: 'start' });
+}
+
+async function questoesResponder(letra) {
+    const s = questoesSessao;
+    if (!s || s.respondendo || s.resultados[s.indice]) return;
+    s.respondendo = true;
+    const q = s.lista[s.indice];
+    try {
+        const res = await fetch(`/api/questoes/${encodeURIComponent(q.chave)}/responder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resposta: letra })
+        });
+        const dados = await res.json();
+        if (!res.ok || !dados.success) throw new Error(dados.error || 'Falha ao responder');
+        // Limite de 5 min por questão: quem deixou a aba aberta e foi almoçar não infla o tempo de estudo.
+        s.segundosAtivos += Math.min(Math.round((Date.now() - s.inicioQuestao) / 1000), 300);
+        s.resultados[s.indice] = { chave: q.chave, resposta: letra, acertou: dados.acertou, retorno: dados };
+    } catch (err) {
+        console.error('Erro ao responder questão:', err);
+        alert('Não foi possível salvar sua resposta. Confira a conexão e tente de novo.');
+    } finally {
+        s.respondendo = false;
+    }
+    renderizarQuestaoAtual();
+}
+
+function questoesProxima() {
+    const s = questoesSessao;
+    if (!s) return;
+    if (s.indice < s.lista.length - 1) s.indice++;
+    else s.finalizada = true;
+    renderizarQuestoesSessao();
+}
+
+// "Encerrar": fecha a sessão com o que já foi respondido (ou descarta, se nada foi).
+function questoesEncerrar() {
+    const s = questoesSessao;
+    if (!s) return;
+    if (s.resultados.filter(Boolean).length === 0) { voltarInicioQuestoes(); return; }
+    s.finalizada = true;
+    renderizarQuestoesSessao();
+}
+
+function renderizarQuestoesFinal() {
+    const el = questoesContainer();
+    const s = questoesSessao;
+    if (!el || !s) return;
+    const feitas = s.resultados.filter(Boolean);
+    const acertos = feitas.filter(r => r.acertou).length;
+    const erros = feitas.length - acertos;
+    const pct = feitas.length > 0 ? Math.round((acertos / feitas.length) * 100) : 0;
+    const chips = s.lista.map((q, i) => {
+        const r = s.resultados[i];
+        const cls = !r ? 'questoes-chip-pulada' : (r.acertou ? 'questoes-chip-ok' : 'questoes-chip-erro');
+        return `<span class="questoes-chip ${cls}" title="SV ${escaparHtml(q.sumulaNumero)}">SV ${escaparHtml(q.sumulaNumero)}.${escaparHtml(q.numero)}</span>`;
+    }).join('');
+
+    el.innerHTML = `
+        <section class="painel-bloco">
+            <div class="painel-bloco-header"><h2>🏁 Resultado</h2></div>
+            <div class="questoes-cartao questoes-resultado">
+                <div class="questoes-resultado-pct">${pct}%</div>
+                <div class="questoes-resultado-linha">${acertos} acerto(s) · ${erros} erro(s) · ${feitas.length} de ${s.lista.length} respondidas</div>
+                <div class="questoes-resultado-linha">Tempo: ${questoesFormatarTempo(s.segundosAtivos)}</div>
+                <div class="questoes-chips">${chips}</div>
+                <div class="questoes-acoes">
+                    <button type="button" onclick="registrarSessaoQuestoesNosEstudos()" ${s.registrada ? 'disabled' : ''}>
+                        ${s.registrada ? '✔ Registrado nos seus estudos' : '📝 Registrar nos meus estudos'}
+                    </button>
+                    ${erros > 0 ? '<button type="button" class="btn-secundario" onclick="questoesRefazerErradas()">🔁 Refazer as que errei</button>' : ''}
+                    <button type="button" class="btn-secundario" onclick="voltarInicioQuestoes()">← Voltar ao início</button>
+                </div>
+            </div>
+        </section>`;
+}
+
+function questoesRefazerErradas() {
+    const s = questoesSessao;
+    if (!s) return;
+    const erradas = s.lista.filter((q, i) => s.resultados[i] && !s.resultados[i].acertou);
+    questoesSessao = null;
+    iniciarSessaoQuestoes(erradas);
+}
+
+function voltarInicioQuestoes() {
+    questoesSessao = null;
+    carregarQuestoes();
+}
+
+// Lança a sessão em "Estudos" como um "Exercício" (acertos/erros + tempo), pelo
+// mesmo caminho das sessões normais — então Estatísticas, Resumo e Análise já
+// enxergam. Fica sem tópico do edital vinculado de propósito: assim a sessão
+// aparece no histórico do plano aberto no momento (um tópico solto, sem
+// vínculo com o edital, faria a sessão sumir das listas por plano).
+async function registrarSessaoQuestoesNosEstudos() {
+    const s = questoesSessao;
+    if (!s || s.registrada) return;
+    const feitas = s.resultados.filter(Boolean);
+    if (feitas.length === 0) return;
+
+    if (tiposEstudoDisponiveis.length === 0) await carregarTiposEstudo();
+    const tipo = tiposEstudoDisponiveis.find(t => t.nome === 'Exercício')
+        || tiposEstudoDisponiveis.find(t => t.campoExtra === 'questoes');
+    if (!tipo) {
+        return alert('Não encontrei um tipo de estudo com contagem de questões (como "Exercício"). Crie um nas configurações de tipos de estudo e tente de novo.');
+    }
+
+    const acertos = feitas.filter(r => r.acertou).length;
+    const erros = feitas.length - acertos;
+    const duracaoSegundos = Math.max(1, s.segundosAtivos);
+    const fim = new Date();
+    const inicio = new Date(fim.getTime() - duracaoSegundos * 1000);
+    const areas = [...new Set(s.lista.map(q => q.area))];
+    const t = (questoesResumo || []).find(x => x.id === questoesFiltro.topico);
+
+    try {
+        const res = await fetch('/api/sessoes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                inicio: inicio.toISOString(),
+                fim: fim.toISOString(),
+                duracaoSegundos,
+                plano: planoAtual || null,
+                tipoEstudoId: tipo._id,
+                tipoEstudoNome: tipo.nome,
+                topicos: [],
+                acertos,
+                erros,
+                paginasLidas: null,
+                observacoes: `Banco de questões — ${t ? t.nome : 'Questões'} (${feitas.length} questões; ${areas.join(', ')})`,
+                revisao: { agendada: false, dias: null }
+            })
+        });
+        const dados = await res.json();
+        if (!res.ok || !dados.success) throw new Error(dados.error || 'Falha ao registrar');
+    } catch (err) {
+        console.error('Erro ao registrar sessão de questões:', err);
+        return alert('Não foi possível registrar nos seus estudos agora. Tente de novo.');
+    }
+    s.registrada = true;
+    try { await atualizarStreak(); } catch (err) { /* não impede o registro */ }
+    renderizarQuestoesFinal();
 }
 
 // ==================================================================

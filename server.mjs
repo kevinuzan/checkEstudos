@@ -21,6 +21,7 @@ import initSqlJs from 'sql.js';
 import { decompress as decompressZstd } from 'fzstd';
 import pdfParse from 'pdf-parse';
 import Stripe from 'stripe';
+import { createHash } from 'crypto';
 
 // --- CONFIGURAÇÕES BÁSICAS ---
 const app = express();
@@ -35,6 +36,61 @@ const DB_NAME = "edital"; // Você pode usar o mesmo DB e mudar a collection
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const MONGO_URI = process.env.MONGO_PUBLIC_URL || "SUA_URI_LOCAL_DE_TESTE";
+
+// Tópicos do banco de questões. Novos tópicos (ex.: provas antigas) entram
+// aqui e na carga de dados — a tela e as rotas já funcionam por "fonte".
+const TOPICOS_QUESTOES = [
+    { id: 'sumulas-vinculantes', nome: 'Súmulas Vinculantes' }
+];
+
+// Carrega (ou atualiza) as questões de Súmulas Vinculantes a partir do arquivo
+// ferramentas/dados/sumulas_vinculantes.json. É idempotente: calcula uma
+// "versão" pelo conteúdo do arquivo e só regrava se o arquivo mudou — então
+// reiniciar o servidor (todo deploy) não custa nada. Se falhar, o app segue
+// funcionando; só a aba Questões fica sem esse tópico.
+async function carregarQuestoesSumulas(coll) {
+    try {
+        const caminho = path.join(__dirname, 'ferramentas', 'dados', 'sumulas_vinculantes.json');
+        const bruto = await fs.promises.readFile(caminho, 'utf-8');
+        const versao = createHash('sha1').update(bruto).digest('hex').slice(0, 12);
+        const dados = JSON.parse(bruto);
+        const docs = [];
+        for (const sv of dados.sumulas || []) {
+            for (const q of sv.questoes || []) {
+                const doc = {
+                    chave: `sv-${sv.sv}-${q.num}`,
+                    fonte: 'sumulas-vinculantes',
+                    topico: 'Súmulas Vinculantes',
+                    origem: 'Questão autoral (estilo FGV)',
+                    area: sv.area,
+                    sumulaNumero: sv.sv,
+                    sumulaTexto: sv.texto,
+                    palavrasDeCrianca: sv.palavras_de_crianca,
+                    numero: q.num,
+                    ordem: sv.sv * 10 + q.num,
+                    tipo: q.tipo,
+                    enunciado: q.enunciado,
+                    alternativas: q.alternativas || {},
+                    gabarito: q.gabarito,
+                    versao
+                };
+                if (q.tipo === 'multipla') doc.explicacoes = q.explicacoes;
+                else doc.explicacao = q.explicacao;
+                docs.push(doc);
+            }
+        }
+        const jaAtualizadas = await coll.countDocuments({ fonte: 'sumulas-vinculantes', versao });
+        if (jaAtualizadas === docs.length && docs.length > 0) return;
+        await coll.bulkWrite(
+            docs.map(d => ({ updateOne: { filter: { chave: d.chave }, update: { $set: d }, upsert: true } })),
+            { ordered: false }
+        );
+        await coll.deleteMany({ fonte: 'sumulas-vinculantes', versao: { $ne: versao } });
+        console.log(`Questões: ${docs.length} questões de Súmulas Vinculantes carregadas (versão ${versao}).`);
+    } catch (err) {
+        console.error('Erro ao carregar questões de Súmulas Vinculantes:', err);
+    }
+}
 
 // Versão dos arquivos estáticos (JS/CSS) — muda sozinha a cada deploy, porque
 // é calculada quando o servidor SOBE (Railway sempre reinicia o processo num
@@ -280,6 +336,10 @@ const FLASHCARDS_BARALHOS_COLLECTION = "flashcards_baralhos";
 const FLASHCARDS_CARTOES_COLLECTION = "flashcards_cartoes";
 const IA_USO_COLLECTION = "ia_uso_mensal";
 const ANALISE_DESEMPENHO_COLLECTION = "analises_desempenho";
+// Banco de questões (compartilhado entre usuários, carregado de arquivo) e
+// o histórico de respostas de cada pessoa (isolado por userId).
+const QUESTOES_COLLECTION = "questoes_banco";
+const QUESTOES_RESPOSTAS_COLLECTION = "questoes_respostas";
 
 // --- LIMITE DE USO DA IA (sugestão de edital via PDF) ---
 // Enquanto o app é gratuito, cada usuário tem uma cota mensal de tokens,
@@ -364,6 +424,12 @@ async function startServer() {
         const flashcardsCartoesColl = db.collection(FLASHCARDS_CARTOES_COLLECTION);
         const iaUsoColl = db.collection(IA_USO_COLLECTION);
         const analiseDesempenhoColl = db.collection(ANALISE_DESEMPENHO_COLLECTION);
+        const questoesColl = db.collection(QUESTOES_COLLECTION);
+        const questoesRespostasColl = db.collection(QUESTOES_RESPOSTAS_COLLECTION);
+        await questoesColl.createIndex({ chave: 1 }, { unique: true }).catch(() => {});
+        await questoesColl.createIndex({ fonte: 1, area: 1, ordem: 1 }).catch(() => {});
+        await questoesRespostasColl.createIndex({ userId: 1, chave: 1 }, { unique: true }).catch(() => {});
+        await carregarQuestoesSumulas(questoesColl);
 
         // --- MIGRAÇÃO: garante que todo item tenha um array "planos" ---
         // Itens antigos (de antes de existir o conceito de "plano") são
@@ -496,6 +562,12 @@ async function startServer() {
             }
         }
 
+        // Temas aceitos (mesmos ids de TEMAS_DISPONIVEIS no front). '' = azul padrão.
+        // Valida contra a lista pra nunca gravar/devolver texto arbitrário que
+        // depois vira atributo no HTML.
+        const TEMAS_VALIDOS = ['', 'verde-claro', 'roxo-claro', 'rosa-claro', 'escuro-azul', 'escuro-verde', 'escuro-rosa'];
+        const temaDoUsuario = (u) => (typeof u.tema === 'string' && TEMAS_VALIDOS.includes(u.tema)) ? u.tema : null;
+
         app.get('/api/auth/me', requireAuth, async (req, res) => {
             const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) });
             if (!usuario) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
@@ -506,7 +578,9 @@ async function startServer() {
                     apelido: usuario.apelido || '',
                     nomeGoogle: usuario.nome,
                     email: usuario.email,
-                    foto: usuario.foto
+                    foto: usuario.foto,
+                    // null = nunca escolheu na conta (o app então envia o do aparelho, se houver)
+                    tema: temaDoUsuario(usuario)
                 }
             });
         });
@@ -519,6 +593,17 @@ async function startServer() {
             const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) });
             if (!usuario) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
             res.json({ success: true, nome: usuario.apelido || usuario.nome, apelido: usuario.apelido || '' });
+        });
+
+        // Guarda o tema escolhido na CONTA, para valer em qualquer aparelho/navegador
+        // (o localStorage sozinho some quando o navegador limpa dados do site).
+        app.put('/api/perfil/tema', requireAuth, async (req, res) => {
+            const tema = (req.body && typeof req.body.tema === 'string') ? req.body.tema : null;
+            if (tema === null || !TEMAS_VALIDOS.includes(tema)) {
+                return res.status(400).json({ success: false, error: 'Tema inválido' });
+            }
+            await usuariosColl.updateOne({ _id: new ObjectId(req.userId) }, { $set: { tema } });
+            res.json({ success: true, tema });
         });
 
         app.post('/api/auth/logout', (req, res) => {
@@ -1588,6 +1673,119 @@ async function startServer() {
             const { id } = req.params;
             await tiposEstudoColl.deleteOne({ _id: new ObjectId(id), userId: req.userId });
             res.json({ success: true });
+        });
+
+
+        // ==================================================================
+        // QUESTÕES (banco de questões: hoje, Súmulas Vinculantes)
+        // O gabarito e as explicações NUNCA vão junto da questão: só voltam
+        // na resposta de /responder, depois que a pessoa marcou a alternativa.
+        // ==================================================================
+
+        // Mapa chave -> resposta da pessoa, pra montar progresso e filtros.
+        async function respostasDoUsuario(userId) {
+            const lista = await questoesRespostasColl.find({ userId }).toArray();
+            return new Map(lista.map(r => [r.chave, r]));
+        }
+
+        // Resumo da tela inicial: por tópico, total/respondidas/acertos, com
+        // quebra por área do direito e a lista de súmulas (pro filtro).
+        app.get('/api/questoes/resumo', requireAuth, async (req, res) => {
+            const [banco, respostas] = await Promise.all([
+                questoesColl.find({}, { projection: { chave: 1, fonte: 1, area: 1, sumulaNumero: 1 } }).toArray(),
+                respostasDoUsuario(req.userId)
+            ]);
+            const topicos = TOPICOS_QUESTOES.map(t => {
+                const doTopico = banco.filter(q => q.fonte === t.id);
+                const areas = {};
+                const sumulas = {};
+                let respondidas = 0, acertando = 0;
+                doTopico.forEach(q => {
+                    const r = respostas.get(q.chave);
+                    if (!areas[q.area]) areas[q.area] = { nome: q.area, total: 0, respondidas: 0, acertando: 0 };
+                    areas[q.area].total++;
+                    if (!sumulas[q.sumulaNumero]) sumulas[q.sumulaNumero] = { numero: q.sumulaNumero, area: q.area, total: 0 };
+                    sumulas[q.sumulaNumero].total++;
+                    if (r) {
+                        respondidas++; areas[q.area].respondidas++;
+                        if (r.ultimoAcertou) { acertando++; areas[q.area].acertando++; }
+                    }
+                });
+                return {
+                    id: t.id, nome: t.nome, total: doTopico.length, respondidas, acertando,
+                    areas: Object.values(areas).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+                    sumulas: Object.values(sumulas).sort((a, b) => a.numero - b.numero)
+                };
+            }).filter(t => t.total > 0);
+            res.json({ success: true, topicos });
+        });
+
+        // Sorteia/ordena as questões de uma sessão. Filtros: topico (obrigatório),
+        // area, sumula, modo (todas | novas | erradas), ordem (aleatoria | sequencial)
+        // e limite (padrão 20, máximo 100).
+        app.get('/api/questoes', requireAuth, async (req, res) => {
+            const topico = typeof req.query.topico === 'string' ? req.query.topico : '';
+            if (!TOPICOS_QUESTOES.some(t => t.id === topico)) {
+                return res.status(400).json({ success: false, error: 'Tópico inválido' });
+            }
+            const filtro = { fonte: topico };
+            if (typeof req.query.area === 'string' && req.query.area) filtro.area = req.query.area;
+            const sumula = parseInt(req.query.sumula, 10);
+            if (Number.isInteger(sumula)) filtro.sumulaNumero = sumula;
+            const modo = ['todas', 'novas', 'erradas'].includes(req.query.modo) ? req.query.modo : 'todas';
+            const limite = Math.min(Math.max(parseInt(req.query.limite, 10) || 20, 1), 100);
+
+            const [lista, respostas] = await Promise.all([
+                questoesColl.find(filtro, { projection: { gabarito: 0, explicacoes: 0, explicacao: 0, sumulaTexto: 0, palavrasDeCrianca: 0 } })
+                    .sort({ ordem: 1 }).toArray(),
+                respostasDoUsuario(req.userId)
+            ]);
+            let candidatas = lista.filter(q => {
+                const r = respostas.get(q.chave);
+                if (modo === 'novas') return !r;
+                if (modo === 'erradas') return r && !r.ultimoAcertou;
+                return true;
+            });
+            const totalDisponivel = candidatas.length;
+            if (req.query.ordem !== 'sequencial') {
+                // Fisher-Yates: sorteio sem viés
+                for (let i = candidatas.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [candidatas[i], candidatas[j]] = [candidatas[j], candidatas[i]];
+                }
+            }
+            candidatas = candidatas.slice(0, limite).map(q => ({
+                chave: q.chave, sumulaNumero: q.sumulaNumero, area: q.area, numero: q.numero,
+                tipo: q.tipo, enunciado: q.enunciado, alternativas: q.alternativas, origem: q.origem
+            }));
+            res.json({ success: true, totalDisponivel, questoes: candidatas });
+        });
+
+        // Registra a resposta e devolve o gabarito + explicações.
+        app.post('/api/questoes/:chave/responder', requireAuth, async (req, res) => {
+            const chave = String(req.params.chave || '');
+            const resposta = typeof req.body.resposta === 'string' ? req.body.resposta.toUpperCase() : '';
+            const questao = await questoesColl.findOne({ chave });
+            if (!questao) return res.status(404).json({ success: false, error: 'Questão não encontrada' });
+            const validas = questao.tipo === 'certo_errado' ? ['C', 'E'] : ['A', 'B', 'C', 'D', 'E'];
+            if (!validas.includes(resposta)) return res.status(400).json({ success: false, error: 'Resposta inválida' });
+
+            const acertou = resposta === questao.gabarito;
+            await questoesRespostasColl.updateOne(
+                { userId: req.userId, chave },
+                {
+                    $set: { ultimaResposta: resposta, ultimoAcertou: acertou, atualizadoEm: new Date() },
+                    $inc: { tentativas: 1, acertos: acertou ? 1 : 0, erros: acertou ? 0 : 1 },
+                    $setOnInsert: { criadoEm: new Date() }
+                },
+                { upsert: true }
+            );
+            res.json({
+                success: true, acertou, gabarito: questao.gabarito,
+                explicacoes: questao.explicacoes || null, explicacao: questao.explicacao || null,
+                sumulaNumero: questao.sumulaNumero, sumulaTexto: questao.sumulaTexto,
+                palavrasDeCrianca: questao.palavrasDeCrianca
+            });
         });
 
         // --- SESSÕES DE ESTUDO (cronômetro) ---
