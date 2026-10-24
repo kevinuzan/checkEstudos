@@ -101,6 +101,7 @@ async function iniciarApp() {
         if (res.ok) {
             const dados = await res.json();
             mostrarUsuarioLogado(dados.usuario);
+            sincronizarTemaComConta(dados.usuario && dados.usuario.tema);
             esconderTelaLogin();
             if (!appJaIniciado) {
                 appJaIniciado = true;
@@ -517,10 +518,13 @@ function obterTemaSalvo() {
     }
 }
 
-function aplicarTema(temaId) {
+// salvarNaConta=false é usado ao APLICAR o tema que veio da própria conta
+// (não faz sentido devolver pro servidor o que ele acabou de mandar).
+function aplicarTema(temaId, salvarNaConta = true) {
     if (temaId) document.documentElement.setAttribute('data-tema', temaId);
     else document.documentElement.removeAttribute('data-tema');
     try { localStorage.setItem('checkestudos_tema', temaId); } catch (err) { /* segue sem salvar */ }
+    if (salvarNaConta) salvarTemaNaConta(temaId);
     renderizarSeletorTema();
 
     // Avisa o jogo (que roda num iframe à parte, com seu próprio CSS) para
@@ -528,6 +532,30 @@ function aplicarTema(temaId) {
     const iframeJogo = document.getElementById('jogo-iframe');
     if (iframeJogo && iframeJogo.contentWindow) {
         iframeJogo.contentWindow.postMessage({ tipo: 'checkestudos-tema', tema: temaId }, window.location.origin);
+    }
+}
+
+// Grava o tema na conta (o localStorage sozinho some se o navegador limpar
+// os dados do site). Falha de rede não atrapalha: o tema local já foi aplicado.
+async function salvarTemaNaConta(temaId) {
+    try {
+        await fetch('/api/perfil/tema', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tema: temaId || '' })
+        });
+    } catch (err) {
+        console.error('Erro ao salvar tema na conta:', err);
+    }
+}
+
+// Ao entrar: a conta manda. Se a conta ainda não tem tema, mas este aparelho
+// tem um escolhido, envia o do aparelho (migra quem já tinha escolhido antes).
+function sincronizarTemaComConta(temaDaConta) {
+    if (typeof temaDaConta === 'string') {
+        if (temaDaConta !== obterTemaSalvo()) aplicarTema(temaDaConta, false);
+    } else if (obterTemaSalvo()) {
+        salvarTemaNaConta(obterTemaSalvo());
     }
 }
 

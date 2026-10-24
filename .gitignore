@@ -16,3 +16,8 @@ public/jogo/css/style.min.css
 
 # Arquivos de sistema
 .DS_Store
+
+# Provas antigas baixadas pelo ferramentas/baixar_provas.py — PDFs pesados e de
+# propriedade das bancas: ficam só no computador de quem estuda, nunca no Git.
+provas_baixadas/
+ferramentas/provas_baixadas/
