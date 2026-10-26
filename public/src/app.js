@@ -1779,7 +1779,10 @@ function renderizarQuestoesInicio() {
                 <div class="questoes-topico-titulo">${ehSumulas ? '⚖️' : '🏛️'} ${escaparHtml(t.nome)}</div>
                 <div class="questoes-topico-sub">${t.total} questões · ${t.respondidas} respondidas · ${t.acertando} acertando</div>
                 <div class="questoes-progresso"><div class="questoes-progresso-barra" style="width:${pct}%"></div></div>
-                <div class="questoes-areas">${areasHtml}</div>
+                <details class="questoes-detalhes" ${questoesAreasAbertas ? 'open' : ''} ontoggle="questoesLembrarAreas(this.open)">
+                    <summary>${ehSumulas ? 'Ver progresso por área' : 'Ver progresso por matéria'} (${t.areas.length})</summary>
+                    <div class="questoes-areas">${areasHtml}</div>
+                </details>
             </div>
 
             <div class="questoes-filtros">
@@ -1807,6 +1810,10 @@ function renderizarQuestoesInicio() {
             <p class="questoes-aviso">${escaparHtml(aviso)}</p>
         </section>`;
 }
+
+// Lembra se a lista por matéria estava aberta, pra não fechar sozinha ao mudar um filtro.
+let questoesAreasAbertas = false;
+function questoesLembrarAreas(aberto) { questoesAreasAbertas = !!aberto; }
 
 // Trocar de tópico zera os filtros específicos (um órgão/súmula de um não existe no outro).
 function questoesTrocarTopico(id) {

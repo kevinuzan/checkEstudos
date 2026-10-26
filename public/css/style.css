@@ -4719,3 +4719,9 @@ input[type="checkbox"] {
 .questoes-topicos { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .questoes-topico-chip { padding: 8px 12px; border-radius: 99px; border: 1px solid var(--border); background: var(--card); color: inherit; font-size: 0.9rem; cursor: pointer; }
 .questoes-topico-chip.ativo { border-color: var(--primary); background: var(--primary-light); font-weight: 600; }
+
+.questoes-detalhes { margin-top: 10px; }
+.questoes-detalhes > summary { cursor: pointer; font-size: 0.85rem; color: var(--text-muted); padding: 4px 0; list-style-position: inside; }
+.questoes-detalhes > summary:hover { color: var(--text); }
+.questoes-detalhes[open] > summary { margin-bottom: 4px; }
+.questoes-detalhes .questoes-areas { margin-top: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px; }
