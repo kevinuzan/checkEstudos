@@ -4725,3 +4725,17 @@ input[type="checkbox"] {
 .questoes-detalhes > summary:hover { color: var(--text); }
 .questoes-detalhes[open] > summary { margin-bottom: 4px; }
 .questoes-detalhes .questoes-areas { margin-top: 8px; max-height: 320px; overflow-y: auto; padding-right: 4px; }
+
+.questoes-grupos { display: grid; gap: 8px; margin-bottom: 12px; }
+.questoes-grupo { border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 8px 10px; }
+.questoes-grupo > summary { cursor: pointer; font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.questoes-grupo-qtd { background: var(--primary); color: #fff; border-radius: 99px; font-size: 0.72rem; padding: 0 7px; min-width: 18px; text-align: center; }
+.questoes-chips-filtro { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.questoes-chip-filtro { padding: 5px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--surface-muted); color: inherit; font-size: 0.8rem; cursor: pointer; }
+.questoes-chip-filtro:hover { background: var(--surface-muted-hover); }
+.questoes-chip-filtro.ativo { border-color: var(--primary); background: var(--primary-light); font-weight: 600; box-shadow: 0 0 0 1px var(--primary); }
+.questoes-regiao-linha { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+.questoes-regiao-linha .questoes-chips-filtro { margin-top: 0; }
+.questoes-regiao-tipo { font-weight: 700; font-size: 0.8rem; min-width: 34px; padding-top: 6px; }
+.questoes-dica { color: var(--text-muted); font-size: 0.78rem; margin: -2px 2px 0; }
+.questoes-contagem-linha { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0 10px; font-size: 0.85rem; color: var(--text-muted); }

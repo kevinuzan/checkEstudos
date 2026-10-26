@@ -1672,7 +1672,10 @@ function questoesHtmlEstatisticas(est) {
 // ==================================================================
 
 let questoesResumo = null;   // topicos devolvidos por /api/questoes/resumo
-let questoesFiltro = { topico: 'sumulas-vinculantes', area: '', sumula: '', ano: '', orgao: '', modo: 'todas', ordem: 'aleatoria', limite: 10 };
+// area/ano/tipo/regiao são listas (a pessoa pode marcar mais de uma); sumula é única.
+let questoesFiltro = { topico: 'sumulas-vinculantes', area: [], sumula: '', ano: [], tipo: [], regiao: [], modo: 'todas', ordem: 'aleatoria', limite: 10 };
+let questoesGruposAbertos = {};   // quais grupos de filtros (Matéria, Região…) estão abertos
+let questoesContagemToken = 0;    // evita que uma contagem antiga sobrescreva a mais recente
 let questoesSessao = null;   // sessão em andamento (ou resultado ainda aberto)
 
 function questoesContainer() {
@@ -1739,29 +1742,53 @@ function renderizarQuestoesInicio() {
     }).join('');
 
     const opcao = (valor, atual, rotulo) => `<option value="${escaparHtml(valor)}" ${String(atual) === String(valor) ? 'selected' : ''}>${escaparHtml(rotulo)}</option>`;
-    const rotuloArea = ehSumulas ? 'Área' : 'Matéria';
-    const opcoesArea = [opcao('', questoesFiltro.area, ehSumulas ? 'Todas as áreas' : 'Todas as matérias')]
-        .concat(t.areas.map(a => opcao(a.nome, questoesFiltro.area, `${a.nome} (${a.total})`))).join('');
+    const f = questoesFiltro;
 
-    // Filtros específicos do tópico
-    let filtrosEspecificos = '';
+    // Chip marcável (vários ao mesmo tempo). O valor é resolvido pelo índice na lista do tópico.
+    const chip = (campo, idx, rotulo, marcado) =>
+        `<button type="button" class="questoes-chip-filtro ${marcado ? 'ativo' : ''}" aria-pressed="${marcado}" onclick="questoesAlternar('${campo}', ${idx})">${escaparHtml(rotulo)}</button>`;
+    // Grupo recolhível: o título mostra quantos estão marcados; abre sozinho se há algum marcado.
+    const grupo = (chave, titulo, marcados, conteudo) => `
+        <details class="questoes-grupo" ${(questoesGruposAbertos[chave] || marcados > 0) ? 'open' : ''} ontoggle="questoesLembrarGrupo('${chave}', this.open)">
+            <summary>${escaparHtml(titulo)}${marcados > 0 ? ` <span class="questoes-grupo-qtd">${marcados}</span>` : ''}</summary>
+            <div class="questoes-chips-filtro">${conteudo}</div>
+        </details>`;
+
+    const chipsArea = t.areas.map((x, i) => chip('area', i, `${x.nome} (${x.total})`, f.area.includes(x.nome))).join('');
+    const grupoArea = grupo('area', ehSumulas ? 'Área' : 'Matéria', f.area.length, chipsArea);
+    let gruposHtml = '';
+    let filtroSumula = '';
     if (ehSumulas) {
-        const sumulasVisiveis = t.sumulas.filter(s => !questoesFiltro.area || s.area === questoesFiltro.area);
-        const opcoesSumula = [opcao('', questoesFiltro.sumula, 'Todas as súmulas')]
-            .concat(sumulasVisiveis.map(s => opcao(s.numero, questoesFiltro.sumula, `SV ${s.numero}`))).join('');
-        filtrosEspecificos = `<label class="questoes-filtro"><span>Súmula</span>
+        gruposHtml = grupoArea;
+        const sumulasVisiveis = t.sumulas.filter(s => !f.area.length || f.area.includes(s.area));
+        const opcoesSumula = [opcao('', f.sumula, 'Todas as súmulas')]
+            .concat(sumulasVisiveis.map(s => opcao(s.numero, f.sumula, `SV ${s.numero}`))).join('');
+        filtroSumula = `<label class="questoes-filtro"><span>Súmula</span>
             <select onchange="questoesAtualizarFiltro('sumula', this.value)">${opcoesSumula}</select></label>`;
     } else {
-        const opcoesAno = [opcao('', questoesFiltro.ano, 'Todos os anos')]
-            .concat((t.anos || []).map(x => opcao(x.valor, questoesFiltro.ano, `${x.valor} (${x.total})`))).join('');
-        const opcoesOrgao = [opcao('', questoesFiltro.orgao, 'Todos os tribunais')]
-            .concat((t.orgaos || []).map(x => opcao(x.nome, questoesFiltro.orgao, `${x.nome} (${x.total})`))).join('');
-        filtrosEspecificos = `
-            <label class="questoes-filtro"><span>Ano da prova</span>
-                <select onchange="questoesAtualizarFiltro('ano', this.value)">${opcoesAno}</select></label>
-            <label class="questoes-filtro"><span>Tribunal</span>
-                <select onchange="questoesAtualizarFiltro('orgao', this.value)">${opcoesOrgao}</select></label>`;
+        // Tribunal: marca o TIPO (TRT, TRF, TRE…) e, separadamente, as regiões. Sem região marcada = todas.
+        const chipsTipo = (t.tipos || []).map((x, i) => chip('tipo', i, `${x.nome} (${x.total})`, f.tipo.includes(x.nome))).join('');
+        gruposHtml = grupo('tipo', 'Tribunal', f.tipo.length, chipsTipo)
+            + `<p class="questoes-dica">Sem escolher região, entram todas as regiões do tribunal marcado.</p>`;
+        // Regiões: uma linha por tipo (só dos tipos marcados; se nenhum tipo está marcado, mostra todos)
+        const tiposVisiveis = f.tipo.length ? f.tipo : [...new Set((t.regioes || []).map(r => r.tipo))];
+        let regMarcadas = 0;
+        const linhas = tiposVisiveis.map(tp => {
+            const regs = (t.regioes || []).map((r, i) => ({ r, i })).filter(x => x.r.tipo === tp);
+            if (!regs.length) return '';
+            const chips = regs.map(({ r, i }) => {
+                const marcado = f.regiao.includes(`${r.tipo}:${r.valor}`);
+                if (marcado) regMarcadas++;
+                return chip('regiao', i, `${r.valor} (${r.total})`, marcado);
+            }).join('');
+            return `<div class="questoes-regiao-linha"><span class="questoes-regiao-tipo">${escaparHtml(tp)}</span><div class="questoes-chips-filtro">${chips}</div></div>`;
+        }).join('');
+        gruposHtml += grupo('regiao', 'Região / estado', regMarcadas, linhas);
+        const chipsAno = (t.anos || []).map((x, i) => chip('ano', i, `${x.valor} (${x.total})`, f.ano.includes(x.valor))).join('');
+        gruposHtml += grupo('ano', 'Ano da prova', f.ano.length, chipsAno);
+        gruposHtml += grupoArea;
     }
+    const temFiltro = f.area.length || f.ano.length || f.tipo.length || f.regiao.length || f.sumula;
 
     const aviso = ehSumulas
         ? 'São questões autorais no estilo FGV, feitas para treinar as súmulas — não são questões oficiais de provas.'
@@ -1785,10 +1812,9 @@ function renderizarQuestoesInicio() {
                 </details>
             </div>
 
+            <div class="questoes-grupos">${gruposHtml}</div>
             <div class="questoes-filtros">
-                <label class="questoes-filtro"><span>${rotuloArea}</span>
-                    <select onchange="questoesAtualizarFiltro('area', this.value)">${opcoesArea}</select></label>
-                ${filtrosEspecificos}
+                ${filtroSumula}
                 <label class="questoes-filtro"><span>Quais questões</span>
                     <select onchange="questoesAtualizarFiltro('modo', this.value)">
                         ${opcao('todas', questoesFiltro.modo, 'Todas')}
@@ -1806,9 +1832,14 @@ function renderizarQuestoesInicio() {
                     </select></label>
             </div>
 
+            <div class="questoes-contagem-linha">
+                <span id="questoes-contagem">Contando questões…</span>
+                ${temFiltro ? '<button type="button" class="link-botao" onclick="questoesLimparFiltros()">Limpar filtros</button>' : ''}
+            </div>
             <button type="button" class="questoes-btn-comecar" onclick="iniciarSessaoQuestoes()">▶ Começar</button>
             <p class="questoes-aviso">${escaparHtml(aviso)}</p>
         </section>`;
+    questoesAtualizarContagem();
 }
 
 // Lembra se a lista por matéria estava aberta, pra não fechar sozinha ao mudar um filtro.
@@ -1817,31 +1848,81 @@ function questoesLembrarAreas(aberto) { questoesAreasAbertas = !!aberto; }
 
 // Trocar de tópico zera os filtros específicos (um órgão/súmula de um não existe no outro).
 function questoesTrocarTopico(id) {
-    questoesFiltro = { ...questoesFiltro, topico: id, area: '', sumula: '', ano: '', orgao: '' };
+    questoesFiltro = { ...questoesFiltro, topico: id, area: [], sumula: '', ano: [], tipo: [], regiao: [] };
     renderizarQuestoesInicio();
 }
 
+// Filtros de escolha única (súmula, quais questões, ordem, quantidade).
 function questoesAtualizarFiltro(campo, valor) {
     if (campo === 'limite') questoesFiltro.limite = parseInt(valor, 10) || 10;
     else questoesFiltro[campo] = valor;
-    if (campo === 'area') {
-        // Se a súmula escolhida não é da nova área, volta pra "todas".
-        const t = (questoesResumo || []).find(x => x.id === questoesFiltro.topico);
-        const s = t && t.sumulas.find(x => String(x.numero) === String(questoesFiltro.sumula));
-        if (!s || (valor && s.area !== valor)) questoesFiltro.sumula = '';
+    renderizarQuestoesInicio();
+}
+
+// Marca/desmarca um chip dos filtros de escolha múltipla. O valor vem da lista do tópico atual.
+function questoesAlternar(campo, idx) {
+    const t = (questoesResumo || []).find(x => x.id === questoesFiltro.topico);
+    if (!t) return;
+    let valor;
+    if (campo === 'area') valor = t.areas[idx] && t.areas[idx].nome;
+    else if (campo === 'ano') valor = t.anos[idx] && t.anos[idx].valor;
+    else if (campo === 'tipo') valor = t.tipos[idx] && t.tipos[idx].nome;
+    else if (campo === 'regiao') valor = t.regioes[idx] && `${t.regioes[idx].tipo}:${t.regioes[idx].valor}`;
+    if (valor === undefined || valor === null) return;
+    const lista = questoesFiltro[campo];
+    const pos = lista.indexOf(valor);
+    if (pos >= 0) lista.splice(pos, 1); else lista.push(valor);
+    if (campo === 'tipo') {
+        // Desmarcou um tipo: as regiões dele deixam de valer.
+        questoesFiltro.regiao = questoesFiltro.regiao.filter(r => !questoesFiltro.tipo.length || questoesFiltro.tipo.includes(r.split(':')[0]));
+    }
+    if (campo === 'area' && t.sumulas) {
+        const s = t.sumulas.find(x => String(x.numero) === String(questoesFiltro.sumula));
+        if (s && lista.length && !lista.includes(s.area)) questoesFiltro.sumula = '';
     }
     renderizarQuestoesInicio();
+}
+
+function questoesLembrarGrupo(chave, aberto) { questoesGruposAbertos[chave] = !!aberto; }
+
+function questoesLimparFiltros() {
+    questoesFiltro = { ...questoesFiltro, area: [], sumula: '', ano: [], tipo: [], regiao: [] };
+    renderizarQuestoesInicio();
+}
+
+// Parâmetros de filtro compartilhados pela contagem e pela busca das questões.
+function questoesParametros() {
+    const f = questoesFiltro;
+    const p = new URLSearchParams({ topico: f.topico, modo: f.modo });
+    if (f.area.length) p.set('area', f.area.join(','));
+    if (f.sumula) p.set('sumula', f.sumula);
+    if (f.ano.length) p.set('ano', f.ano.join(','));
+    if (f.tipo.length) p.set('tipo', f.tipo.join(','));
+    if (f.regiao.length) p.set('regiao', f.regiao.join(','));
+    return p;
+}
+
+// "N questões com esses filtros" — atualiza sem redesenhar a tela.
+async function questoesAtualizarContagem() {
+    const token = ++questoesContagemToken;
+    try {
+        const res = await fetch('/api/questoes/contagem?' + questoesParametros().toString());
+        const dados = await res.json();
+        if (token !== questoesContagemToken || !dados.success) return;
+        const el = document.getElementById('questoes-contagem');
+        if (el) el.textContent = dados.total === 1 ? '1 questão com esses filtros' : `${dados.total} questões com esses filtros`;
+    } catch (err) {
+        const el = document.getElementById('questoes-contagem');
+        if (el && token === questoesContagemToken) el.textContent = '';
+    }
 }
 
 async function iniciarSessaoQuestoes(listaPronta) {
     let lista = listaPronta;
     if (!lista) {
-        const f = questoesFiltro;
-        const params = new URLSearchParams({ topico: f.topico, modo: f.modo, ordem: f.ordem, limite: String(f.limite) });
-        if (f.area) params.set('area', f.area);
-        if (f.sumula) params.set('sumula', f.sumula);
-        if (f.ano) params.set('ano', f.ano);
-        if (f.orgao) params.set('orgao', f.orgao);
+        const params = questoesParametros();
+        params.set('ordem', questoesFiltro.ordem);
+        params.set('limite', String(questoesFiltro.limite));
         try {
             const res = await fetch('/api/questoes?' + params.toString());
             const dados = await res.json();

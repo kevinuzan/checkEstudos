@@ -51,11 +51,20 @@ const TOPICOS_QUESTOES = [
 // funcionando; só a aba Questões fica sem esse tópico.
 // Provas anteriores da FCC (Analista Judiciário - Área Judiciária), geradas OFFLINE por
 // ferramentas/importar_provas_fcc.py. Mesmo esquema idempotente (versão = hash do arquivo).
+// "TRT 6ª" -> { tribunalTipo: 'TRT', regiao: '6ª' }; "TRE-PR" -> { 'TRE', 'PR' }; "TST" -> { 'TST', null }.
+// Separar o tipo da região é o que permite filtrar "todos os TRTs" OU "TRT da 6ª região".
+function separarTribunal(orgao) {
+    const m = /^(TRT|TRF|TRE|TJ|TST)\b[\s\-]*(.*)$/.exec(String(orgao || '').trim());
+    if (!m) return { tribunalTipo: String(orgao || ''), regiao: null };
+    return { tribunalTipo: m[1], regiao: m[2].trim() || null };
+}
+
 async function carregarQuestoesProvasFcc(coll) {
     try {
         const caminho = path.join(__dirname, 'ferramentas', 'dados', 'provas_fcc.json');
         const bruto = await fs.promises.readFile(caminho, 'utf-8');
-        const versao = createHash('sha1').update(bruto).digest('hex').slice(0, 12);
+        // O "|v2" força regravar quando muda o formato dos documentos (não só o arquivo de dados).
+        const versao = createHash('sha1').update(bruto + '|v2').digest('hex').slice(0, 12);
         const lista = JSON.parse(bruto);
         // ordem estável: ano, órgão, nº da questão (pra o modo "em sequência")
         lista.sort((a, b) => a.ano - b.ano || a.orgao.localeCompare(b.orgao, 'pt-BR') || a.numero - b.numero);
@@ -65,7 +74,7 @@ async function carregarQuestoesProvasFcc(coll) {
             topico: 'Provas anteriores — FCC',
             origem: `${q.banca} · ${q.orgao} · ${q.ano}`,
             area: q.materia,
-            banca: q.banca, orgao: q.orgao, ano: q.ano, cargo: q.cargo,
+            banca: q.banca, orgao: q.orgao, ...separarTribunal(q.orgao), ano: q.ano, cargo: q.cargo,
             numero: q.numero,
             ordem: i + 1,
             tipo: q.tipo,
@@ -1774,7 +1783,7 @@ async function startServer() {
         // quebra por área do direito e a lista de súmulas (pro filtro).
         app.get('/api/questoes/resumo', requireAuth, async (req, res) => {
             const [banco, respostas] = await Promise.all([
-                questoesColl.find({}, { projection: { chave: 1, fonte: 1, area: 1, sumulaNumero: 1, ano: 1, orgao: 1 } }).toArray(),
+                questoesColl.find({}, { projection: { chave: 1, fonte: 1, area: 1, sumulaNumero: 1, ano: 1, tribunalTipo: 1, regiao: 1 } }).toArray(),
                 respostasDoUsuario(req.userId)
             ]);
             const topicos = TOPICOS_QUESTOES.map(t => {
@@ -1782,7 +1791,8 @@ async function startServer() {
                 const areas = {};
                 const sumulas = {};
                 const anos = {};
-                const orgaos = {};
+                const tipos = {};
+                const regioes = {};
                 let respondidas = 0, acertando = 0;
                 doTopico.forEach(q => {
                     const r = respostas.get(q.chave);
@@ -1793,7 +1803,14 @@ async function startServer() {
                         sumulas[q.sumulaNumero].total++;
                     }
                     if (q.ano) anos[q.ano] = (anos[q.ano] || 0) + 1;
-                    if (q.orgao) orgaos[q.orgao] = (orgaos[q.orgao] || 0) + 1;
+                    if (q.tribunalTipo) {
+                        tipos[q.tribunalTipo] = (tipos[q.tribunalTipo] || 0) + 1;
+                        if (q.regiao) {
+                            const k = `${q.tribunalTipo}:${q.regiao}`;
+                            if (!regioes[k]) regioes[k] = { tipo: q.tribunalTipo, valor: q.regiao, total: 0 };
+                            regioes[k].total++;
+                        }
+                    }
                     if (r) {
                         respondidas++; areas[q.area].respondidas++;
                         if (r.ultimoAcertou) { acertando++; areas[q.area].acertando++; }
@@ -1804,10 +1821,59 @@ async function startServer() {
                     areas: Object.values(areas).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
                     sumulas: Object.values(sumulas).sort((a, b) => a.numero - b.numero),
                     anos: Object.entries(anos).map(([valor, total]) => ({ valor: Number(valor), total })).sort((a, b) => a.valor - b.valor),
-                    orgaos: Object.entries(orgaos).map(([nome, total]) => ({ nome, total })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+                    tipos: Object.entries(tipos).map(([nome, total]) => ({ nome, total })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+                    // numeric:true ordena 2ª, 3ª, 11ª na ordem natural (e UFs em ordem alfabética)
+                    regioes: Object.values(regioes).sort((a, b) => a.tipo.localeCompare(b.tipo, 'pt-BR') || a.valor.localeCompare(b.valor, 'pt-BR', { numeric: true }))
                 };
             }).filter(t => t.total > 0);
             res.json({ success: true, topicos });
+        });
+
+        // Valores múltiplos chegam separados por vírgula (?ano=2012,2013). Só aceita string:
+        // objetos na query (?area[$ne]=x) nunca viram operadores do Mongo.
+        function listaQuery(v) {
+            return typeof v === 'string' ? v.split(',').map(x => x.trim()).filter(Boolean).slice(0, 80) : [];
+        }
+        // Monta o filtro do Mongo. Tribunal: "tipo" (TRT, TRF...) e "regiao" ("TRT:6ª").
+        // Pra cada tipo escolhido: se há regiões marcadas DELE, só essas; senão, todas as dele.
+        function montarFiltroQuestoes(query, topico) {
+            const filtro = { fonte: topico };
+            const areas = listaQuery(query.area);
+            if (areas.length) filtro.area = { $in: areas };
+            const sumula = parseInt(query.sumula, 10);
+            if (Number.isInteger(sumula)) filtro.sumulaNumero = sumula;
+            const anos = listaQuery(query.ano).map(Number).filter(Number.isInteger);
+            if (anos.length) filtro.ano = { $in: anos };
+            let tipos = listaQuery(query.tipo);
+            const regioesPorTipo = {};
+            listaQuery(query.regiao).forEach(r => {
+                const [t, ...resto] = r.split(':');
+                const v = resto.join(':');
+                if (t && v) (regioesPorTipo[t] = regioesPorTipo[t] || []).push(v);
+            });
+            if (tipos.length === 0) tipos = Object.keys(regioesPorTipo);
+            if (tipos.length) {
+                filtro.$or = tipos.map(t => regioesPorTipo[t] ? { tribunalTipo: t, regiao: { $in: regioesPorTipo[t] } } : { tribunalTipo: t });
+            }
+            return filtro;
+        }
+
+        // Quantas questões existem com os filtros atuais (a tela mostra antes de "Começar").
+        app.get('/api/questoes/contagem', requireAuth, async (req, res) => {
+            const topico = typeof req.query.topico === 'string' ? req.query.topico : '';
+            if (!TOPICOS_QUESTOES.some(t => t.id === topico)) return res.status(400).json({ success: false, error: 'Tópico inválido' });
+            const modo = ['todas', 'novas', 'erradas'].includes(req.query.modo) ? req.query.modo : 'todas';
+            const [lista, respostas] = await Promise.all([
+                questoesColl.find(montarFiltroQuestoes(req.query, topico), { projection: { chave: 1 } }).toArray(),
+                respostasDoUsuario(req.userId)
+            ]);
+            const total = lista.filter(q => {
+                const r = respostas.get(q.chave);
+                if (modo === 'novas') return !r;
+                if (modo === 'erradas') return r && !r.ultimoAcertou;
+                return true;
+            }).length;
+            res.json({ success: true, total });
         });
 
         // Sorteia/ordena as questões de uma sessão. Filtros: topico (obrigatório),
@@ -1818,13 +1884,7 @@ async function startServer() {
             if (!TOPICOS_QUESTOES.some(t => t.id === topico)) {
                 return res.status(400).json({ success: false, error: 'Tópico inválido' });
             }
-            const filtro = { fonte: topico };
-            if (typeof req.query.area === 'string' && req.query.area) filtro.area = req.query.area;
-            const sumula = parseInt(req.query.sumula, 10);
-            if (Number.isInteger(sumula)) filtro.sumulaNumero = sumula;
-            const ano = parseInt(req.query.ano, 10);
-            if (Number.isInteger(ano)) filtro.ano = ano;
-            if (typeof req.query.orgao === 'string' && req.query.orgao) filtro.orgao = req.query.orgao;
+            const filtro = montarFiltroQuestoes(req.query, topico);
             const modo = ['todas', 'novas', 'erradas'].includes(req.query.modo) ? req.query.modo : 'todas';
             const limite = Math.min(Math.max(parseInt(req.query.limite, 10) || 20, 1), 100);
 
