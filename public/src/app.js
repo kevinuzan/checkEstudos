@@ -1649,6 +1649,22 @@ function atualizarCabecalhoPlanoAtual() {
     if (el) el.textContent = planoAtual || '—';
 }
 
+// Linha "Você × todos": taxa da própria pessoa (todas as tentativas dela) e
+// taxa geral de acerto na 1ª tentativa, sempre dizendo em quantos respondentes
+// ela se baseia (com poucos, o número é só uma pista).
+function questoesHtmlEstatisticas(est) {
+    if (!est) return '';
+    const minha = est.minhasTentativas > 0 ? Math.round((est.meusAcertos / est.minhasTentativas) * 100) : null;
+    const geral = est.respondentes > 0 ? Math.round((est.acertaramDePrimeira / est.respondentes) * 100) : null;
+    const txtMinha = minha === null ? '—' : `${minha}% <small>(${est.meusAcertos} de ${est.minhasTentativas})</small>`;
+    const txtGeral = geral === null ? '—' : `${geral}% <small>(${est.respondentes} ${est.respondentes === 1 ? 'respondente' : 'respondentes'})</small>`;
+    return `
+        <div class="questoes-stats">
+            <div class="questoes-stat"><span class="questoes-stat-rotulo">Sua taxa de acerto</span><span class="questoes-stat-valor">${txtMinha}</span></div>
+            <div class="questoes-stat"><span class="questoes-stat-rotulo">Acertam de 1ª (todos)</span><span class="questoes-stat-valor">${txtGeral}</span></div>
+        </div>`;
+}
+
 // ==================================================================
 // VIEW: QUESTÕES (banco de questões — por enquanto, Súmulas Vinculantes)
 // O gabarito só chega do servidor DEPOIS que a pessoa marca a alternativa
@@ -1656,7 +1672,7 @@ function atualizarCabecalhoPlanoAtual() {
 // ==================================================================
 
 let questoesResumo = null;   // topicos devolvidos por /api/questoes/resumo
-let questoesFiltro = { topico: 'sumulas-vinculantes', area: '', sumula: '', modo: 'todas', ordem: 'aleatoria', limite: 10 };
+let questoesFiltro = { topico: 'sumulas-vinculantes', area: '', sumula: '', ano: '', orgao: '', modo: 'todas', ordem: 'aleatoria', limite: 10 };
 let questoesSessao = null;   // sessão em andamento (ou resultado ainda aberto)
 
 function questoesContainer() {
@@ -1700,7 +1716,17 @@ function renderizarQuestoesInicio() {
         return;
     }
     questoesFiltro.topico = t.id;
+    const ehSumulas = t.id === 'sumulas-vinculantes';
     const pct = t.total > 0 ? Math.round((t.respondidas / t.total) * 100) : 0;
+
+    // Seletor de tópico (só aparece quando há mais de um)
+    const topicosHtml = (questoesResumo || []).length > 1 ? `
+        <div class="questoes-topicos">
+            ${questoesResumo.map(x => `
+                <button type="button" class="questoes-topico-chip ${x.id === t.id ? 'ativo' : ''}" onclick="questoesTrocarTopico('${escaparHtml(x.id)}')">
+                    ${x.id === 'sumulas-vinculantes' ? '⚖️' : '🏛️'} ${escaparHtml(x.nome)}
+                </button>`).join('')}
+        </div>` : '';
 
     const areasHtml = t.areas.map(a => {
         const p = a.total > 0 ? Math.round((a.respondidas / a.total) * 100) : 0;
@@ -1712,12 +1738,34 @@ function renderizarQuestoesInicio() {
             </div>`;
     }).join('');
 
-    const opcoesArea = ['<option value="">Todas as áreas</option>']
-        .concat(t.areas.map(a => `<option value="${escaparHtml(a.nome)}" ${questoesFiltro.area === a.nome ? 'selected' : ''}>${escaparHtml(a.nome)}</option>`)).join('');
-    const sumulasVisiveis = t.sumulas.filter(s => !questoesFiltro.area || s.area === questoesFiltro.area);
-    const opcoesSumula = ['<option value="">Todas as súmulas</option>']
-        .concat(sumulasVisiveis.map(s => `<option value="${s.numero}" ${String(questoesFiltro.sumula) === String(s.numero) ? 'selected' : ''}>SV ${s.numero}</option>`)).join('');
-    const opcao = (valor, atual, rotulo) => `<option value="${valor}" ${String(atual) === String(valor) ? 'selected' : ''}>${rotulo}</option>`;
+    const opcao = (valor, atual, rotulo) => `<option value="${escaparHtml(valor)}" ${String(atual) === String(valor) ? 'selected' : ''}>${escaparHtml(rotulo)}</option>`;
+    const rotuloArea = ehSumulas ? 'Área' : 'Matéria';
+    const opcoesArea = [opcao('', questoesFiltro.area, ehSumulas ? 'Todas as áreas' : 'Todas as matérias')]
+        .concat(t.areas.map(a => opcao(a.nome, questoesFiltro.area, `${a.nome} (${a.total})`))).join('');
+
+    // Filtros específicos do tópico
+    let filtrosEspecificos = '';
+    if (ehSumulas) {
+        const sumulasVisiveis = t.sumulas.filter(s => !questoesFiltro.area || s.area === questoesFiltro.area);
+        const opcoesSumula = [opcao('', questoesFiltro.sumula, 'Todas as súmulas')]
+            .concat(sumulasVisiveis.map(s => opcao(s.numero, questoesFiltro.sumula, `SV ${s.numero}`))).join('');
+        filtrosEspecificos = `<label class="questoes-filtro"><span>Súmula</span>
+            <select onchange="questoesAtualizarFiltro('sumula', this.value)">${opcoesSumula}</select></label>`;
+    } else {
+        const opcoesAno = [opcao('', questoesFiltro.ano, 'Todos os anos')]
+            .concat((t.anos || []).map(x => opcao(x.valor, questoesFiltro.ano, `${x.valor} (${x.total})`))).join('');
+        const opcoesOrgao = [opcao('', questoesFiltro.orgao, 'Todos os tribunais')]
+            .concat((t.orgaos || []).map(x => opcao(x.nome, questoesFiltro.orgao, `${x.nome} (${x.total})`))).join('');
+        filtrosEspecificos = `
+            <label class="questoes-filtro"><span>Ano da prova</span>
+                <select onchange="questoesAtualizarFiltro('ano', this.value)">${opcoesAno}</select></label>
+            <label class="questoes-filtro"><span>Tribunal</span>
+                <select onchange="questoesAtualizarFiltro('orgao', this.value)">${opcoesOrgao}</select></label>`;
+    }
+
+    const aviso = ehSumulas
+        ? 'São questões autorais no estilo FGV, feitas para treinar as súmulas — não são questões oficiais de provas.'
+        : 'Questões das provas da FCC para Analista Judiciário – Área Judiciária, lidas dos PDFs oficiais; o gabarito é o divulgado pela banca. Questões que dependem de texto-base, tabela ou figura ainda não entram aqui.';
 
     el.innerHTML = `
         <section class="painel-bloco">
@@ -1725,19 +1773,19 @@ function renderizarQuestoesInicio() {
                 <h2>📝 Questões</h2>
                 <span class="painel-bloco-sub">Pratique e veja o gabarito comentado na hora</span>
             </div>
+            ${topicosHtml}
 
             <div class="questoes-topico-card">
-                <div class="questoes-topico-titulo">⚖️ ${escaparHtml(t.nome)}</div>
+                <div class="questoes-topico-titulo">${ehSumulas ? '⚖️' : '🏛️'} ${escaparHtml(t.nome)}</div>
                 <div class="questoes-topico-sub">${t.total} questões · ${t.respondidas} respondidas · ${t.acertando} acertando</div>
                 <div class="questoes-progresso"><div class="questoes-progresso-barra" style="width:${pct}%"></div></div>
                 <div class="questoes-areas">${areasHtml}</div>
             </div>
 
             <div class="questoes-filtros">
-                <label class="questoes-filtro"><span>Área</span>
+                <label class="questoes-filtro"><span>${rotuloArea}</span>
                     <select onchange="questoesAtualizarFiltro('area', this.value)">${opcoesArea}</select></label>
-                <label class="questoes-filtro"><span>Súmula</span>
-                    <select onchange="questoesAtualizarFiltro('sumula', this.value)">${opcoesSumula}</select></label>
+                ${filtrosEspecificos}
                 <label class="questoes-filtro"><span>Quais questões</span>
                     <select onchange="questoesAtualizarFiltro('modo', this.value)">
                         ${opcao('todas', questoesFiltro.modo, 'Todas')}
@@ -1747,7 +1795,7 @@ function renderizarQuestoesInicio() {
                 <label class="questoes-filtro"><span>Ordem</span>
                     <select onchange="questoesAtualizarFiltro('ordem', this.value)">
                         ${opcao('aleatoria', questoesFiltro.ordem, 'Aleatória')}
-                        ${opcao('sequencial', questoesFiltro.ordem, 'Em sequência (SV 1, 2, 3…)')}
+                        ${opcao('sequencial', questoesFiltro.ordem, ehSumulas ? 'Em sequência (SV 1, 2, 3…)' : 'Em sequência (ano e tribunal)')}
                     </select></label>
                 <label class="questoes-filtro"><span>Quantidade</span>
                     <select onchange="questoesAtualizarFiltro('limite', this.value)">
@@ -1756,8 +1804,14 @@ function renderizarQuestoesInicio() {
             </div>
 
             <button type="button" class="questoes-btn-comecar" onclick="iniciarSessaoQuestoes()">▶ Começar</button>
-            <p class="questoes-aviso">São questões autorais no estilo FGV, feitas para treinar as súmulas — não são questões oficiais de provas.</p>
+            <p class="questoes-aviso">${escaparHtml(aviso)}</p>
         </section>`;
+}
+
+// Trocar de tópico zera os filtros específicos (um órgão/súmula de um não existe no outro).
+function questoesTrocarTopico(id) {
+    questoesFiltro = { ...questoesFiltro, topico: id, area: '', sumula: '', ano: '', orgao: '' };
+    renderizarQuestoesInicio();
 }
 
 function questoesAtualizarFiltro(campo, valor) {
@@ -1779,6 +1833,8 @@ async function iniciarSessaoQuestoes(listaPronta) {
         const params = new URLSearchParams({ topico: f.topico, modo: f.modo, ordem: f.ordem, limite: String(f.limite) });
         if (f.area) params.set('area', f.area);
         if (f.sumula) params.set('sumula', f.sumula);
+        if (f.ano) params.set('ano', f.ano);
+        if (f.orgao) params.set('orgao', f.orgao);
         try {
             const res = await fetch('/api/questoes?' + params.toString());
             const dados = await res.json();
@@ -1857,11 +1913,17 @@ function renderizarQuestaoAtual() {
                 ${ret.acertou ? '' : `Resposta certa: ${escaparHtml(q.tipo === 'certo_errado' ? (ret.gabarito === 'C' ? 'Certo' : 'Errado') : ret.gabarito)}.`}
                 ${ret.explicacao ? `<div class="questoes-feedback-texto">${escaparHtml(ret.explicacao)}</div>` : ''}
             </div>
+            ${questoesHtmlEstatisticas(ret.estatisticas)}
+            ${ret.sumulaNumero !== undefined && ret.sumulaNumero !== null ? `
             <div class="questoes-sumula">
                 <div class="questoes-sumula-titulo">📌 Súmula Vinculante nº ${escaparHtml(ret.sumulaNumero)}</div>
                 <div>${escaparHtml(ret.sumulaTexto)}</div>
                 <div class="questoes-crianca"><strong>Em palavras de criança:</strong> ${escaparHtml(ret.palavrasDeCrianca)}</div>
-            </div>
+            </div>` : `
+            <div class="questoes-sumula">
+                Gabarito conforme divulgado pela banca (${escaparHtml(ret.origem || 'FCC')}).
+                ${ret.gabaritoPreliminar ? '<strong>Atenção:</strong> este é o gabarito preliminar — pode ter sido alterado ou a questão anulada depois.' : ''}
+            </div>`}
             <button type="button" class="questoes-btn-proxima" onclick="questoesProxima()">
                 ${s.indice < s.lista.length - 1 ? 'Próxima →' : 'Ver resultado'}
             </button>`;
@@ -1878,7 +1940,7 @@ function renderizarQuestaoAtual() {
             <div class="questoes-progresso"><div class="questoes-progresso-barra" style="width:${pct}%"></div></div>
             <div class="questoes-cartao">
                 <div class="questoes-meta">
-                    <span>SV ${escaparHtml(q.sumulaNumero)} · ${escaparHtml(q.area)}</span>
+                    <span>${escaparHtml(q.rotulo || '')} · ${escaparHtml(q.area)}</span>
                     <span class="questoes-selo">${escaparHtml(q.origem || 'Questão autoral')}</span>
                 </div>
                 <p class="questoes-enunciado">${escaparHtml(q.enunciado)}</p>
@@ -1952,7 +2014,7 @@ function renderizarQuestoesFinal() {
     const chips = s.lista.map((q, i) => {
         const r = s.resultados[i];
         const cls = !r ? 'questoes-chip-pulada' : (r.acertou ? 'questoes-chip-ok' : 'questoes-chip-erro');
-        return `<span class="questoes-chip ${cls}" title="SV ${escaparHtml(q.sumulaNumero)}">SV ${escaparHtml(q.sumulaNumero)}.${escaparHtml(q.numero)}</span>`;
+        return `<span class="questoes-chip ${cls}" title="${escaparHtml(q.rotulo || '')}">${escaparHtml(q.rotuloCurto || q.numero)}</span>`;
     }).join('');
 
     el.innerHTML = `
@@ -5912,8 +5974,8 @@ async function renderizarMapaDificuldadesQuestoes() {
         return `
             <div class="dificuldade-linha">
                 <div class="dificuldade-nomes">
-                    <div class="dificuldade-topico">⚖️ Súmula Vinculante ${escaparHtml(x.sumulaNumero)}</div>
-                    <div class="dificuldade-materia">${escaparHtml(x.area)} · ${escaparHtml(x.erros)} erro(s) em ${escaparHtml(x.tentativas)} respostas</div>
+                    <div class="dificuldade-topico">📝 ${escaparHtml(x.rotulo)}</div>
+                    <div class="dificuldade-materia">${escaparHtml(x.subrotulo)} · ${escaparHtml(x.erros)} erro(s) em ${escaparHtml(x.tentativas)} respostas</div>
                     <div class="dificuldade-barra-fundo">
                         <div class="dificuldade-barra" style="width:${perc}%"></div>
                     </div>

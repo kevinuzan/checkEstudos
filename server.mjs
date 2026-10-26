@@ -40,7 +40,8 @@ const MONGO_URI = process.env.MONGO_PUBLIC_URL || "SUA_URI_LOCAL_DE_TESTE";
 // Tópicos do banco de questões. Novos tópicos (ex.: provas antigas) entram
 // aqui e na carga de dados — a tela e as rotas já funcionam por "fonte".
 const TOPICOS_QUESTOES = [
-    { id: 'sumulas-vinculantes', nome: 'Súmulas Vinculantes' }
+    { id: 'sumulas-vinculantes', nome: 'Súmulas Vinculantes' },
+    { id: 'provas-fcc', nome: 'Provas anteriores — FCC' }
 ];
 
 // Carrega (ou atualiza) as questões de Súmulas Vinculantes a partir do arquivo
@@ -48,6 +49,45 @@ const TOPICOS_QUESTOES = [
 // "versão" pelo conteúdo do arquivo e só regrava se o arquivo mudou — então
 // reiniciar o servidor (todo deploy) não custa nada. Se falhar, o app segue
 // funcionando; só a aba Questões fica sem esse tópico.
+// Provas anteriores da FCC (Analista Judiciário - Área Judiciária), geradas OFFLINE por
+// ferramentas/importar_provas_fcc.py. Mesmo esquema idempotente (versão = hash do arquivo).
+async function carregarQuestoesProvasFcc(coll) {
+    try {
+        const caminho = path.join(__dirname, 'ferramentas', 'dados', 'provas_fcc.json');
+        const bruto = await fs.promises.readFile(caminho, 'utf-8');
+        const versao = createHash('sha1').update(bruto).digest('hex').slice(0, 12);
+        const lista = JSON.parse(bruto);
+        // ordem estável: ano, órgão, nº da questão (pra o modo "em sequência")
+        lista.sort((a, b) => a.ano - b.ano || a.orgao.localeCompare(b.orgao, 'pt-BR') || a.numero - b.numero);
+        const docs = lista.map((q, i) => ({
+            chave: q.chave,
+            fonte: 'provas-fcc',
+            topico: 'Provas anteriores — FCC',
+            origem: `${q.banca} · ${q.orgao} · ${q.ano}`,
+            area: q.materia,
+            banca: q.banca, orgao: q.orgao, ano: q.ano, cargo: q.cargo,
+            numero: q.numero,
+            ordem: i + 1,
+            tipo: q.tipo,
+            enunciado: q.enunciado,
+            alternativas: q.alternativas,
+            gabarito: q.gabarito,
+            gabaritoPreliminar: !!q.gabaritoPreliminar,
+            versao
+        }));
+        const jaAtualizadas = await coll.countDocuments({ fonte: 'provas-fcc', versao });
+        if (jaAtualizadas === docs.length && docs.length > 0) return;
+        await coll.bulkWrite(
+            docs.map(d => ({ updateOne: { filter: { chave: d.chave }, update: { $set: d }, upsert: true } })),
+            { ordered: false }
+        );
+        await coll.deleteMany({ fonte: 'provas-fcc', versao: { $ne: versao } });
+        console.log(`Questões: ${docs.length} questões de provas da FCC carregadas (versão ${versao}).`);
+    } catch (err) {
+        console.error('Erro ao carregar questões de provas da FCC:', err);
+    }
+}
+
 async function carregarQuestoesSumulas(coll) {
     try {
         const caminho = path.join(__dirname, 'ferramentas', 'dados', 'sumulas_vinculantes.json');
@@ -429,7 +469,9 @@ async function startServer() {
         await questoesColl.createIndex({ chave: 1 }, { unique: true }).catch(() => {});
         await questoesColl.createIndex({ fonte: 1, area: 1, ordem: 1 }).catch(() => {});
         await questoesRespostasColl.createIndex({ userId: 1, chave: 1 }, { unique: true }).catch(() => {});
+        await questoesRespostasColl.createIndex({ chave: 1, primeiraAcertou: 1 }).catch(() => {});
         await carregarQuestoesSumulas(questoesColl);
+        await carregarQuestoesProvasFcc(questoesColl);
 
         // --- MIGRAÇÃO: garante que todo item tenha um array "planos" ---
         // Itens antigos (de antes de existir o conceito de "plano") são
@@ -1694,20 +1736,30 @@ async function startServer() {
         app.get('/api/questoes/dificuldades', requireAuth, async (req, res) => {
             try {
                 const [banco, respostas] = await Promise.all([
-                    questoesColl.find({}, { projection: { chave: 1, sumulaNumero: 1, area: 1, topico: 1 } }).toArray(),
+                    questoesColl.find({}, { projection: { chave: 1, fonte: 1, sumulaNumero: 1, area: 1, topico: 1 } }).toArray(),
                     respostasDoUsuario(req.userId)
                 ]);
                 const porSumula = {};
                 banco.forEach(q => {
                     const r = respostas.get(q.chave);
                     if (!r || !r.tentativas) return;
-                    const k = q.sumulaNumero;
-                    if (!porSumula[k]) porSumula[k] = { sumulaNumero: k, area: q.area, tentativas: 0, erros: 0 };
+                    // Súmulas: uma linha por súmula. Provas: uma linha por matéria
+                    // (agrega muitas questões, então exige mais respostas pra entrar).
+                    const ehSumula = q.fonte === 'sumulas-vinculantes';
+                    const k = ehSumula ? `sv-${q.sumulaNumero}` : `${q.fonte}-${q.area}`;
+                    if (!porSumula[k]) {
+                        porSumula[k] = {
+                            rotulo: ehSumula ? `Súmula Vinculante ${q.sumulaNumero}` : q.area,
+                            subrotulo: ehSumula ? q.area : q.topico,
+                            minimo: ehSumula ? 2 : 5,
+                            tentativas: 0, erros: 0
+                        };
+                    }
                     porSumula[k].tentativas += r.tentativas;
                     porSumula[k].erros += r.erros || 0;
                 });
                 const lista = Object.values(porSumula)
-                    .filter(x => x.tentativas >= 2)
+                    .filter(x => x.tentativas >= x.minimo)
                     .map(x => ({ ...x, taxaErro: x.erros / x.tentativas }))
                     .sort((x, y) => y.taxaErro - x.taxaErro || y.tentativas - x.tentativas)
                     .slice(0, 8);
@@ -1722,20 +1774,26 @@ async function startServer() {
         // quebra por área do direito e a lista de súmulas (pro filtro).
         app.get('/api/questoes/resumo', requireAuth, async (req, res) => {
             const [banco, respostas] = await Promise.all([
-                questoesColl.find({}, { projection: { chave: 1, fonte: 1, area: 1, sumulaNumero: 1 } }).toArray(),
+                questoesColl.find({}, { projection: { chave: 1, fonte: 1, area: 1, sumulaNumero: 1, ano: 1, orgao: 1 } }).toArray(),
                 respostasDoUsuario(req.userId)
             ]);
             const topicos = TOPICOS_QUESTOES.map(t => {
                 const doTopico = banco.filter(q => q.fonte === t.id);
                 const areas = {};
                 const sumulas = {};
+                const anos = {};
+                const orgaos = {};
                 let respondidas = 0, acertando = 0;
                 doTopico.forEach(q => {
                     const r = respostas.get(q.chave);
                     if (!areas[q.area]) areas[q.area] = { nome: q.area, total: 0, respondidas: 0, acertando: 0 };
                     areas[q.area].total++;
-                    if (!sumulas[q.sumulaNumero]) sumulas[q.sumulaNumero] = { numero: q.sumulaNumero, area: q.area, total: 0 };
-                    sumulas[q.sumulaNumero].total++;
+                    if (q.sumulaNumero !== undefined) {
+                        if (!sumulas[q.sumulaNumero]) sumulas[q.sumulaNumero] = { numero: q.sumulaNumero, area: q.area, total: 0 };
+                        sumulas[q.sumulaNumero].total++;
+                    }
+                    if (q.ano) anos[q.ano] = (anos[q.ano] || 0) + 1;
+                    if (q.orgao) orgaos[q.orgao] = (orgaos[q.orgao] || 0) + 1;
                     if (r) {
                         respondidas++; areas[q.area].respondidas++;
                         if (r.ultimoAcertou) { acertando++; areas[q.area].acertando++; }
@@ -1744,7 +1802,9 @@ async function startServer() {
                 return {
                     id: t.id, nome: t.nome, total: doTopico.length, respondidas, acertando,
                     areas: Object.values(areas).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
-                    sumulas: Object.values(sumulas).sort((a, b) => a.numero - b.numero)
+                    sumulas: Object.values(sumulas).sort((a, b) => a.numero - b.numero),
+                    anos: Object.entries(anos).map(([valor, total]) => ({ valor: Number(valor), total })).sort((a, b) => a.valor - b.valor),
+                    orgaos: Object.entries(orgaos).map(([nome, total]) => ({ nome, total })).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
                 };
             }).filter(t => t.total > 0);
             res.json({ success: true, topicos });
@@ -1762,11 +1822,14 @@ async function startServer() {
             if (typeof req.query.area === 'string' && req.query.area) filtro.area = req.query.area;
             const sumula = parseInt(req.query.sumula, 10);
             if (Number.isInteger(sumula)) filtro.sumulaNumero = sumula;
+            const ano = parseInt(req.query.ano, 10);
+            if (Number.isInteger(ano)) filtro.ano = ano;
+            if (typeof req.query.orgao === 'string' && req.query.orgao) filtro.orgao = req.query.orgao;
             const modo = ['todas', 'novas', 'erradas'].includes(req.query.modo) ? req.query.modo : 'todas';
             const limite = Math.min(Math.max(parseInt(req.query.limite, 10) || 20, 1), 100);
 
             const [lista, respostas] = await Promise.all([
-                questoesColl.find(filtro, { projection: { gabarito: 0, explicacoes: 0, explicacao: 0, sumulaTexto: 0, palavrasDeCrianca: 0 } })
+                questoesColl.find(filtro, { projection: { gabarito: 0, explicacoes: 0, explicacao: 0, sumulaTexto: 0, palavrasDeCrianca: 0, gabaritoPreliminar: 0 } })
                     .sort({ ordem: 1 }).toArray(),
                 respostasDoUsuario(req.userId)
             ]);
@@ -1786,7 +1849,10 @@ async function startServer() {
             }
             candidatas = candidatas.slice(0, limite).map(q => ({
                 chave: q.chave, sumulaNumero: q.sumulaNumero, area: q.area, numero: q.numero,
-                tipo: q.tipo, enunciado: q.enunciado, alternativas: q.alternativas, origem: q.origem
+                tipo: q.tipo, enunciado: q.enunciado, alternativas: q.alternativas, origem: q.origem,
+                // "rotulo" é o identificador curto que a tela mostra (SV 7 · ou TRT 17ª 2022 · Q31)
+                rotulo: q.fonte === 'sumulas-vinculantes' ? `SV ${q.sumulaNumero}` : `${q.orgao} ${q.ano} · Q${q.numero}`,
+                rotuloCurto: q.fonte === 'sumulas-vinculantes' ? `SV ${q.sumulaNumero}.${q.numero}` : `${q.orgao} ${q.ano} Q${q.numero}`
             }));
             res.json({ success: true, totalDisponivel, questoes: candidatas });
         });
@@ -1806,12 +1872,29 @@ async function startServer() {
                 {
                     $set: { ultimaResposta: resposta, ultimoAcertou: acertou, atualizadoEm: new Date() },
                     $inc: { tentativas: 1, acertos: acertou ? 1 : 0, erros: acertou ? 0 : 1 },
-                    $setOnInsert: { criadoEm: new Date() }
+                    // primeiraAcertou: resultado da 1ª tentativa da pessoa. É ele que alimenta
+                    // a taxa "geral" — a 2ª tentativa já vem contaminada pela memória.
+                    $setOnInsert: { criadoEm: new Date(), primeiraAcertou: acertou }
                 },
                 { upsert: true }
             );
+            // Estatísticas desta questão: a da pessoa (todas as tentativas dela) e a
+            // geral (agregada, nunca individual). Só contam respondentes com a 1ª
+            // tentativa registrada (respostas antigas não têm esse campo).
+            const [minha, respondentes, acertaramDePrimeira] = await Promise.all([
+                questoesRespostasColl.findOne({ userId: req.userId, chave }, { projection: { tentativas: 1, acertos: 1 } }),
+                questoesRespostasColl.countDocuments({ chave, primeiraAcertou: { $type: 'bool' } }),
+                questoesRespostasColl.countDocuments({ chave, primeiraAcertou: true })
+            ]);
             res.json({
                 success: true, acertou, gabarito: questao.gabarito,
+                gabaritoPreliminar: !!questao.gabaritoPreliminar,
+                origem: questao.origem,
+                estatisticas: {
+                    minhasTentativas: minha ? minha.tentativas : 1,
+                    meusAcertos: minha ? minha.acertos : (acertou ? 1 : 0),
+                    respondentes, acertaramDePrimeira
+                },
                 explicacoes: questao.explicacoes || null, explicacao: questao.explicacao || null,
                 sumulaNumero: questao.sumulaNumero, sumulaTexto: questao.sumulaTexto,
                 palavrasDeCrianca: questao.palavrasDeCrianca
