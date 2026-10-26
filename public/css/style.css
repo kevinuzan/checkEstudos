@@ -4709,3 +4709,13 @@ input[type="checkbox"] {
 
 .questoes-alt-selecionada { border-color: var(--primary); background: var(--primary-light); box-shadow: 0 0 0 1px var(--primary); }
 .questoes-btn-proxima:disabled { opacity: .55; cursor: not-allowed; }
+
+.questoes-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.questoes-stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 10px; background: var(--surface-muted); font-size: 0.85rem; }
+.questoes-stat-rotulo { color: var(--text-muted); font-size: 0.75rem; }
+.questoes-stat-valor { font-weight: 700; font-size: 1.05rem; }
+.questoes-stat-valor small { font-weight: 400; color: var(--text-muted); font-size: 0.75rem; }
+
+.questoes-topicos { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.questoes-topico-chip { padding: 8px 12px; border-radius: 99px; border: 1px solid var(--border); background: var(--card); color: inherit; font-size: 0.9rem; cursor: pointer; }
+.questoes-topico-chip.ativo { border-color: var(--primary); background: var(--primary-light); font-weight: 600; }
