@@ -4752,3 +4752,39 @@ input[type="checkbox"] {
 .questoes-drop-opcao { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; font-size: 0.9rem; color: var(--text); cursor: pointer; }
 .questoes-drop-opcao:hover { background: var(--surface-muted-hover); }
 .questoes-drop-opcao input { width: 16px; height: 16px; flex: none; accent-color: var(--primary); }
+
+/* Modal de registro das questões nos estudos */
+.registrar-questoes-tempo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.registrar-questoes-tempo input {
+    width: 80px;
+    text-align: center;
+}
+
+.registrar-questoes-cron {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-muted);
+    font-size: 13.5px;
+}
+
+.registrar-questoes-opcao {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.registrar-questoes-opcao input {
+    width: auto;
+    margin-top: 3px;
+}

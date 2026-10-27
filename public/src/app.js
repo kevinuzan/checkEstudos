@@ -2132,7 +2132,7 @@ function renderizarQuestoesFinal() {
                 <div class="questoes-resultado-linha">Tempo: ${questoesFormatarTempo(s.segundosAtivos)}</div>
                 <div class="questoes-chips">${chips}</div>
                 <div class="questoes-acoes">
-                    <button type="button" onclick="registrarSessaoQuestoesNosEstudos()" ${s.registrada ? 'disabled' : ''}>
+                    <button type="button" onclick="abrirModalRegistrarQuestoes()" ${s.registrada ? 'disabled' : ''}>
                         ${s.registrada ? '✔ Registrado nos seus estudos' : '📝 Registrar nos meus estudos'}
                     </button>
                     ${erros > 0 ? '<button type="button" class="btn-secundario" onclick="questoesRefazerErradas()">🔁 Refazer as que errei</button>' : ''}
@@ -2160,11 +2160,67 @@ function voltarInicioQuestoes() {
 // enxergam. Fica sem tópico do edital vinculado de propósito: assim a sessão
 // aparece no histórico do plano aberto no momento (um tópico solto, sem
 // vínculo com o edital, faria a sessão sumir das listas por plano).
-async function registrarSessaoQuestoesNosEstudos() {
+// Tempo de cronômetro "à parte" que o aluno pode querer aproveitar: no modo
+// Pomodoro conta só o foco; no livre, o tempo corrido. Zero = nada rodando.
+function questoesTempoCronometroSeg() {
+    if (cronometroEstado.status === 'parado') return 0;
+    const ms = obterModoCronometro() === 'pomodoro' ? calcularFocoTotalPomodoroMs() : calcularElapsedMs();
+    return Math.floor(ms / 1000);
+}
+
+// Abre o modal de registro. Não grava nada: o aluno escolhe o edital e o
+// tempo, e decide se o cronômetro em andamento entra na conta (e se encerra).
+function abrirModalRegistrarQuestoes() {
     const s = questoesSessao;
     if (!s || s.registrada) return;
     const feitas = s.resultados.filter(Boolean);
     if (feitas.length === 0) return;
+    const acertos = feitas.filter(r => r.acertou).length;
+    document.getElementById('registrar-questoes-resumo').textContent =
+        `${acertos} acerto(s) · ${feitas.length - acertos} erro(s) · ${feitas.length} questão(ões)`;
+
+    // Nunca "Todos os planos": a sessão precisa pertencer a um edital.
+    const sel = document.getElementById('registrar-questoes-plano');
+    sel.innerHTML = planosDisponiveis.map(p => `<option value="${escaparHtml(p.nome)}">${escaparHtml(p.nome)}</option>`).join('');
+    if (planoAtual && planosDisponiveis.some(p => p.nome === planoAtual)) sel.value = planoAtual;
+
+    questoesPreencherTempoModal(Math.max(60, s.segundosAtivos));
+    const cron = questoesTempoCronometroSeg();
+    const bloco = document.getElementById('registrar-questoes-cronometro');
+    bloco.style.display = cron > 0 ? '' : 'none';
+    document.getElementById('registrar-questoes-cron-tempo').textContent = formatarHMS(cron * 1000);
+    document.getElementById('registrar-questoes-cron-manter').checked = true;
+    document.getElementById('registrar-questoes-overlay').style.display = 'flex';
+}
+
+function questoesPreencherTempoModal(segundos) {
+    const minTotal = Math.max(1, Math.round(segundos / 60));
+    document.getElementById('registrar-questoes-horas').value = Math.floor(minTotal / 60);
+    document.getElementById('registrar-questoes-minutos').value = minTotal % 60;
+}
+
+function fecharModalRegistrarQuestoes() {
+    document.getElementById('registrar-questoes-overlay').style.display = 'none';
+}
+
+// Escolher "usar o tempo do cronômetro" preenche os campos (editáveis);
+// voltar para "manter" não mexe no que a pessoa digitou.
+function questoesCronometroOpcaoMudou() {
+    const usar = document.getElementById('registrar-questoes-cron-usar').checked;
+    if (usar) questoesPreencherTempoModal(questoesTempoCronometroSeg());
+}
+
+async function confirmarRegistroQuestoes() {
+    const s = questoesSessao;
+    if (!s || s.registrada) return;
+    const feitas = s.resultados.filter(Boolean);
+    if (feitas.length === 0) return;
+    const plano = document.getElementById('registrar-questoes-plano').value;
+    if (!plano) return alert('Escolha o edital em que esta sessão será registrada.');
+    const horas = Math.max(0, parseInt(document.getElementById('registrar-questoes-horas').value, 10) || 0);
+    const minutos = Math.max(0, parseInt(document.getElementById('registrar-questoes-minutos').value, 10) || 0);
+    const duracaoSegundos = (horas * 60 + minutos) * 60;
+    if (duracaoSegundos <= 0) return alert('Informe quanto tempo você gastou (pelo menos 1 minuto).');
 
     if (tiposEstudoDisponiveis.length === 0) await carregarTiposEstudo();
     const tipo = tiposEstudoDisponiveis.find(t => t.nome === 'Exercício')
@@ -2175,12 +2231,15 @@ async function registrarSessaoQuestoesNosEstudos() {
 
     const acertos = feitas.filter(r => r.acertou).length;
     const erros = feitas.length - acertos;
-    const duracaoSegundos = Math.max(1, s.segundosAtivos);
     const fim = new Date();
     const inicio = new Date(fim.getTime() - duracaoSegundos * 1000);
     const areas = [...new Set(s.lista.map(q => q.area))];
     const t = (questoesResumo || []).find(x => x.id === questoesFiltro.topico);
+    const encerrarCron = !document.getElementById('registrar-questoes-cronometro').style.display
+        && document.getElementById('registrar-questoes-cron-usar').checked;
 
+    const btn = document.getElementById('registrar-questoes-confirmar');
+    btn.disabled = true;
     try {
         const res = await fetch('/api/sessoes', {
             method: 'POST',
@@ -2189,7 +2248,7 @@ async function registrarSessaoQuestoesNosEstudos() {
                 inicio: inicio.toISOString(),
                 fim: fim.toISOString(),
                 duracaoSegundos,
-                plano: planoAtual || null,
+                plano,
                 tipoEstudoId: tipo._id,
                 tipoEstudoNome: tipo.nome,
                 topicos: [],
@@ -2204,9 +2263,14 @@ async function registrarSessaoQuestoesNosEstudos() {
         if (!res.ok || !dados.success) throw new Error(dados.error || 'Falha ao registrar');
     } catch (err) {
         console.error('Erro ao registrar sessão de questões:', err);
+        btn.disabled = false;
         return alert('Não foi possível registrar nos seus estudos agora. Tente de novo.');
     }
+    btn.disabled = false;
     s.registrada = true;
+    // Só encerra o cronômetro se a pessoa pediu explicitamente.
+    if (encerrarCron) resetarCronometro();
+    fecharModalRegistrarQuestoes();
     try { await atualizarStreak(); } catch (err) { /* não impede o registro */ }
     renderizarQuestoesFinal();
 }

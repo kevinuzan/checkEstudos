@@ -933,6 +933,38 @@
         </div>
     </div>
 
+    <!-- Modal: registrar sessão do banco de questões nos estudos (escolhe edital e tempo) -->
+    <div id="registrar-questoes-overlay" class="modal-overlay" style="display:none;">
+        <div class="modal modal-registrar-questoes">
+            <h3>Registrar nos meus estudos</h3>
+            <p class="modal-confirm-texto" id="registrar-questoes-resumo"></p>
+            <label class="modal-label" for="registrar-questoes-plano">Edital (plano)</label>
+            <select id="registrar-questoes-plano"></select>
+            <span class="modal-label">Tempo gasto</span>
+            <div class="registrar-questoes-tempo">
+                <input type="number" id="registrar-questoes-horas" min="0" max="23" inputmode="numeric" aria-label="Horas">
+                <span>h</span>
+                <input type="number" id="registrar-questoes-minutos" min="0" max="59" inputmode="numeric" aria-label="Minutos">
+                <span>min</span>
+            </div>
+            <div id="registrar-questoes-cronometro" class="registrar-questoes-cron" style="display:none;">
+                <div class="registrar-questoes-cron-titulo">⏱ Você tem um cronômetro em andamento (<strong id="registrar-questoes-cron-tempo">00:00:00</strong>)</div>
+                <label class="registrar-questoes-opcao">
+                    <input type="radio" name="registrar-questoes-cron" id="registrar-questoes-cron-manter" checked onchange="questoesCronometroOpcaoMudou()">
+                    <span>Usar o tempo digitado acima e <strong>manter o cronômetro rodando</strong></span>
+                </label>
+                <label class="registrar-questoes-opcao">
+                    <input type="radio" name="registrar-questoes-cron" id="registrar-questoes-cron-usar" onchange="questoesCronometroOpcaoMudou()">
+                    <span>Usar o tempo do cronômetro e <strong>encerrá-lo</strong></span>
+                </label>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancelar" onclick="fecharModalRegistrarQuestoes()">Cancelar</button>
+                <button id="registrar-questoes-confirmar" onclick="confirmarRegistroQuestoes()">Registrar</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal de confirmação: descartar o cronômetro/pomodoro em andamento (sem salvar sessão) -->
     <div id="modal-descartar-cronometro-overlay" class="modal-overlay" style="display:none;">
         <div class="modal modal-confirm-cronometro">
