@@ -1674,7 +1674,8 @@ function questoesHtmlEstatisticas(est) {
 let questoesResumo = null;   // topicos devolvidos por /api/questoes/resumo
 // area/ano/tipo/regiao são listas (a pessoa pode marcar mais de uma); sumula é única.
 let questoesFiltro = { topico: 'sumulas-vinculantes', area: [], sumula: '', ano: [], tipo: [], regiao: [], modo: 'todas', ordem: 'aleatoria', limite: 10 };
-let questoesGruposAbertos = {};   // quais grupos de filtros (Matéria, Região…) estão abertos
+let questoesDropAberto = null;    // qual lista suspensa de filtro está aberta (tipo, regiao, ano, area)
+let questoesDropListenerOk = false;
 let questoesContagemToken = 0;    // evita que uma contagem antiga sobrescreva a mais recente
 let questoesSessao = null;   // sessão em andamento (ou resultado ainda aberto)
 
@@ -1713,6 +1714,13 @@ async function carregarQuestoes() {
 function renderizarQuestoesInicio() {
     const el = questoesContainer();
     if (!el) return;
+    if (!questoesDropListenerOk && document.addEventListener) {
+        document.addEventListener('click', questoesFecharDropAoClicarFora);
+        questoesDropListenerOk = true;
+    }
+    // Marcar uma opção redesenha a tela: guarda a rolagem da lista aberta pra ela não "pular".
+    const painelAberto = el.querySelector ? el.querySelector('.questoes-drop.aberto .questoes-drop-painel') : null;
+    const rolagem = painelAberto ? painelAberto.scrollTop : 0;
     const t = (questoesResumo || []).find(x => x.id === questoesFiltro.topico) || (questoesResumo || [])[0];
     if (!t) {
         el.innerHTML = '<div class="questoes-vazio">Ainda não há questões disponíveis.</div>';
@@ -1744,49 +1752,46 @@ function renderizarQuestoesInicio() {
     const opcao = (valor, atual, rotulo) => `<option value="${escaparHtml(valor)}" ${String(atual) === String(valor) ? 'selected' : ''}>${escaparHtml(rotulo)}</option>`;
     const f = questoesFiltro;
 
-    // Chip marcável (vários ao mesmo tempo). O valor é resolvido pelo índice na lista do tópico.
-    const chip = (campo, idx, rotulo, marcado) =>
-        `<button type="button" class="questoes-chip-filtro ${marcado ? 'ativo' : ''}" aria-pressed="${marcado}" onclick="questoesAlternar('${campo}', ${idx})">${escaparHtml(rotulo)}</button>`;
-    // Grupo recolhível: o título mostra quantos estão marcados; abre sozinho se há algum marcado.
-    const grupo = (chave, titulo, marcados, conteudo) => `
-        <details class="questoes-grupo" ${(questoesGruposAbertos[chave] || marcados > 0) ? 'open' : ''} ontoggle="questoesLembrarGrupo('${chave}', this.open)">
-            <summary>${escaparHtml(titulo)}${marcados > 0 ? ` <span class="questoes-grupo-qtd">${marcados}</span>` : ''}</summary>
-            <div class="questoes-chips-filtro">${conteudo}</div>
-        </details>`;
+    // Lista suspensa de escolha múltipla (caixas de marcar). Fica aberta enquanto a pessoa
+    // marca; fecha ao clicar fora. O valor de cada opção é resolvido pelo índice na lista do tópico.
+    const opcaoDrop = (campo, idx, texto, marcado) =>
+        `<label class="questoes-drop-opcao"><input type="checkbox" ${marcado ? 'checked' : ''} onchange="questoesAlternar('${campo}', ${idx})"><span>${escaparHtml(texto)}</span></label>`;
+    const drop = (chave, titulo, resumo, painel, desabilitado) => `
+        <div class="questoes-filtro questoes-drop ${questoesDropAberto === chave ? 'aberto' : ''}">
+            <span>${escaparHtml(titulo)}</span>
+            <button type="button" class="questoes-drop-btn" ${desabilitado ? 'disabled' : ''} onclick="questoesAbrirDrop('${chave}')">
+                <span class="questoes-drop-valor">${escaparHtml(resumo)}</span><span class="questoes-drop-seta">▾</span>
+            </button>
+            <div class="questoes-drop-painel" data-drop="${chave}">${painel}</div>
+        </div>`;
+    const resumir = (marcados, todos) => marcados.length === 0 ? todos : (marcados.length <= 2 ? marcados.join(', ') : `${marcados.length} selecionados`);
 
-    const chipsArea = t.areas.map((x, i) => chip('area', i, `${x.nome} (${x.total})`, f.area.includes(x.nome))).join('');
-    const grupoArea = grupo('area', ehSumulas ? 'Área' : 'Matéria', f.area.length, chipsArea);
+    const dropArea = drop('area', ehSumulas ? 'Área' : 'Matéria',
+        resumir(f.area, ehSumulas ? 'Todas as áreas' : 'Todas as matérias'),
+        t.areas.map((x, i) => opcaoDrop('area', i, `${x.nome} (${x.total})`, f.area.includes(x.nome))).join(''));
     let gruposHtml = '';
-    let filtroSumula = '';
     if (ehSumulas) {
-        gruposHtml = grupoArea;
         const sumulasVisiveis = t.sumulas.filter(s => !f.area.length || f.area.includes(s.area));
         const opcoesSumula = [opcao('', f.sumula, 'Todas as súmulas')]
             .concat(sumulasVisiveis.map(s => opcao(s.numero, f.sumula, `SV ${s.numero}`))).join('');
-        filtroSumula = `<label class="questoes-filtro"><span>Súmula</span>
+        gruposHtml = dropArea + `<label class="questoes-filtro"><span>Súmula</span>
             <select onchange="questoesAtualizarFiltro('sumula', this.value)">${opcoesSumula}</select></label>`;
     } else {
-        // Tribunal: marca o TIPO (TRT, TRF, TRE…) e, separadamente, as regiões. Sem região marcada = todas.
-        const chipsTipo = (t.tipos || []).map((x, i) => chip('tipo', i, `${x.nome} (${x.total})`, f.tipo.includes(x.nome))).join('');
-        gruposHtml = grupo('tipo', 'Tribunal', f.tipo.length, chipsTipo)
-            + `<p class="questoes-dica">Sem escolher região, entram todas as regiões do tribunal marcado.</p>`;
-        // Regiões: uma linha por tipo (só dos tipos marcados; se nenhum tipo está marcado, mostra todos)
+        // Cascata: Tribunal -> Região (só dos tribunais marcados) -> Ano -> Matéria.
+        // Sem região marcada, entram todas as regiões do tribunal escolhido.
+        const dropTipo = drop('tipo', 'Tribunal', resumir(f.tipo, 'Todos os tribunais'),
+            (t.tipos || []).map((x, i) => opcaoDrop('tipo', i, `${x.nome} (${x.total})`, f.tipo.includes(x.nome))).join(''));
         const tiposVisiveis = f.tipo.length ? f.tipo : [...new Set((t.regioes || []).map(r => r.tipo))];
-        let regMarcadas = 0;
-        const linhas = tiposVisiveis.map(tp => {
-            const regs = (t.regioes || []).map((r, i) => ({ r, i })).filter(x => x.r.tipo === tp);
-            if (!regs.length) return '';
-            const chips = regs.map(({ r, i }) => {
-                const marcado = f.regiao.includes(`${r.tipo}:${r.valor}`);
-                if (marcado) regMarcadas++;
-                return chip('regiao', i, `${r.valor} (${r.total})`, marcado);
-            }).join('');
-            return `<div class="questoes-regiao-linha"><span class="questoes-regiao-tipo">${escaparHtml(tp)}</span><div class="questoes-chips-filtro">${chips}</div></div>`;
-        }).join('');
-        gruposHtml += grupo('regiao', 'Região / estado', regMarcadas, linhas);
-        const chipsAno = (t.anos || []).map((x, i) => chip('ano', i, `${x.valor} (${x.total})`, f.ano.includes(x.valor))).join('');
-        gruposHtml += grupo('ano', 'Ano da prova', f.ano.length, chipsAno);
-        gruposHtml += grupoArea;
+        let painelRegiao = '';
+        (t.regioes || []).forEach((r, i) => {
+            if (!tiposVisiveis.includes(r.tipo)) return;
+            painelRegiao += opcaoDrop('regiao', i, `${r.tipo} ${r.valor} (${r.total})`, f.regiao.includes(`${r.tipo}:${r.valor}`));
+        });
+        const dropRegiao = drop('regiao', 'Região / estado',
+            resumir(f.regiao.map(r => r.replace(':', ' ')), 'Todas as regiões'), painelRegiao, !painelRegiao);
+        const dropAno = drop('ano', 'Ano da prova', resumir(f.ano.map(String), 'Todos os anos'),
+            (t.anos || []).map((x, i) => opcaoDrop('ano', i, `${x.valor} (${x.total})`, f.ano.includes(x.valor))).join(''));
+        gruposHtml = dropTipo + dropRegiao + dropAno + dropArea;
     }
     const temFiltro = f.area.length || f.ano.length || f.tipo.length || f.regiao.length || f.sumula;
 
@@ -1812,9 +1817,8 @@ function renderizarQuestoesInicio() {
                 </details>
             </div>
 
-            <div class="questoes-grupos">${gruposHtml}</div>
             <div class="questoes-filtros">
-                ${filtroSumula}
+                ${gruposHtml}
                 <label class="questoes-filtro"><span>Quais questões</span>
                     <select onchange="questoesAtualizarFiltro('modo', this.value)">
                         ${opcao('todas', questoesFiltro.modo, 'Todas')}
@@ -1839,6 +1843,10 @@ function renderizarQuestoesInicio() {
             <button type="button" class="questoes-btn-comecar" onclick="iniciarSessaoQuestoes()">▶ Começar</button>
             <p class="questoes-aviso">${escaparHtml(aviso)}</p>
         </section>`;
+    if (rolagem && el.querySelector) {
+        const novoPainel = el.querySelector('.questoes-drop.aberto .questoes-drop-painel');
+        if (novoPainel) novoPainel.scrollTop = rolagem;
+    }
     questoesAtualizarContagem();
 }
 
@@ -1883,7 +1891,17 @@ function questoesAlternar(campo, idx) {
     renderizarQuestoesInicio();
 }
 
-function questoesLembrarGrupo(chave, aberto) { questoesGruposAbertos[chave] = !!aberto; }
+function questoesAbrirDrop(chave) {
+    questoesDropAberto = questoesDropAberto === chave ? null : chave;
+    renderizarQuestoesInicio();
+}
+// Clicar fora de uma lista suspensa aberta fecha ela.
+function questoesFecharDropAoClicarFora(e) {
+    if (!questoesDropAberto) return;
+    if (e.target && e.target.closest && e.target.closest('.questoes-drop')) return;
+    questoesDropAberto = null;
+    if (document.getElementById('questoes-contagem')) renderizarQuestoesInicio();
+}
 
 function questoesLimparFiltros() {
     questoesFiltro = { ...questoesFiltro, area: [], sumula: '', ano: [], tipo: [], regiao: [] };
