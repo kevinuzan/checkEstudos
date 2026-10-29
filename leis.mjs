@@ -42,6 +42,7 @@ const RE_INCISO_SUFIXO = /^([IVXLCDM]+)-([A-Z])\s+/;
 const RE_ALINEA = /^([a-z])\)\s*/;
 const RE_ITEM = /^(\d{1,2})\s*[.)-]\s+/;
 
+const NIVEL_ESTRUTURA = { parte: 0, livro: 0, titulo: 1, capitulo: 2, secao: 3, subsecao: 4 };
 const NOMES_ESTRUTURA = { PARTE: 'parte', LIVRO: 'livro', 'TÍTULO': 'titulo', 'CAPÍTULO': 'capitulo', 'SEÇÃO': 'secao', 'SUBSEÇÃO': 'subsecao' };
 
 function limpar(str) {
@@ -69,11 +70,23 @@ function criarGeradorIds() {
 // Retorna { texto, revogado }. Se mais da metade do conteúdo está riscada, o
 // dispositivo inteiro é tratado como revogado (e o texto riscado é mantido,
 // para o aluno ainda poder ler o que foi revogado).
-function lerParagrafo($, el) {
-    const total = limpar($(el).text());
-    const clone = $(el).clone();
-    clone.find('strike, s, del').remove();
-    const vigente = limpar(clone.text());
+// O HTML do Planalto (FrontPage) tem <font>/<span> mal fechados que fazem alguns
+// parsers "fecharem" o <p> antes do texto do artigo (ex.: o caput do art. 57 some).
+// Por isso cada <p> é isolado por texto (do "<p" até o "</p>") e interpretado
+// sozinho: um erro de aninhamento nunca atravessa para o parágrafo vizinho.
+function lerFragmento(frag) {
+    const html = '<p' + frag.split(/<\/p\s*>/i)[0] + '</p>';
+    const $ = cheerio.load(html, null, false);
+    const total = limpar($.root().text());
+    $('strike, s, del').remove();
+    const vigente = limpar($.root().text());
+    return { total, vigente };
+}
+
+// Separa o texto "vigente" do texto riscado (revogado) de um parágrafo.
+// Se mais da metade do conteúdo está riscada, o dispositivo inteiro é tratado
+// como revogado (e o texto riscado é mantido, para o aluno ainda poder ler).
+function lerParagrafo(total, vigente) {
     if (!total) return { texto: '', revogado: false };
     const riscado = total.length - vigente.length;
     const revogadoPorRisco = riscado > 0 && riscado >= total.length * 0.5;
@@ -91,12 +104,9 @@ function extrairNotas(texto) {
 }
 
 export function parseLeiHtml(html, cfg) {
-    const $ = cheerio.load(html);
     const gerarId = criarGeradorIds();
     const itens = [];
     let secao = '';            // '' = texto principal, 'adct-' = ADCT
-    let marcosFim = 0;         // quantas vezes já vimos "Brasília, ... de 1988."
-    let ignorando = false;     // entre o fim do texto principal e o início do ADCT
     let terminou = false;
 
     let artAtual = null;       // id do artigo corrente
@@ -104,32 +114,33 @@ export function parseLeiHtml(html, cfg) {
     let incAtual = null;       // id do inciso corrente
     let aliAtual = null;
     let ultimaEstrutura = null;
-    let tituloAtual = '';      // prefixo p/ ids de Capítulo/Seção (que recomeçam em I a cada Título)
+    const prefixos = [];       // ids de Título>Capítulo>Seção atuais: Capítulo/Seção recomeçam em I a cada nível acima
 
-    $('p').each((_, el) => {
+    const processar = (frag) => {
         if (terminou) return;
-        const bruto = limpar($(el).text());
+        const { total: bruto, vigente: vigenteFrag } = lerFragmento(frag);
         if (!bruto) return;
 
         if (cfg.temAdct) {
+            // Data de promulgação: no fim do texto principal (e de novo no fim do ADCT).
             if (/^Bras[ií]lia,.*1988\.?$/i.test(bruto)) {
-                marcosFim++;
-                if (marcosFim === 1) { ignorando = true; return; }
-                terminou = true; return;
+                if (secao === 'adct-') { terminou = true; return; }
+                artAtual = parAtual = incAtual = aliAtual = null;   // o que vem depois (assinaturas) não é dispositivo
+                return;
             }
-            if (/^ATO DAS DISPOSIÇÕES CONSTITUCIONAIS TRANSITÓRIAS$/i.test(bruto)) {
+            // Título do ADCT em MAIÚSCULAS (sensível a caixa de propósito: o índice no topo da
+            // página traz o mesmo nome em minúsculas e não pode ser confundido com ele).
+            if (/^ATO DAS DISPOSIÇÕES CONSTITUCIONAIS TRANSITÓRIAS$/.test(bruto)) {
                 secao = 'adct-';
-                ignorando = false;
                 artAtual = parAtual = incAtual = aliAtual = null;
-                tituloAtual = 'adct.';
+                prefixos.length = 0; prefixos[0] = 'adct.';
                 itens.push({ id: gerarId('est-adct'), k: 'est', tipo: 'adct', rot: 'ADCT', nome: 'Ato das Disposições Constitucionais Transitórias', texto: '', secao: 'adct' });
                 ultimaEstrutura = null;
                 return;
             }
         }
-        if (ignorando) return;
 
-        const { texto: lido, revogado } = lerParagrafo($, el);
+        const { texto: lido, revogado } = lerParagrafo(bruto, vigenteFrag);
         const { texto, notas } = extrairNotas(lido);
         if (!texto && !notas.length) return;
 
@@ -138,12 +149,14 @@ export function parseLeiHtml(html, cfg) {
         if (mEst && !RE_ARTIGO.test(texto)) {
             const tipo = NOMES_ESTRUTURA[mEst[1].toUpperCase()];
             const rot = limpar(texto).toUpperCase();
-            const base = (tipo === 'titulo' || tipo === 'parte' || tipo === 'livro') ? '' : tituloAtual;
+            const nivelEst = NIVEL_ESTRUTURA[tipo];
+            const base = prefixos.slice(0, nivelEst).filter(Boolean).join('');
             const item = { id: gerarId(`${secao}${base}est-${tipo}-${mEst[2].toUpperCase()}`), k: 'est', tipo, rot: limpar(texto.match(RE_ESTRUTURA)[0]).toUpperCase(), nome: '', texto: '', secao: secao ? 'adct' : 'cf' };
             // O nome ("DOS PRINCÍPIOS FUNDAMENTAIS") vem no mesmo <p> depois do rótulo, ou no próximo.
             const resto = limpar(texto.slice(mEst[0].length).replace(/^[\s\-–—.:]+/, ''));
             if (resto) item.nome = resto;
-            if (tipo === 'titulo' || tipo === 'parte' || tipo === 'livro') tituloAtual = `${tipo}-${mEst[2].toUpperCase()}.`;
+            prefixos.length = nivelEst;
+            prefixos[nivelEst] = `${tipo}-${mEst[2].toUpperCase()}.`;
             itens.push(item);
             ultimaEstrutura = item.nome ? null : item;
             return;
@@ -204,7 +217,9 @@ export function parseLeiHtml(html, cfg) {
         }
         // Qualquer outra linha solta é ignorada de propósito: preferimos perder um
         // texto estranho (ex.: nota de rodapé) a poluir a lei com lixo.
-    });
+    };
+
+    for (const frag of html.split(/<p\b/i).slice(1)) processar(frag);
 
     for (const it of itens) it.hash = hashItem(it);
     return itens;

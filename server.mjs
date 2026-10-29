@@ -22,7 +22,7 @@ import { decompress as decompressZstd } from 'fzstd';
 import pdfParse from 'pdf-parse';
 import Stripe from 'stripe';
 import { createHash } from 'crypto';
-import { LEIS, parseLeiHtml, validarLei, compararLeis } from './leis.mjs';
+import { LEIS, parseLeiHtml, validarLei, compararLeis } from './leisParser.mjs';
 
 // --- CONFIGURAÇÕES BÁSICAS ---
 const app = express();
@@ -3506,7 +3506,8 @@ async function startServer() {
                 return {
                     id: cfg.id, nome: cfg.nome, sigla: cfg.sigla,
                     disponivel: !!d, totalArtigos: d ? d.totalArtigos : 0,
-                    atualizadoEm: d ? d.atualizadoEm : null, verificadoEm: d ? d.verificadoEm : null
+                    atualizadoEm: d ? d.atualizadoEm : null, verificadoEm: d ? d.verificadoEm : null,
+                    erro: d ? null : (leisUltimoErro.get(cfg.id) || null)
                 };
             });
             res.json({ success: true, leis: lista });
