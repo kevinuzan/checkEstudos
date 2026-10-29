@@ -22,6 +22,7 @@ import { decompress as decompressZstd } from 'fzstd';
 import pdfParse from 'pdf-parse';
 import Stripe from 'stripe';
 import { createHash } from 'crypto';
+import { LEIS, parseLeiHtml, validarLei, compararLeis } from './leis.mjs';
 
 // --- CONFIGURAÇÕES BÁSICAS ---
 const app = express();
@@ -389,6 +390,10 @@ const ANALISE_DESEMPENHO_COLLECTION = "analises_desempenho";
 // o histórico de respostas de cada pessoa (isolado por userId).
 const QUESTOES_COLLECTION = "questoes_banco";
 const QUESTOES_RESPOSTAS_COLLECTION = "questoes_respostas";
+const LEIS_TEXTO_COLLECTION = "leis_texto";
+const LEIS_MUDANCAS_COLLECTION = "leis_mudancas";
+const LEIS_GRIFOS_COLLECTION = "leis_grifos";
+const LEIS_NOTAS_COLLECTION = "leis_notas";
 
 // --- LIMITE DE USO DA IA (sugestão de edital via PDF) ---
 // Enquanto o app é gratuito, cada usuário tem uma cota mensal de tokens,
@@ -481,6 +486,13 @@ async function startServer() {
         await questoesRespostasColl.createIndex({ chave: 1, primeiraAcertou: 1 }).catch(() => {});
         await carregarQuestoesSumulas(questoesColl);
         await carregarQuestoesProvasFcc(questoesColl);
+        const leisTextoColl = db.collection(LEIS_TEXTO_COLLECTION);
+        const leisMudancasColl = db.collection(LEIS_MUDANCAS_COLLECTION);
+        const leisGrifosColl = db.collection(LEIS_GRIFOS_COLLECTION);
+        const leisNotasColl = db.collection(LEIS_NOTAS_COLLECTION);
+        await leisMudancasColl.createIndex({ lei: 1, em: -1 }).catch(() => {});
+        await leisGrifosColl.createIndex({ userId: 1, lei: 1, dispId: 1 }).catch(() => {});
+        await leisNotasColl.createIndex({ userId: 1, lei: 1, dispId: 1 }, { unique: true }).catch(() => {});
 
         // --- MIGRAÇÃO: garante que todo item tenha um array "planos" ---
         // Itens antigos (de antes de existir o conceito de "plano") são
@@ -3361,6 +3373,230 @@ async function startServer() {
                 .slice(0, 8);
 
             res.json(lista);
+        });
+
+
+        // ==============================================================
+        // LEIS (aba "Leis"): texto compilado do Planalto + grifos e notas.
+        // O texto é COMPARTILHADO (um documento por lei em leis_texto); grifos e
+        // anotações são de cada aluno (sempre filtrados por userId).
+        // ==============================================================
+        const LEIS_REVALIDAR_MS = 24 * 60 * 60 * 1000;   // confere o Planalto no máx. 1x por dia
+        const LEIS_MAX_GRIFOS_POR_USUARIO = 5000;
+        const LEIS_MAX_NOTA = 5000;
+        const leisAtualizando = new Map();               // trava: 1 atualização por lei por vez
+
+        // Planalto serve ISO-8859-1; decodifica pelo charset declarado, com fallback.
+        function decodificarHtmlLei(buffer) {
+            const inicio = buffer.slice(0, 3000).toString('latin1');
+            const utf8 = /charset\s*=\s*["']?utf-?8/i.test(inicio);
+            return utf8 ? buffer.toString('utf8') : iconv.decode(buffer, 'ISO-8859-1');
+        }
+
+        async function baixarHtmlLei(cfg) {
+            const resp = await fetch(cfg.url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' } });
+            if (!resp.ok) throw new Error(`Planalto respondeu ${resp.status}`);
+            return decodificarHtmlLei(Buffer.from(await resp.arrayBuffer()));
+        }
+
+        // Depois que o texto muda, cada grifo do aluno é "reencontrado" pelo trecho
+        // guardado; se o trecho sumiu, vira órfão (não é apagado — o aluno decide).
+        async function reancorarGrifos(leiId, itensNovos, idsAfetados) {
+            if (!idsAfetados.length) return;
+            const porId = new Map(itensNovos.map(i => [i.id, i]));
+            const grifos = await leisGrifosColl.find({ lei: leiId, dispId: { $in: idsAfetados } }).toArray();
+            for (const g of grifos) {
+                const item = porId.get(g.dispId);
+                const texto = item ? item.texto : '';
+                if (item && texto.slice(g.ini, g.fim) === g.trecho) {
+                    if (g.orfao) await leisGrifosColl.updateOne({ _id: g._id }, { $set: { orfao: false } });
+                    continue;
+                }
+                const pos = texto.indexOf(g.trecho);
+                if (pos >= 0) await leisGrifosColl.updateOne({ _id: g._id }, { $set: { ini: pos, fim: pos + g.trecho.length, orfao: false } });
+                else await leisGrifosColl.updateOne({ _id: g._id }, { $set: { orfao: true } });
+            }
+        }
+
+        // Atualiza uma lei a partir de um HTML (ou baixando do Planalto).
+        // Nunca joga fora a última versão boa: se o parse for estranho, só registra o erro.
+        async function atualizarLei(leiId, htmlOpcional) {
+            if (leisAtualizando.has(leiId)) return leisAtualizando.get(leiId);
+            const tarefa = (async () => {
+                const cfg = LEIS[leiId];
+                const agora = new Date();
+                try {
+                    const html = htmlOpcional || await baixarHtmlLei(cfg);
+                    const itens = parseLeiHtml(html, cfg);
+                    const atual = await leisTextoColl.findOne({ _id: leiId });
+                    const anterior = atual ? atual.itens : null;
+                    const veredito = validarLei(itens, cfg, anterior);
+                    if (!veredito.ok) {
+                        console.error(`[leis] ${leiId}: atualização recusada —`, veredito.motivos.join('; '));
+                        if (atual) await leisTextoColl.updateOne({ _id: leiId }, { $set: { verificadoEm: agora, ultimoErro: { em: agora, motivos: veredito.motivos } } });
+                        return { ok: false, motivos: veredito.motivos };
+                    }
+                    const dif = anterior ? compararLeis(anterior, itens) : { mudancas: [], itensAfetados: 0 };
+                    if (!atual || dif.itensAfetados > 0) {
+                        await leisTextoColl.replaceOne({ _id: leiId }, {
+                            _id: leiId, nome: cfg.nome, sigla: cfg.sigla, itens,
+                            totalArtigos: itens.filter(i => i.k === 'art').length,
+                            atualizadoEm: agora, verificadoEm: agora
+                        }, { upsert: true });
+                        if (dif.mudancas.length) {
+                            await leisMudancasColl.insertOne({ lei: leiId, em: agora, mudancas: dif.mudancas });
+                            await reancorarGrifos(leiId, itens, dif.mudancas.flatMap(m => m.ids));
+                        }
+                    } else {
+                        await leisTextoColl.updateOne({ _id: leiId }, { $set: { verificadoEm: agora }, $unset: { ultimoErro: '' } });
+                    }
+                    return { ok: true, mudancas: dif.mudancas.length };
+                } catch (err) {
+                    console.error(`[leis] ${leiId}: falha ao atualizar —`, err.message);
+                    return { ok: false, motivos: [err.message] };
+                }
+            })().finally(() => leisAtualizando.delete(leiId));
+            leisAtualizando.set(leiId, tarefa);
+            return tarefa;
+        }
+
+        // Primeira carga: prefere o HTML salvo no repositório (não depende da rede);
+        // depois confere o Planalto a cada 6h (só atualiza se passou 1 dia).
+        async function inicializarLeis() {
+            for (const leiId of Object.keys(LEIS)) {
+                try {
+                    const existente = await leisTextoColl.findOne({ _id: leiId }, { projection: { verificadoEm: 1 } });
+                    if (!existente) {
+                        const arquivo = path.join(__dirname, 'ferramentas', 'dados', `${leiId === 'cf' ? 'constituicao' : leiId}.htm`);
+                        if (fs.existsSync(arquivo)) {
+                            const r = await atualizarLei(leiId, decodificarHtmlLei(fs.readFileSync(arquivo)));
+                            if (r.ok) continue;
+                        }
+                        await atualizarLei(leiId);
+                    } else if (!existente.verificadoEm || Date.now() - existente.verificadoEm.getTime() > LEIS_REVALIDAR_MS) {
+                        await atualizarLei(leiId);
+                    }
+                } catch (err) { console.error('[leis] inicialização:', err.message); }
+            }
+        }
+        inicializarLeis();
+        setInterval(inicializarLeis, 6 * 60 * 60 * 1000).unref();
+
+        const leiValida = (id) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(LEIS, id);
+        const dispDoArtigo = (dispId) => String(dispId).split('.')[0];
+
+        app.get('/api/leis', requireAuth, async (req, res) => {
+            const docs = await leisTextoColl.find({}, { projection: { itens: 0 } }).toArray();
+            const lista = Object.values(LEIS).map(cfg => {
+                const d = docs.find(x => x._id === cfg.id);
+                return {
+                    id: cfg.id, nome: cfg.nome, sigla: cfg.sigla,
+                    disponivel: !!d, totalArtigos: d ? d.totalArtigos : 0,
+                    atualizadoEm: d ? d.atualizadoEm : null, verificadoEm: d ? d.verificadoEm : null
+                };
+            });
+            res.json({ success: true, leis: lista });
+        });
+
+        app.get('/api/leis/:lei', requireAuth, async (req, res) => {
+            if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
+            const d = await leisTextoColl.findOne({ _id: req.params.lei });
+            if (!d) return res.status(503).json({ success: false, error: 'O texto desta lei ainda está sendo carregado. Tente de novo em instantes.' });
+            // Revalida em segundo plano (sem segurar a resposta).
+            if (!d.verificadoEm || Date.now() - d.verificadoEm.getTime() > LEIS_REVALIDAR_MS) atualizarLei(req.params.lei);
+            res.json({
+                success: true,
+                lei: { id: d._id, nome: d.nome, sigla: d.sigla, atualizadoEm: d.atualizadoEm, verificadoEm: d.verificadoEm },
+                itens: d.itens.map(({ hash, ...resto }) => resto)
+            });
+        });
+
+        app.get('/api/leis/:lei/mudancas', requireAuth, async (req, res) => {
+            if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
+            const lista = await leisMudancasColl.find({ lei: req.params.lei }).sort({ em: -1 }).limit(30).toArray();
+            res.json({ success: true, mudancas: lista.map(m => ({ em: m.em, mudancas: m.mudancas.map(x => ({ art: x.art, rotulo: x.rotulo, tipo: x.tipo })) })) });
+        });
+
+        // Tudo que é do aluno nesta lei + aviso de artigos que mudaram depois que ele grifou/anotou.
+        app.get('/api/leis/:lei/meus', requireAuth, async (req, res) => {
+            if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
+            const filtro = { userId: req.userId, lei: req.params.lei };
+            const [grifos, notas] = await Promise.all([
+                leisGrifosColl.find(filtro).toArray(),
+                leisNotasColl.find(filtro).toArray()
+            ]);
+            const datas = [...grifos.map(g => g.criadoEm), ...notas.map(n => n.atualizadoEm)].filter(Boolean);
+            const alteracoes = {};
+            if (datas.length) {
+                const minimo = new Date(Math.min(...datas.map(d => d.getTime())));
+                const mud = await leisMudancasColl.find({ lei: req.params.lei, em: { $gt: minimo } }).toArray();
+                const marcar = (dispId, desde) => {
+                    const art = dispDoArtigo(dispId);
+                    for (const m of mud) {
+                        if (m.em <= desde) continue;
+                        const hit = m.mudancas.find(x => x.art === art);
+                        if (hit && (!alteracoes[art] || alteracoes[art].em < m.em)) alteracoes[art] = { em: m.em, tipo: hit.tipo };
+                    }
+                };
+                grifos.forEach(g => marcar(g.dispId, g.criadoEm));
+                notas.forEach(n => marcar(n.dispId, n.atualizadoEm));
+            }
+            res.json({
+                success: true,
+                grifos: grifos.map(g => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor, orfao: !!g.orfao })),
+                notas: notas.map(n => ({ dispId: n.dispId, texto: n.texto, atualizadoEm: n.atualizadoEm })),
+                alteracoes
+            });
+        });
+
+        // Cria grifos (um por dispositivo tocado pela seleção). O trecho é extraído
+        // do texto GUARDADO no servidor, nunca do que o cliente manda.
+        app.post('/api/leis/:lei/grifos', requireAuth, async (req, res) => {
+            if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
+            const cor = Number(req.body.cor);
+            if (!Number.isInteger(cor) || cor < 1 || cor > 4) return res.status(400).json({ success: false, error: 'Cor inválida' });
+            const trechos = Array.isArray(req.body.trechos) ? req.body.trechos.slice(0, 60) : [];
+            if (!trechos.length) return res.status(400).json({ success: false, error: 'Nada selecionado' });
+            const atuais = await leisGrifosColl.countDocuments({ userId: req.userId });
+            if (atuais + trechos.length > LEIS_MAX_GRIFOS_POR_USUARIO) return res.status(400).json({ success: false, error: 'Limite de grifos atingido' });
+            const d = await leisTextoColl.findOne({ _id: req.params.lei }, { projection: { itens: 1 } });
+            if (!d) return res.status(503).json({ success: false, error: 'Lei indisponível' });
+            const porId = new Map(d.itens.map(i => [i.id, i]));
+            const docs = [];
+            for (const t of trechos) {
+                if (typeof t.dispId !== 'string') continue;
+                const item = porId.get(t.dispId);
+                const ini = Number(t.ini), fim = Number(t.fim);
+                if (!item || !item.texto || !Number.isInteger(ini) || !Number.isInteger(fim) || ini < 0 || fim <= ini || fim > item.texto.length) continue;
+                const trecho = item.texto.slice(ini, fim);
+                if (!trecho.trim()) continue;
+                docs.push({ userId: req.userId, lei: req.params.lei, dispId: t.dispId, ini, fim, trecho, cor, orfao: false, criadoEm: new Date() });
+            }
+            if (!docs.length) return res.status(400).json({ success: false, error: 'Seleção inválida' });
+            await leisGrifosColl.insertMany(docs);
+            res.json({ success: true, grifos: docs.map(g => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor, orfao: false })) });
+        });
+
+        app.delete('/api/leis/:lei/grifos/:id', requireAuth, async (req, res) => {
+            if (!leiValida(req.params.lei) || !ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, error: 'Pedido inválido' });
+            const r = await leisGrifosColl.deleteOne({ _id: new ObjectId(req.params.id), userId: req.userId, lei: req.params.lei });
+            res.json({ success: true, removidos: r.deletedCount });
+        });
+
+        // Anotação por dispositivo (na prática, por artigo). Texto vazio apaga.
+        app.put('/api/leis/:lei/notas', requireAuth, async (req, res) => {
+            if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
+            const dispId = typeof req.body.dispId === 'string' ? req.body.dispId : '';
+            const texto = typeof req.body.texto === 'string' ? req.body.texto.trim().slice(0, LEIS_MAX_NOTA) : '';
+            const d = await leisTextoColl.findOne({ _id: req.params.lei, 'itens.id': dispId }, { projection: { _id: 1 } });
+            if (!d) return res.status(400).json({ success: false, error: 'Dispositivo inválido' });
+            const filtro = { userId: req.userId, lei: req.params.lei, dispId };
+            if (!texto) {
+                await leisNotasColl.deleteOne(filtro);
+                return res.json({ success: true, removida: true });
+            }
+            await leisNotasColl.updateOne(filtro, { $set: { texto, atualizadoEm: new Date() } }, { upsert: true });
+            res.json({ success: true });
         });
 
         httpServer.listen(PORT, () => console.log(`Rodando em http://localhost:${PORT}`));
