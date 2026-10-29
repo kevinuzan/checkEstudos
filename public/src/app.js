@@ -1601,6 +1601,7 @@ async function trocarView(nome) {
     document.getElementById('view-estudos').style.display = nome === 'estudos' ? 'block' : 'none';
     document.getElementById('view-flashcards').style.display = nome === 'flashcards' ? 'block' : 'none';
     document.getElementById('view-questoes').style.display = nome === 'questoes' ? 'block' : 'none';
+    document.getElementById('view-leis').style.display = nome === 'leis' ? 'block' : 'none';
     document.getElementById('view-jogo').style.display = nome === 'jogo' ? 'block' : 'none';
     document.getElementById('view-estatisticas').style.display = nome === 'estatisticas' ? 'block' : 'none';
     document.getElementById('view-analise').style.display = nome === 'analise' ? 'block' : 'none';
@@ -1611,6 +1612,7 @@ async function trocarView(nome) {
     document.getElementById('tab-estudos').classList.toggle('ativo', nome === 'estudos');
     document.getElementById('tab-flashcards').classList.toggle('ativo', nome === 'flashcards');
     document.getElementById('tab-questoes').classList.toggle('ativo', nome === 'questoes');
+    document.getElementById('tab-leis').classList.toggle('ativo', nome === 'leis');
     document.getElementById('tab-jogo').classList.toggle('ativo', nome === 'jogo');
     document.getElementById('tab-estatisticas').classList.toggle('ativo', nome === 'estatisticas');
     document.getElementById('tab-analise').classList.toggle('ativo', nome === 'analise');
@@ -1636,6 +1638,8 @@ async function trocarView(nome) {
     if (nome === 'estudos') await carregarPainelEstudos();
     if (nome === 'flashcards') await carregarFlashcards();
     if (nome === 'questoes') await carregarQuestoes();
+    if (nome === 'leis') await carregarLeis();
+    else leiEsconderBarra();
     if (nome === 'jogo') { mostrarSelecaoJogo(); await carregarPontuacaoJogo(); }
     if (nome === 'estatisticas') await carregarEstatisticas();
     if (nome === 'analise') await carregarAnaliseDesempenho();
@@ -2273,6 +2277,531 @@ async function confirmarRegistroQuestoes() {
     fecharModalRegistrarQuestoes();
     try { await atualizarStreak(); } catch (err) { /* não impede o registro */ }
     renderizarQuestoesFinal();
+}
+
+// ==================================================================
+// VIEW: LEIS (texto da lei + grifo marca-texto + anotações por artigo)
+// ==================================================================
+// O texto vem de GET /api/leis/:lei (compartilhado, atualizado pelo servidor a
+// partir do Planalto). Os grifos e notas do aluno vêm de /api/leis/:lei/meus.
+// Cada dispositivo é renderizado como <p data-id> com um <span class="lei-txt">
+// que contém SÓ o texto da lei: os deslocamentos (ini/fim) do grifo são
+// calculados em cima desse span, então nada mais pode entrar dentro dele.
+
+let leisLista = [];
+let leiAberta = null;                 // id da lei aberta (ex.: 'cf')
+let leiDados = null;                  // { lei, itens }
+let leiIdx = null;                    // índices derivados dos itens
+let leiMeus = { grifos: [], notas: [], alteracoes: {} };
+let leiBlocosAbertos = new Set();
+let leiBusca = '';
+let leiPrefs = { revogados: true, notasLeg: false, soMeus: false };
+let leiBuscaTimer = null;
+let leiSelTimer = null;
+let leiSelecaoPendente = null;        // [{dispId, ini, fim}] da seleção atual
+let leiGrifoToque = null;             // id do grifo tocado (modo remover)
+let leiOuvindoSelecao = false;
+
+function leiLerPrefs() {
+    try {
+        const salvo = JSON.parse(localStorage.getItem('leis_prefs') || '{}');
+        leiPrefs = { revogados: salvo.revogados !== false, notasLeg: !!salvo.notasLeg, soMeus: false };
+    } catch (err) { /* sem storage: fica no padrão */ }
+}
+function leiSalvarPrefs() {
+    try { localStorage.setItem('leis_prefs', JSON.stringify({ revogados: leiPrefs.revogados, notasLeg: leiPrefs.notasLeg })); } catch (err) { /* ignora */ }
+}
+
+async function carregarLeis() {
+    const el = document.getElementById('leis-conteudo');
+    leiLerPrefs();
+    if (!leiOuvindoSelecao) {
+        document.addEventListener('selectionchange', leiAoMudarSelecao);
+        leiOuvindoSelecao = true;
+    }
+    el.innerHTML = '<p class="questoes-vazio">Carregando leis...</p>';
+    try {
+        const res = await fetch('/api/leis');
+        const dados = await res.json();
+        if (!res.ok || !dados.success) throw new Error(dados.error || 'Falha');
+        leisLista = dados.leis;
+    } catch (err) {
+        el.innerHTML = '<p class="questoes-vazio">Não foi possível carregar as leis agora. Tente de novo em instantes.</p>';
+        return;
+    }
+    if (leiAberta) return leiAbrir(leiAberta);
+    renderizarLeisInicio();
+}
+
+function renderizarLeisInicio() {
+    const el = document.getElementById('leis-conteudo');
+    leiEsconderBarra();
+    el.innerHTML = `
+        <section class="painel-bloco">
+            <div class="painel-bloco-header"><h2>📖 Leis</h2></div>
+            <p class="questoes-topico-sub">Leia o texto atualizado, grife como num marca-texto e anote por artigo.</p>
+            ${leisLista.map(l => `
+                <div class="questoes-topico-card">
+                    <div class="questoes-topico-titulo">${escaparHtml(l.nome)}</div>
+                    <div class="questoes-topico-sub">${l.disponivel
+                        ? `${l.totalArtigos} artigos · conferida em ${leiFormatarData(l.verificadoEm)}`
+                        : 'Texto ainda sendo carregado — tente de novo em instantes.'}</div>
+                    <button type="button" data-lei="${escaparHtml(l.id)}" onclick="leiAbrir(this.dataset.lei)" ${l.disponivel ? '' : 'disabled'}>Abrir</button>
+                </div>`).join('')}
+        </section>`;
+}
+
+function leiFormatarData(valor) {
+    if (!valor) return '—';
+    const d = new Date(valor);
+    return isNaN(d) ? '—' : d.toLocaleDateString('pt-BR');
+}
+
+async function leiAbrir(id) {
+    const el = document.getElementById('leis-conteudo');
+    el.innerHTML = '<p class="questoes-vazio">Carregando o texto...</p>';
+    try {
+        const [r1, r2] = await Promise.all([fetch(`/api/leis/${encodeURIComponent(id)}`), fetch(`/api/leis/${encodeURIComponent(id)}/meus`)]);
+        const d1 = await r1.json(), d2 = await r2.json();
+        if (!r1.ok || !d1.success) throw new Error(d1.error || 'Falha ao carregar a lei');
+        leiDados = d1;
+        leiMeus = (r2.ok && d2.success) ? d2 : { grifos: [], notas: [], alteracoes: {} };
+    } catch (err) {
+        el.innerHTML = `<p class="questoes-vazio">${escaparHtml(err.message)}</p><button type="button" class="btn-secundario" onclick="leiVoltar()">← Voltar</button>`;
+        return;
+    }
+    leiAberta = id;
+    leiBusca = '';
+    leiIndexar();
+    renderizarLei();
+}
+
+function leiVoltar() {
+    leiAberta = null; leiDados = null; leiIdx = null;
+    renderizarLeisInicio();
+}
+
+// Índices: blocos (Títulos/ADCT) e artigos com seus filhos.
+function leiIndexar() {
+    const blocos = [];
+    const arts = new Map();          // artId -> itens do artigo (caput, §, incisos...)
+    let bloco = null;
+    for (const it of leiDados.itens) {
+        if (it.k === 'est' && ['parte', 'livro', 'titulo', 'adct'].includes(it.tipo)) {
+            bloco = { id: it.id, rot: it.rot, nome: it.nome, itens: [], artIds: [] };
+            blocos.push(bloco);
+            continue;
+        }
+        if (!bloco) { bloco = { id: 'bloco-inicial', rot: 'Texto', nome: '', itens: [], artIds: [] }; blocos.push(bloco); }
+        bloco.itens.push(it);
+        if (it.k === 'art') {
+            bloco.artIds.push(it.id);
+            arts.set(it.id, [it]);
+        } else if (it.k !== 'est' && it.art && arts.has(it.art)) {
+            arts.get(it.art).push(it);
+        }
+    }
+    const blocoDoArt = new Map();
+    blocos.forEach(b => b.artIds.forEach(a => blocoDoArt.set(a, b.id)));
+    leiIdx = { blocos, arts, blocoDoArt };
+}
+
+function leiGrifosPorDisp() {
+    const m = new Map();
+    for (const g of leiMeus.grifos) {
+        if (g.orfao) continue;
+        if (!m.has(g.dispId)) m.set(g.dispId, []);
+        m.get(g.dispId).push(g);
+    }
+    return m;
+}
+const leiNotaDoArt = (artId) => leiMeus.notas.find(n => n.dispId === artId) || null;
+const leiArtTemMarca = (artId) => leiMeus.notas.some(n => n.dispId === artId)
+    || leiMeus.grifos.some(g => g.dispId.split('.')[0] === artId);
+
+function leiNormalizar(s) {
+    return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+function renderizarLei() {
+    const el = document.getElementById('leis-conteudo');
+    const l = leiDados.lei;
+    el.innerHTML = `
+        <section class="painel-bloco">
+            <div class="painel-bloco-header">
+                <h2>📖 ${escaparHtml(l.nome)}</h2>
+                <button type="button" class="btn-secundario" onclick="leiVoltar()">← Leis</button>
+            </div>
+            <p class="questoes-topico-sub">Texto do Planalto · conferido em ${leiFormatarData(l.verificadoEm)}${l.atualizadoEm ? ` · última alteração do texto em ${leiFormatarData(l.atualizadoEm)}` : ''}</p>
+            <div class="lei-ferramentas">
+                <input type="search" id="lei-busca" placeholder="Buscar: art. 5, ou uma palavra" value="${escaparHtml(leiBusca)}" oninput="leiBuscarDigitando()" autocomplete="off">
+                <button type="button" class="btn-secundario" onclick="leiAlternarMudancas()">🔔 O que mudou</button>
+            </div>
+            <div class="lei-opcoes">
+                <label><input type="checkbox" ${leiPrefs.soMeus ? 'checked' : ''} onchange="leiPref('soMeus', this.checked)"> Só meus grifos e anotações</label>
+                <label><input type="checkbox" ${leiPrefs.revogados ? 'checked' : ''} onchange="leiPref('revogados', this.checked)"> Mostrar revogados</label>
+                <label><input type="checkbox" ${leiPrefs.notasLeg ? 'checked' : ''} onchange="leiPref('notasLeg', this.checked)"> Mostrar "Redação dada…"</label>
+            </div>
+            <div id="lei-mudancas" style="display:none;"></div>
+            <div id="lei-leitura" class="lei-leitura"></div>
+        </section>`;
+    leiRenderLeitura();
+}
+
+function leiPref(chave, valor) {
+    leiPrefs[chave] = valor;
+    leiSalvarPrefs();
+    leiRenderLeitura();
+}
+
+function leiBuscarDigitando() {
+    clearTimeout(leiBuscaTimer);
+    leiBuscaTimer = setTimeout(() => {
+        leiBusca = document.getElementById('lei-busca').value.trim();
+        leiRenderLeitura();
+    }, 250);
+}
+
+// Decide o que mostrar na área de leitura: busca > "só meus" > lista de blocos.
+function leiRenderLeitura() {
+    const area = document.getElementById('lei-leitura');
+    if (!area || !leiIdx) return;
+    leiEsconderBarra();
+    if (leiBusca) {
+        const ids = leiBuscarArtigos(leiBusca);
+        area.innerHTML = ids.length
+            ? `<p class="questoes-topico-sub">${ids.length}${ids.length >= 40 ? '+' : ''} artigo(s) encontrado(s)</p>${ids.map(leiHtmlArtigo).join('')}`
+            : '<p class="questoes-vazio">Nada encontrado.</p>';
+        return;
+    }
+    if (leiPrefs.soMeus) {
+        const ids = [...leiIdx.arts.keys()].filter(leiArtTemMarca);
+        area.innerHTML = ids.length
+            ? ids.map(leiHtmlArtigo).join('')
+            : '<p class="questoes-vazio">Você ainda não grifou nem anotou nada nesta lei. Selecione um trecho do texto para grifar.</p>';
+        return;
+    }
+    area.innerHTML = leiIdx.blocos.map(b => leiHtmlBloco(b)).join('');
+}
+
+function leiBuscarArtigos(q) {
+    const m = q.match(/^(?:art(?:igo)?\.?\s*)?(\d+)\s*[º°o]?\s*(?:-?\s*([a-z]))?\s*$/i);
+    const ids = [];
+    if (m) {
+        const base = `art-${m[1]}${m[2] ? '-' + m[2].toUpperCase() : ''}`;
+        if (leiIdx.arts.has(base)) ids.push(base);
+        if (leiIdx.arts.has('adct-' + base)) ids.push('adct-' + base);
+        if (ids.length) return ids;
+    }
+    const termo = leiNormalizar(q);
+    if (termo.length < 3) return [];
+    for (const [artId, itens] of leiIdx.arts) {
+        if (itens.some(i => leiNormalizar(i.texto).includes(termo))) {
+            ids.push(artId);
+            if (ids.length >= 40) break;
+        }
+    }
+    return ids;
+}
+
+function leiHtmlBloco(b) {
+    const aberto = leiBlocosAbertos.has(b.id);
+    const marcas = b.artIds.filter(leiArtTemMarca).length;
+    return `
+        <div class="lei-bloco" data-bloco="${escaparHtml(b.id)}">
+            <button type="button" class="lei-bloco-titulo" onclick="leiAlternarBloco(this.closest('.lei-bloco').dataset.bloco)">
+                <span class="lei-seta">${aberto ? '▾' : '▸'}</span>
+                <span><strong>${escaparHtml(b.rot)}</strong>${b.nome ? ' — ' + escaparHtml(b.nome) : ''}</span>
+                ${marcas ? `<span class="lei-contador" title="Artigos com grifo ou anotação seus">${marcas}</span>` : ''}
+            </button>
+            ${aberto ? `<div class="lei-bloco-corpo">${leiHtmlItensBloco(b)}</div>` : ''}
+        </div>`;
+}
+
+function leiHtmlItensBloco(b) {
+    // Agrupa em artigos (com filhos) e mostra Capítulos/Seções como subtítulos.
+    return b.itens.map(it => {
+        if (it.k === 'est') {
+            return `<div class="lei-subtitulo"><strong>${escaparHtml(it.rot)}</strong>${it.nome ? ' — ' + escaparHtml(it.nome) : ''}</div>`;
+        }
+        return it.k === 'art' ? leiHtmlArtigo(it.id) : '';
+    }).join('');
+}
+
+function leiAlternarBloco(id) {
+    if (leiBlocosAbertos.has(id)) leiBlocosAbertos.delete(id); else leiBlocosAbertos.add(id);
+    const b = leiIdx.blocos.find(x => x.id === id);
+    const caixa = document.querySelector(`.lei-bloco[data-bloco="${CSS.escape(id)}"]`);
+    if (b && caixa) caixa.outerHTML = leiHtmlBloco(b);
+}
+
+// Texto de um dispositivo com os grifos aplicados (<mark>), sem mudar o texto.
+function leiTextoComGrifos(item, grifos) {
+    const texto = item.texto || '';
+    if (!grifos || !grifos.length) return escaparHtml(texto);
+    const pontos = new Set([0, texto.length]);
+    grifos.forEach(g => { pontos.add(Math.min(g.ini, texto.length)); pontos.add(Math.min(g.fim, texto.length)); });
+    const ordenados = [...pontos].sort((a, b) => a - b);
+    let html = '';
+    for (let i = 0; i < ordenados.length - 1; i++) {
+        const a = ordenados[i], b = ordenados[i + 1];
+        if (a === b) continue;
+        const parte = escaparHtml(texto.slice(a, b));
+        let topo = null;
+        for (const g of grifos) if (g.ini <= a && g.fim >= b) topo = g;   // o mais recente vence
+        html += topo ? `<mark class="lei-grifo lei-cor-${Number(topo.cor) || 1}" data-gid="${escaparHtml(topo.id)}" onclick="leiToqueGrifo(this.dataset.gid)">${parte}</mark>` : parte;
+    }
+    return html;
+}
+
+function leiHtmlArtigo(artId) {
+    const itens = leiIdx.arts.get(artId);
+    if (!itens) return '';
+    const caput = itens[0];
+    if (caput.revogado && !leiPrefs.revogados) return '';
+    const porDisp = leiGrifosPorDisp();
+    const corpo = itens.map(it => {
+        if (it.revogado && !leiPrefs.revogados) return '';
+        const notas = (leiPrefs.notasLeg && it.notas && it.notas.length)
+            ? `<span class="lei-notas-leg"> (${escaparHtml(it.notas.join('; '))})</span>` : '';
+        return `<p class="lei-disp lei-k-${it.k} lei-nivel-${it.nivel || 0}${it.revogado ? ' lei-revogado' : ''}" data-id="${escaparHtml(it.id)}"><span class="lei-txt">${leiTextoComGrifos(it, porDisp.get(it.id))}</span>${notas}</p>`;
+    }).join('');
+    const alt = leiMeus.alteracoes && leiMeus.alteracoes[artId];
+    const aviso = alt ? `<div class="lei-alerta">⚠ Este artigo foi ${escaparHtml(({ alterado: 'alterado', incluido: 'incluído', revogado: 'revogado', removido: 'removido' })[alt.tipo] || 'alterado')} em ${leiFormatarData(alt.em)}, depois dos seus grifos/anotações. Confira se ainda fazem sentido.</div>` : '';
+    const orfaos = leiMeus.grifos.filter(g => g.orfao && g.dispId.split('.')[0] === artId)
+        .map(g => `<div class="lei-orfao">Grifo que não existe mais no texto: “${escaparHtml(g.trecho)}” <button type="button" class="btn-secundario" data-gid="${escaparHtml(g.id)}" onclick="leiRemoverGrifo(this.dataset.gid)">Remover</button></div>`).join('');
+    return `
+        <div class="lei-art" id="lei-art-${escaparHtml(artId)}" data-art="${escaparHtml(artId)}">
+            ${aviso}
+            ${corpo}
+            ${orfaos}
+            <div class="lei-art-acoes"><button type="button" class="btn-secundario" onclick="leiAbrirNota(this.closest('.lei-art').dataset.art)">📝 ${leiNotaDoArt(artId) ? 'Editar anotação' : 'Anotar'}</button></div>
+            <div class="lei-nota-area">${leiHtmlNotaLeitura(artId)}</div>
+        </div>`;
+}
+
+function leiHtmlNotaLeitura(artId) {
+    const n = leiNotaDoArt(artId);
+    if (!n) return '';
+    return `<div class="lei-nota"><div class="lei-nota-titulo">📝 Minha anotação</div><div class="lei-nota-texto">${escaparHtml(n.texto)}</div></div>`;
+}
+
+// ---------- Anotações ----------
+
+function leiAbrirNota(artId) {
+    const caixa = document.getElementById('lei-art-' + artId);
+    if (!caixa) return;
+    const area = caixa.querySelector('.lei-nota-area');
+    const n = leiNotaDoArt(artId);
+    area.innerHTML = `
+        <div class="lei-nota lei-nota-edicao">
+            <textarea id="lei-nota-texto" rows="4" maxlength="5000" placeholder="Escreva sua anotação para este artigo...">${escaparHtml(n ? n.texto : '')}</textarea>
+            <div class="modal-actions">
+                <button type="button" class="btn-cancelar" onclick="leiCancelarNota(this.closest('.lei-art').dataset.art)">Cancelar</button>
+                <button type="button" onclick="leiSalvarNota(this.closest('.lei-art').dataset.art)">Salvar</button>
+            </div>
+        </div>`;
+    leiEsconderBarra();
+    const ta = document.getElementById('lei-nota-texto');
+    if (ta) ta.focus();
+}
+
+function leiCancelarNota(artId) {
+    const caixa = document.getElementById('lei-art-' + artId);
+    if (caixa) caixa.querySelector('.lei-nota-area').innerHTML = leiHtmlNotaLeitura(artId);
+}
+
+async function leiSalvarNota(artId) {
+    const ta = document.getElementById('lei-nota-texto');
+    if (!ta) return;
+    const texto = ta.value.trim();
+    try {
+        const res = await fetch(`/api/leis/${encodeURIComponent(leiAberta)}/notas`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dispId: artId, texto })
+        });
+        const dados = await res.json();
+        if (!res.ok || !dados.success) throw new Error(dados.error || 'Falha ao salvar');
+    } catch (err) {
+        return alert('Não foi possível salvar a anotação agora. Tente de novo.');
+    }
+    leiMeus.notas = leiMeus.notas.filter(n => n.dispId !== artId);
+    if (texto) leiMeus.notas.push({ dispId: artId, texto, atualizadoEm: new Date().toISOString() });
+    const caixa = document.getElementById('lei-art-' + artId);
+    if (caixa) caixa.outerHTML = leiHtmlArtigo(artId);
+}
+
+// ---------- Grifos (marca-texto) ----------
+
+function leiEsconderBarra() {
+    const b = document.getElementById('lei-barra');
+    if (b) b.style.display = 'none';
+    leiSelecaoPendente = null;
+    leiGrifoToque = null;
+}
+
+// Converte a seleção do navegador em [{dispId, ini, fim}] (um por dispositivo tocado).
+function leiLerSelecao() {
+    const sel = window.getSelection();
+    const area = document.getElementById('lei-leitura');
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed || !area) return null;
+    const range = sel.getRangeAt(0);
+    if (!area.contains(range.commonAncestorContainer)) return null;
+    const trechos = [];
+    area.querySelectorAll('.lei-disp').forEach(p => {
+        if (!range.intersectsNode(p)) return;
+        const txt = p.querySelector('.lei-txt');
+        if (!txt) return;
+        const total = txt.textContent.length;
+        let ini = 0, fim = total;
+        if (txt.contains(range.startContainer)) {
+            const r = document.createRange(); r.selectNodeContents(txt); r.setEnd(range.startContainer, range.startOffset);
+            ini = r.toString().length;
+        }
+        if (txt.contains(range.endContainer)) {
+            const r = document.createRange(); r.selectNodeContents(txt); r.setEnd(range.endContainer, range.endOffset);
+            fim = r.toString().length;
+        }
+        const t = txt.textContent;
+        while (ini < fim && /\s/.test(t[ini])) ini++;
+        while (fim > ini && /\s/.test(t[fim - 1])) fim--;
+        if (fim > ini) trechos.push({ dispId: p.dataset.id, ini, fim });
+    });
+    return trechos.length ? trechos : null;
+}
+
+function leiAoMudarSelecao() {
+    if (viewAtual !== 'leis') return;
+    clearTimeout(leiSelTimer);
+    leiSelTimer = setTimeout(() => {
+        const trechos = leiLerSelecao();
+        if (!trechos) {
+            if (!leiGrifoToque) leiEsconderBarra();
+            return;
+        }
+        leiGrifoToque = null;
+        leiSelecaoPendente = trechos;
+        leiMostrarBarra('selecao');
+    }, 200);
+}
+
+function leiMostrarBarra(modo) {
+    let b = document.getElementById('lei-barra');
+    if (!b) {
+        b = document.createElement('div');
+        b.id = 'lei-barra';
+        b.className = 'lei-barra';
+        document.body.appendChild(b);
+    }
+    b.innerHTML = modo === 'selecao'
+        ? `<span class="lei-barra-rotulo">Grifar:</span>
+           ${[1, 2, 3, 4].map(c => `<button type="button" class="lei-cor-btn lei-cor-${c}" aria-label="Cor ${c}" onclick="leiGrifarSelecao(${c})"></button>`).join('')}
+           <button type="button" class="btn-secundario" onclick="leiAnotarSelecao()">📝 Anotar</button>`
+        : `<span class="lei-barra-rotulo">Grifo</span>
+           <button type="button" class="btn-secundario" onclick="leiRemoverGrifoToque()">🗑 Remover grifo</button>
+           <button type="button" class="btn-secundario" onclick="leiEsconderBarra()">Fechar</button>`;
+    b.style.display = 'flex';
+}
+
+async function leiGrifarSelecao(cor) {
+    const trechos = leiSelecaoPendente;
+    if (!trechos) return;
+    try {
+        const res = await fetch(`/api/leis/${encodeURIComponent(leiAberta)}/grifos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ trechos, cor })
+        });
+        const dados = await res.json();
+        if (!res.ok || !dados.success) throw new Error(dados.error || 'Falha ao grifar');
+        leiMeus.grifos.push(...dados.grifos);
+    } catch (err) {
+        return alert(err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível grifar agora. Tente de novo.');
+    }
+    const arts = [...new Set(trechos.map(t => t.dispId.split('.')[0]))];
+    const sel = window.getSelection(); if (sel) sel.removeAllRanges();
+    leiEsconderBarra();
+    arts.forEach(a => {
+        const caixa = document.getElementById('lei-art-' + a);
+        if (caixa) caixa.outerHTML = leiHtmlArtigo(a);
+    });
+}
+
+function leiAnotarSelecao() {
+    const trechos = leiSelecaoPendente;
+    if (!trechos) return;
+    const artId = trechos[0].dispId.split('.')[0];
+    const sel = window.getSelection(); if (sel) sel.removeAllRanges();
+    leiAbrirNota(artId);
+    const caixa = document.getElementById('lei-art-' + artId);
+    if (caixa) caixa.scrollIntoView({ block: 'center' });
+}
+
+function leiToqueGrifo(gid) {
+    // Se há seleção em andamento, o toque é parte dela, não um pedido de remoção.
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    leiGrifoToque = gid;
+    leiMostrarBarra('grifo');
+}
+
+function leiRemoverGrifoToque() { return leiRemoverGrifo(leiGrifoToque); }
+
+async function leiRemoverGrifo(gid) {
+    if (!gid) return;
+    const g = leiMeus.grifos.find(x => x.id === gid);
+    try {
+        const res = await fetch(`/api/leis/${encodeURIComponent(leiAberta)}/grifos/${encodeURIComponent(gid)}`, { method: 'DELETE' });
+        const dados = await res.json();
+        if (!res.ok || !dados.success) throw new Error('Falha');
+    } catch (err) {
+        return alert('Não foi possível remover o grifo agora. Tente de novo.');
+    }
+    leiMeus.grifos = leiMeus.grifos.filter(x => x.id !== gid);
+    leiEsconderBarra();
+    if (g) {
+        const a = g.dispId.split('.')[0];
+        const caixa = document.getElementById('lei-art-' + a);
+        if (caixa) caixa.outerHTML = leiHtmlArtigo(a);
+    }
+}
+
+// ---------- O que mudou / navegação ----------
+
+async function leiAlternarMudancas() {
+    const box = document.getElementById('lei-mudancas');
+    if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.innerHTML = '<p class="questoes-vazio">Carregando...</p>';
+    try {
+        const res = await fetch(`/api/leis/${encodeURIComponent(leiAberta)}/mudancas`);
+        const dados = await res.json();
+        if (!res.ok || !dados.success) throw new Error('Falha');
+        const rot = { alterado: 'alterado', incluido: 'incluído', revogado: 'revogado', removido: 'removido' };
+        box.innerHTML = dados.mudancas.length
+            ? dados.mudancas.map(m => `
+                <div class="lei-mud-grupo"><strong>${leiFormatarData(m.em)}</strong>
+                    <div class="lei-mud-itens">${m.mudancas.map(x => `<button type="button" class="btn-secundario" data-art="${escaparHtml(x.art)}" onclick="leiIrParaArtigo(this.dataset.art)">${escaparHtml(x.rotulo)} · ${escaparHtml(rot[x.tipo] || x.tipo)}</button>`).join('')}</div>
+                </div>`).join('')
+            : '<p class="questoes-topico-sub">Nenhuma mudança registrada desde que o app começou a acompanhar esta lei.</p>';
+    } catch (err) {
+        box.innerHTML = '<p class="questoes-vazio">Não foi possível carregar as mudanças agora.</p>';
+    }
+}
+
+function leiIrParaArtigo(artId) {
+    leiBusca = ''; leiPrefs.soMeus = false;
+    const inp = document.getElementById('lei-busca'); if (inp) inp.value = '';
+    const blocoId = leiIdx.blocoDoArt.get(artId);
+    if (blocoId) leiBlocosAbertos.add(blocoId);
+    renderizarLei();
+    const alvo = document.getElementById('lei-art-' + artId);
+    if (alvo) {
+        alvo.scrollIntoView({ block: 'center' });
+        alvo.classList.add('lei-destaque');
+        setTimeout(() => alvo.classList.remove('lei-destaque'), 2500);
+    }
 }
 
 // ==================================================================
