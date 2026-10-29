@@ -2345,7 +2345,7 @@ function renderizarLeisInicio() {
                     <div class="questoes-topico-titulo">${escaparHtml(l.nome)}</div>
                     <div class="questoes-topico-sub">${l.disponivel
                         ? `${l.totalArtigos} artigos · conferida em ${leiFormatarData(l.verificadoEm)}`
-                        : 'Texto ainda sendo carregado — tente de novo em instantes.'}</div>
+                        : `Texto ainda sendo carregado — tente de novo em instantes.${l.erro ? ' (' + escaparHtml(l.erro) + ')' : ''}`}</div>
                     <button type="button" data-lei="${escaparHtml(l.id)}" onclick="leiAbrir(this.dataset.lei)" ${l.disponivel ? '' : 'disabled'}>Abrir</button>
                 </div>`).join('')}
         </section>`;
