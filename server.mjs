@@ -3558,7 +3558,7 @@ async function startServer() {
             }
             res.json({
                 success: true,
-                grifos: grifos.map(g => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor, orfao: !!g.orfao })),
+                grifos: grifos.map(g => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor, orfao: !!g.orfao, nota: g.nota || '' })),
                 notas: notas.map(n => ({ dispId: n.dispId, texto: n.texto, atualizadoEm: n.atualizadoEm })),
                 alteracoes
             });
@@ -3588,8 +3588,21 @@ async function startServer() {
                 docs.push({ userId: req.userId, lei: req.params.lei, dispId: t.dispId, ini, fim, trecho, cor, orfao: false, criadoEm: new Date() });
             }
             if (!docs.length) return res.status(400).json({ success: false, error: 'Seleção inválida' });
+            // Anotação sobre o trecho: fica no próprio grifo (um grifo pode ter nota).
+            const nota = typeof req.body.nota === 'string' ? req.body.nota.trim().slice(0, LEIS_MAX_NOTA) : '';
+            if (nota) docs[0].nota = nota;
             await leisGrifosColl.insertMany(docs);
-            res.json({ success: true, grifos: docs.map(g => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor, orfao: false })) });
+            res.json({ success: true, grifos: docs.map(g => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor, orfao: false, nota: g.nota || '' })) });
+        });
+
+        // Define, troca ou apaga a anotação de um grifo existente (texto vazio apaga).
+        app.patch('/api/leis/:lei/grifos/:id', requireAuth, async (req, res) => {
+            if (!leiValida(req.params.lei) || !ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, error: 'Pedido inválido' });
+            const nota = typeof req.body.nota === 'string' ? req.body.nota.trim().slice(0, LEIS_MAX_NOTA) : '';
+            const filtro = { _id: new ObjectId(req.params.id), userId: req.userId, lei: req.params.lei };
+            const r = await leisGrifosColl.updateOne(filtro, nota ? { $set: { nota } } : { $unset: { nota: '' } });
+            if (!r.matchedCount) return res.status(404).json({ success: false, error: 'Grifo não encontrado' });
+            res.json({ success: true });
         });
 
         app.delete('/api/leis/:lei/grifos/:id', requireAuth, async (req, res) => {

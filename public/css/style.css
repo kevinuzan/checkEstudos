@@ -4850,3 +4850,9 @@ input[type="checkbox"] {
 }
 .lei-barra-rotulo { font-size: 13px; font-weight: 700; color: var(--text-muted); }
 .lei-cor-btn { width: 34px; height: 34px; min-width: 34px; padding: 0; border-radius: 50%; border: 2px solid var(--border); }
+.lei-grifo-nota::after { content: "📝"; font-size: 0.7em; margin-left: 2px; vertical-align: super; }
+.lei-nota-trecho .btn-secundario { margin-top: 6px; padding: 3px 10px; font-size: 12.5px; }
+.lei-barra-nota { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 6px; }
+.lei-barra-citacao { font-size: 12.5px; color: var(--text-muted); font-style: italic; }
+.lei-barra-nota textarea { width: 100%; box-sizing: border-box; resize: vertical; }
+.lei-barra-nota .modal-actions { margin-top: 2px; }

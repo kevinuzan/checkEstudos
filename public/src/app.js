@@ -2549,7 +2549,7 @@ function leiTextoComGrifos(item, grifos) {
         const parte = escaparHtml(texto.slice(a, b));
         let topo = null;
         for (const g of grifos) if (g.ini <= a && g.fim >= b) topo = g;   // o mais recente vence
-        html += topo ? `<mark class="lei-grifo lei-cor-${Number(topo.cor) || 1}" data-gid="${escaparHtml(topo.id)}" onclick="leiToqueGrifo(this.dataset.gid)">${parte}</mark>` : parte;
+        html += topo ? `<mark class="lei-grifo lei-cor-${Number(topo.cor) || 1}${topo.nota ? ' lei-grifo-nota' : ''}" data-gid="${escaparHtml(topo.id)}" onclick="leiToqueGrifo(this.dataset.gid)">${parte}</mark>` : parte;
     }
     return html;
 }
@@ -2568,6 +2568,8 @@ function leiHtmlArtigo(artId) {
     }).join('');
     const alt = leiMeus.alteracoes && leiMeus.alteracoes[artId];
     const aviso = alt ? `<div class="lei-alerta">⚠ Este artigo foi ${escaparHtml(({ alterado: 'alterado', incluido: 'incluído', revogado: 'revogado', removido: 'removido' })[alt.tipo] || 'alterado')} em ${leiFormatarData(alt.em)}, depois dos seus grifos/anotações. Confira se ainda fazem sentido.</div>` : '';
+    const notasTrecho = leiMeus.grifos.filter(g => g.nota && !g.orfao && g.dispId.split('.')[0] === artId)
+        .map(g => `<div class="lei-nota lei-nota-trecho"><div class="lei-nota-titulo">📝 Sobre “${escaparHtml(g.trecho.length > 90 ? g.trecho.slice(0, 90) + '…' : g.trecho)}”</div><div class="lei-nota-texto">${escaparHtml(g.nota)}</div><button type="button" class="btn-secundario" data-gid="${escaparHtml(g.id)}" onclick="leiEditarNotaDoGrifo(this.dataset.gid)">Editar</button></div>`).join('');
     const orfaos = leiMeus.grifos.filter(g => g.orfao && g.dispId.split('.')[0] === artId)
         .map(g => `<div class="lei-orfao">Grifo que não existe mais no texto: “${escaparHtml(g.trecho)}” <button type="button" class="btn-secundario" data-gid="${escaparHtml(g.id)}" onclick="leiRemoverGrifo(this.dataset.gid)">Remover</button></div>`).join('');
     return `
@@ -2575,6 +2577,7 @@ function leiHtmlArtigo(artId) {
             ${aviso}
             ${corpo}
             ${orfaos}
+            ${notasTrecho}
             <div class="lei-art-acoes"><button type="button" class="btn-secundario" onclick="leiAbrirNota(this.closest('.lei-art').dataset.art)">📝 ${leiNotaDoArt(artId) ? 'Editar anotação' : 'Anotar'}</button></div>
             <div class="lei-nota-area">${leiHtmlNotaLeitura(artId)}</div>
         </div>`;
@@ -2632,14 +2635,26 @@ async function leiSalvarNota(artId) {
     if (caixa) caixa.outerHTML = leiHtmlArtigo(artId);
 }
 
-// ---------- Grifos (marca-texto) ----------
+// ---------- Grifos (marca-texto) e anotação de trecho ----------
+// A barra inferior tem 3 modos: 'selecao' (grifar/anotar o trecho selecionado),
+// 'grifo' (tocou num grifo: remover/anotar) e 'nota' (editor de texto).
+// No celular, tocar num botão da barra faz o navegador soltar a seleção ANTES do
+// clique chegar; por isso a seleção fica guardada em leiSelecaoPendente e a barra
+// só some depois de um atraso — e esse atraso é cancelado quando a pessoa toca nela.
+
+let leiHideTimer = null;
+let leiNotaModo = null;               // { tipo: 'nova' } ou { tipo: 'editar', gid }
 
 function leiEsconderBarra() {
+    clearTimeout(leiHideTimer);
     const b = document.getElementById('lei-barra');
     if (b) b.style.display = 'none';
     leiSelecaoPendente = null;
     leiGrifoToque = null;
+    leiNotaModo = null;
 }
+
+function leiBarraTocada() { clearTimeout(leiHideTimer); }
 
 // Converte a seleção do navegador em [{dispId, ini, fim}] (um por dispositivo tocado).
 function leiLerSelecao() {
@@ -2675,11 +2690,18 @@ function leiAoMudarSelecao() {
     if (viewAtual !== 'leis') return;
     clearTimeout(leiSelTimer);
     leiSelTimer = setTimeout(() => {
+        // Escrevendo uma anotação: a seleção some sozinha ao focar o campo; não mexe na barra.
+        if (leiNotaModo) return;
         const trechos = leiLerSelecao();
         if (!trechos) {
-            if (!leiGrifoToque) leiEsconderBarra();
+            // Sem seleção: some em ~1,5s (dá tempo de o toque num botão da barra chegar).
+            if (!leiGrifoToque && document.getElementById('lei-barra') && document.getElementById('lei-barra').style.display !== 'none') {
+                clearTimeout(leiHideTimer);
+                leiHideTimer = setTimeout(leiEsconderBarra, 1500);
+            }
             return;
         }
+        clearTimeout(leiHideTimer);
         leiGrifoToque = null;
         leiSelecaoPendente = trechos;
         leiMostrarBarra('selecao');
@@ -2692,58 +2714,120 @@ function leiMostrarBarra(modo) {
         b = document.createElement('div');
         b.id = 'lei-barra';
         b.className = 'lei-barra';
+        b.addEventListener('pointerdown', leiBarraTocada);   // cancela o "sumir" ao tocar na barra
         document.body.appendChild(b);
     }
-    b.innerHTML = modo === 'selecao'
-        ? `<span class="lei-barra-rotulo">Grifar:</span>
+    if (modo === 'selecao') {
+        b.innerHTML = `<span class="lei-barra-rotulo">Grifar:</span>
            ${[1, 2, 3, 4].map(c => `<button type="button" class="lei-cor-btn lei-cor-${c}" aria-label="Cor ${c}" onclick="leiGrifarSelecao(${c})"></button>`).join('')}
-           <button type="button" class="btn-secundario" onclick="leiAnotarSelecao()">📝 Anotar</button>`
-        : `<span class="lei-barra-rotulo">Grifo</span>
+           <button type="button" class="btn-secundario" onclick="leiAbrirEditorNota('nova')">📝 Anotar trecho</button>
+           <button type="button" class="btn-secundario" onclick="leiEsconderBarra()" aria-label="Fechar">✕</button>`;
+    } else if (modo === 'grifo') {
+        const g = leiMeus.grifos.find(x => x.id === leiGrifoToque);
+        b.innerHTML = `<span class="lei-barra-rotulo">Grifo</span>
+           <button type="button" class="btn-secundario" onclick="leiAbrirEditorNota('editar')">📝 ${g && g.nota ? 'Editar anotação' : 'Anotar'}</button>
            <button type="button" class="btn-secundario" onclick="leiRemoverGrifoToque()">🗑 Remover grifo</button>
-           <button type="button" class="btn-secundario" onclick="leiEsconderBarra()">Fechar</button>`;
+           <button type="button" class="btn-secundario" onclick="leiEsconderBarra()" aria-label="Fechar">✕</button>`;
+    } else {
+        const g = leiNotaModo && leiNotaModo.tipo === 'editar' ? leiMeus.grifos.find(x => x.id === leiNotaModo.gid) : null;
+        const citado = g ? g.trecho : (leiSelecaoPendente || []).map(t => leiTrechoTexto(t)).join(' … ');
+        b.innerHTML = `<div class="lei-barra-nota">
+            <div class="lei-barra-citacao">“${escaparHtml(citado.length > 140 ? citado.slice(0, 140) + '…' : citado)}”</div>
+            <textarea id="lei-barra-nota-texto" rows="3" maxlength="5000" placeholder="Sua anotação sobre este trecho...">${escaparHtml(g ? (g.nota || '') : '')}</textarea>
+            <div class="modal-actions">
+                <button type="button" class="btn-cancelar" onclick="leiEsconderBarra()">Cancelar</button>
+                <button type="button" onclick="leiSalvarNotaTrecho()">Salvar</button>
+            </div>
+        </div>`;
+    }
     b.style.display = 'flex';
 }
 
-async function leiGrifarSelecao(cor) {
+// Texto do trecho (para mostrar na citação), lido do que está na tela.
+function leiTrechoTexto(t) {
+    const it = leiDados && leiDados.itens.find(x => x.id === t.dispId);
+    return it ? it.texto.slice(t.ini, t.fim) : '';
+}
+
+function leiAbrirEditorNota(tipo) {
+    if (tipo === 'nova' && !leiSelecaoPendente) return;
+    if (tipo === 'editar' && !leiGrifoToque) return;
+    leiNotaModo = tipo === 'nova' ? { tipo: 'nova' } : { tipo: 'editar', gid: leiGrifoToque };
+    leiMostrarBarra('nota');
+    const ta = document.getElementById('lei-barra-nota-texto');
+    if (ta) ta.focus();
+}
+
+function leiAtualizarArtigosDe(dispIds) {
+    [...new Set(dispIds.map(d => d.split('.')[0]))].forEach(a => {
+        const caixa = document.getElementById('lei-art-' + a);
+        if (caixa) caixa.outerHTML = leiHtmlArtigo(a);
+    });
+}
+
+async function leiGrifarSelecao(cor, nota) {
     const trechos = leiSelecaoPendente;
     if (!trechos) return;
     try {
         const res = await fetch(`/api/leis/${encodeURIComponent(leiAberta)}/grifos`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ trechos, cor })
+            body: JSON.stringify({ trechos, cor, nota: nota || '' })
         });
         const dados = await res.json();
         if (!res.ok || !dados.success) throw new Error(dados.error || 'Falha ao grifar');
         leiMeus.grifos.push(...dados.grifos);
     } catch (err) {
-        return alert(err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível grifar agora. Tente de novo.');
+        return alert(err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível salvar agora. Tente de novo.');
     }
-    const arts = [...new Set(trechos.map(t => t.dispId.split('.')[0]))];
     const sel = window.getSelection(); if (sel) sel.removeAllRanges();
     leiEsconderBarra();
-    arts.forEach(a => {
-        const caixa = document.getElementById('lei-art-' + a);
-        if (caixa) caixa.outerHTML = leiHtmlArtigo(a);
-    });
+    leiAtualizarArtigosDe(trechos.map(t => t.dispId));
 }
 
-function leiAnotarSelecao() {
-    const trechos = leiSelecaoPendente;
-    if (!trechos) return;
-    const artId = trechos[0].dispId.split('.')[0];
-    const sel = window.getSelection(); if (sel) sel.removeAllRanges();
-    leiAbrirNota(artId);
-    const caixa = document.getElementById('lei-art-' + artId);
-    if (caixa) caixa.scrollIntoView({ block: 'center' });
+// Salva a anotação do editor da barra: cria grifo+nota (trecho novo) ou troca a nota de um grifo.
+async function leiSalvarNotaTrecho() {
+    const ta = document.getElementById('lei-barra-nota-texto');
+    if (!ta || !leiNotaModo) return;
+    const texto = ta.value.trim();
+    if (leiNotaModo.tipo === 'nova') {
+        if (!texto) return alert('Escreva a anotação (ou use as cores para só grifar).');
+        return leiGrifarSelecao(1, texto);
+    }
+    const g = leiMeus.grifos.find(x => x.id === leiNotaModo.gid);
+    if (!g) return leiEsconderBarra();
+    try {
+        const res = await fetch(`/api/leis/${encodeURIComponent(leiAberta)}/grifos/${encodeURIComponent(g.id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nota: texto })
+        });
+        const dados = await res.json();
+        if (!res.ok || !dados.success) throw new Error('Falha');
+    } catch (err) {
+        return alert('Não foi possível salvar a anotação agora. Tente de novo.');
+    }
+    g.nota = texto;
+    leiEsconderBarra();
+    leiAtualizarArtigosDe([g.dispId]);
 }
 
 function leiToqueGrifo(gid) {
     // Se há seleção em andamento, o toque é parte dela, não um pedido de remoção.
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed) return;
+    clearTimeout(leiHideTimer);
     leiGrifoToque = gid;
+    leiSelecaoPendente = null;
     leiMostrarBarra('grifo');
+}
+
+// Abre o editor a partir da lista de anotações do artigo (botão "Editar" da nota do trecho).
+function leiEditarNotaDoGrifo(gid) {
+    clearTimeout(leiHideTimer);
+    leiGrifoToque = gid;
+    leiSelecaoPendente = null;
+    leiAbrirEditorNota('editar');
 }
 
 function leiRemoverGrifoToque() { return leiRemoverGrifo(leiGrifoToque); }
@@ -2751,6 +2835,7 @@ function leiRemoverGrifoToque() { return leiRemoverGrifo(leiGrifoToque); }
 async function leiRemoverGrifo(gid) {
     if (!gid) return;
     const g = leiMeus.grifos.find(x => x.id === gid);
+    if (g && g.nota && !confirm('Este grifo tem uma anotação. Remover os dois?')) return;
     try {
         const res = await fetch(`/api/leis/${encodeURIComponent(leiAberta)}/grifos/${encodeURIComponent(gid)}`, { method: 'DELETE' });
         const dados = await res.json();
@@ -2760,11 +2845,7 @@ async function leiRemoverGrifo(gid) {
     }
     leiMeus.grifos = leiMeus.grifos.filter(x => x.id !== gid);
     leiEsconderBarra();
-    if (g) {
-        const a = g.dispId.split('.')[0];
-        const caixa = document.getElementById('lei-art-' + a);
-        if (caixa) caixa.outerHTML = leiHtmlArtigo(a);
-    }
+    if (g) leiAtualizarArtigosDe([g.dispId]);
 }
 
 // ---------- O que mudou / navegação ----------
