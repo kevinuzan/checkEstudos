@@ -3385,12 +3385,18 @@ async function startServer() {
         const LEIS_MAX_GRIFOS_POR_USUARIO = 5000;
         const LEIS_MAX_NOTA = 5000;
         const leisAtualizando = new Map();               // trava: 1 atualização por lei por vez
+        const leisUltimoErro = new Map();                // motivo da última falha (aparece na tela se não há texto)
 
         // Planalto serve ISO-8859-1; decodifica pelo charset declarado, com fallback.
+        // Aceita UTF-8 válido (arquivo salvo pelo navegador) ou Windows-1252/ISO-8859-1
+        // (original do Planalto). Se vier cheio de "�", os acentos já foram perdidos
+        // (arquivo salvo errado): melhor recusar do que gravar texto corrompido.
         function decodificarHtmlLei(buffer) {
-            const inicio = buffer.slice(0, 3000).toString('latin1');
-            const utf8 = /charset\s*=\s*["']?utf-?8/i.test(inicio);
-            return utf8 ? buffer.toString('utf8') : iconv.decode(buffer, 'ISO-8859-1');
+            let texto;
+            try { texto = new TextDecoder('utf-8', { fatal: true }).decode(buffer); }
+            catch (err) { texto = iconv.decode(buffer, 'win1252'); }
+            if ((texto.match(/\uFFFD/g) || []).length > 5) throw new Error('HTML com acentos corrompidos (caractere "�")');
+            return texto;
         }
 
         async function baixarHtmlLei(cfg) {
@@ -3433,6 +3439,7 @@ async function startServer() {
                     const veredito = validarLei(itens, cfg, anterior);
                     if (!veredito.ok) {
                         console.error(`[leis] ${leiId}: atualização recusada —`, veredito.motivos.join('; '));
+                        leisUltimoErro.set(leiId, `texto recusado pela verificação: ${veredito.motivos.join('; ')}`);
                         if (atual) await leisTextoColl.updateOne({ _id: leiId }, { $set: { verificadoEm: agora, ultimoErro: { em: agora, motivos: veredito.motivos } } });
                         return { ok: false, motivos: veredito.motivos };
                     }
@@ -3450,9 +3457,11 @@ async function startServer() {
                     } else {
                         await leisTextoColl.updateOne({ _id: leiId }, { $set: { verificadoEm: agora }, $unset: { ultimoErro: '' } });
                     }
+                    leisUltimoErro.delete(leiId);
                     return { ok: true, mudancas: dif.mudancas.length };
                 } catch (err) {
                     console.error(`[leis] ${leiId}: falha ao atualizar —`, err.message);
+                    leisUltimoErro.set(leiId, `falha ao obter o texto: ${err.message}`);
                     return { ok: false, motivos: [err.message] };
                 }
             })().finally(() => leisAtualizando.delete(leiId));
@@ -3469,8 +3478,13 @@ async function startServer() {
                     if (!existente) {
                         const arquivo = path.join(__dirname, 'ferramentas', 'dados', `${leiId === 'cf' ? 'constituicao' : leiId}.htm`);
                         if (fs.existsSync(arquivo)) {
-                            const r = await atualizarLei(leiId, decodificarHtmlLei(fs.readFileSync(arquivo)));
-                            if (r.ok) continue;
+                            try {
+                                const r = await atualizarLei(leiId, decodificarHtmlLei(fs.readFileSync(arquivo)));
+                                if (r.ok) continue;
+                            } catch (err) {
+                                console.error('[leis] arquivo local ignorado:', err.message);
+                                leisUltimoErro.set(leiId, `arquivo local ignorado: ${err.message}`);
+                            }
                         }
                         await atualizarLei(leiId);
                     } else if (!existente.verificadoEm || Date.now() - existente.verificadoEm.getTime() > LEIS_REVALIDAR_MS) {
@@ -3501,7 +3515,7 @@ async function startServer() {
         app.get('/api/leis/:lei', requireAuth, async (req, res) => {
             if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
             const d = await leisTextoColl.findOne({ _id: req.params.lei });
-            if (!d) return res.status(503).json({ success: false, error: 'O texto desta lei ainda está sendo carregado. Tente de novo em instantes.' });
+            if (!d) return res.status(503).json({ success: false, error: 'O texto desta lei ainda está sendo carregado. Tente de novo em instantes.', detalhe: leisUltimoErro.get(req.params.lei) || null });
             // Revalida em segundo plano (sem segurar a resposta).
             if (!d.verificadoEm || Date.now() - d.verificadoEm.getTime() > LEIS_REVALIDAR_MS) atualizarLei(req.params.lei);
             res.json({

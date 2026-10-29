@@ -23,7 +23,7 @@ export const LEIS = {
         id: 'cf',
         nome: 'Constituição Federal',
         sigla: 'CF/88',
-        url: 'https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm',
+        url: 'https://www.planalto.gov.br/ccivil_03/constituicao/constituicaocompilado.htm',
         // Piso de artigos (CF + ADCT) abaixo do qual o parse é considerado quebrado.
         minArtigos: 300,
         // A CF tem o ADCT na mesma página; seus artigos recomeçam do 1º.
@@ -35,8 +35,10 @@ const RE_NOTA = /\((?:Redação dada|Redação anterior|Incluíd[oa]|Revogad[oa]
 
 const RE_ESTRUTURA = /^(PARTE|LIVRO|TÍTULO|CAPÍTULO|SEÇÃO|SUBSEÇÃO)\s+([IVXLCDM]+(?:-[A-Z])?|ÚNIC[OA]|GERAL|ESPECIAL)\b/i;
 const RE_ARTIGO = /^Art\.?\s*(\d+)\s*(?:[º°o]|\.)?\s*(?:-\s*([A-Z]{1,2})\b)?/;
-const RE_PARAGRAFO = /^(?:§\s*(\d+)\s*[º°o]?\s*(?:-\s*([A-Z]))?|Parágrafo\s+único)/i;
+const RE_PARAGRAFO = /^(?:§{1,2}\s*(\d+)\s*[º°o]?\s*(?:-\s*([A-Z]))?|Parágrafo\s+único)/i;
 const RE_INCISO = /^([IVXLCDM]+)(?:\s*-\s*([A-Z]))?\s*[-–—]\s*/;
+// Inciso incluído por emenda: "I-A o Conselho..." (letra colada ao número, sem 2º travessão).
+const RE_INCISO_SUFIXO = /^([IVXLCDM]+)-([A-Z])\s+/;
 const RE_ALINEA = /^([a-z])\)\s*/;
 const RE_ITEM = /^(\d{1,2})\s*[.)-]\s+/;
 
@@ -102,6 +104,7 @@ export function parseLeiHtml(html, cfg) {
     let incAtual = null;       // id do inciso corrente
     let aliAtual = null;
     let ultimaEstrutura = null;
+    let tituloAtual = '';      // prefixo p/ ids de Capítulo/Seção (que recomeçam em I a cada Título)
 
     $('p').each((_, el) => {
         if (terminou) return;
@@ -118,6 +121,7 @@ export function parseLeiHtml(html, cfg) {
                 secao = 'adct-';
                 ignorando = false;
                 artAtual = parAtual = incAtual = aliAtual = null;
+                tituloAtual = 'adct.';
                 itens.push({ id: gerarId('est-adct'), k: 'est', tipo: 'adct', rot: 'ADCT', nome: 'Ato das Disposições Constitucionais Transitórias', texto: '', secao: 'adct' });
                 ultimaEstrutura = null;
                 return;
@@ -134,10 +138,12 @@ export function parseLeiHtml(html, cfg) {
         if (mEst && !RE_ARTIGO.test(texto)) {
             const tipo = NOMES_ESTRUTURA[mEst[1].toUpperCase()];
             const rot = limpar(texto).toUpperCase();
-            const item = { id: gerarId(`${secao}est-${tipo}-${mEst[2].toUpperCase()}`), k: 'est', tipo, rot: limpar(texto.match(RE_ESTRUTURA)[0]).toUpperCase(), nome: '', texto: '', secao: secao ? 'adct' : 'cf' };
+            const base = (tipo === 'titulo' || tipo === 'parte' || tipo === 'livro') ? '' : tituloAtual;
+            const item = { id: gerarId(`${secao}${base}est-${tipo}-${mEst[2].toUpperCase()}`), k: 'est', tipo, rot: limpar(texto.match(RE_ESTRUTURA)[0]).toUpperCase(), nome: '', texto: '', secao: secao ? 'adct' : 'cf' };
             // O nome ("DOS PRINCÍPIOS FUNDAMENTAIS") vem no mesmo <p> depois do rótulo, ou no próximo.
             const resto = limpar(texto.slice(mEst[0].length).replace(/^[\s\-–—.:]+/, ''));
             if (resto) item.nome = resto;
+            if (tipo === 'titulo' || tipo === 'parte' || tipo === 'livro') tituloAtual = `${tipo}-${mEst[2].toUpperCase()}.`;
             itens.push(item);
             ultimaEstrutura = item.nome ? null : item;
             return;
@@ -169,7 +175,7 @@ export function parseLeiHtml(html, cfg) {
         }
 
         // --- Inciso (pertence ao § corrente, se houver; senão ao caput) ---
-        const mInc = texto.match(RE_INCISO);
+        const mInc = texto.match(RE_INCISO_SUFIXO) || texto.match(RE_INCISO);
         if (mInc) {
             const base = parAtual || artAtual;
             const id = gerarId(`${base}.inc-${mInc[1]}${mInc[2] ? '-' + mInc[2] : ''}`);

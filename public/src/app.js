@@ -2363,7 +2363,7 @@ async function leiAbrir(id) {
     try {
         const [r1, r2] = await Promise.all([fetch(`/api/leis/${encodeURIComponent(id)}`), fetch(`/api/leis/${encodeURIComponent(id)}/meus`)]);
         const d1 = await r1.json(), d2 = await r2.json();
-        if (!r1.ok || !d1.success) throw new Error(d1.error || 'Falha ao carregar a lei');
+        if (!r1.ok || !d1.success) throw new Error((d1.error || 'Falha ao carregar a lei') + (d1.detalhe ? ` (${d1.detalhe})` : ''));
         leiDados = d1;
         leiMeus = (r2.ok && d2.success) ? d2 : { grifos: [], notas: [], alteracoes: {} };
     } catch (err) {
@@ -2562,7 +2562,7 @@ function leiHtmlArtigo(artId) {
     const porDisp = leiGrifosPorDisp();
     const corpo = itens.map(it => {
         if (it.revogado && !leiPrefs.revogados) return '';
-        const notas = (leiPrefs.notasLeg && it.notas && it.notas.length)
+        const notas = ((leiPrefs.notasLeg || it.revogado) && it.notas && it.notas.length)
             ? `<span class="lei-notas-leg"> (${escaparHtml(it.notas.join('; '))})</span>` : '';
         return `<p class="lei-disp lei-k-${it.k} lei-nivel-${it.nivel || 0}${it.revogado ? ' lei-revogado' : ''}" data-id="${escaparHtml(it.id)}"><span class="lei-txt">${leiTextoComGrifos(it, porDisp.get(it.id))}</span>${notas}</p>`;
     }).join('');
