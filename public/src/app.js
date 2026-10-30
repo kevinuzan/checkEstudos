@@ -3226,10 +3226,8 @@ async function leiAplicarNovo(estilo, nota, exato) {
     const trechos = leiSelecaoPendente;
     if (!trechos) return;
     try {
-        // Toda alteração nova ganha marca-texto amarelo por padrão (a pessoa pode trocar a cor ou tirar depois).
-        // O pincel copia o formato exatamente como está, então não ganha o amarelo extra.
+        // Só entra o que a pessoa escolheu: negrito é só negrito, sem marca-texto amarelo escondido.
         const base = { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0, a: 0, ...estilo };
-        if (!base.f && !exato) base.f = 1;
         const criados = await leiCriarGrifos(trechos, leiLimpoEst(base), nota);
         leiAlvos = criados.map(g => g.id);
         leiHistRegistrar({ tipo: 'criar', itens: criados.map(g => ({ gid: g.id, dispId: g.dispId, ini: g.ini, fim: g.fim, est: leiLimpoEst(leiEstiloDe(g)), nota: g.nota || '' })) });
