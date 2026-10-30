@@ -5061,3 +5061,16 @@ input[type="checkbox"] {
 .lei-emoji-op { width: 40px; height: 40px; padding: 0; font-size: 22px; border-radius: 8px; background: transparent; border: 1px solid transparent; }
 .lei-emoji-op:hover { border-color: var(--primary); }
 .lei-emoji-livre { flex-basis: 100%; margin-top: 4px; }
+
+/* Rótulo (Art. 5º, §, I -, a)) em negrito */
+.lei-rot { font-weight: 700; }
+
+/* Ver o que marquei como... */
+.lei-marc-filtro { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 10px; }
+.lei-marc-filtro-tit { font-size: 12.5px; color: var(--text-muted); width: 100%; }
+.lei-marc-chip { padding: 6px 12px; border-radius: 99px; font-size: 13px; background: var(--card); color: var(--text); border: 2px solid var(--border); font-weight: 600; }
+.lei-marc-chip.on { border-color: var(--primary); background: var(--primary-light); color: var(--primary-dark); }
+.lei-marc-item { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 10px 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.lei-marc-meta { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.lei-marc-texto { font-size: var(--lei-fonte, 15px); line-height: 1.5; }
+.lei-marc-item .btn-secundario { padding: 4px 12px; font-size: 12.5px; }

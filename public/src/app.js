@@ -2307,6 +2307,7 @@ let leiParei = null;                  // { artId, em }: onde a pessoa parou nest
 let leiResumoLidos = {};              // lei -> quantos trechos lidos (tela inicial)
 let leiMateriasAbertas = new Set(['Direito Constitucional']);
 let leiTotaisBuscando = false;
+let leiFiltroMarc = null;             // marcador (1-8) cujas marcações estão sendo listadas
 let leiCapsAbertos = new Set();       // capítulos expandidos na lista de trechos (começam todos minimizados)
 let leiAnotAbertas = new Set();       // artigos com o painel "Anotações" expandido
 let leiBusca = '';
@@ -2345,6 +2346,25 @@ async function carregarLeis() {
             const t = e.target;
             if (t && t.closest && t.closest('#lei-barra, #lei-balao, #lei-fita, .lei-grifo')) return;
             leiEsconderBarra();
+        });
+        // Mouse em cima de um trecho com anotação mostra o balão (sem precisar clicar); clicar também funciona.
+        document.addEventListener('mouseover', (e) => {
+            if (viewAtual !== 'leis' || !e.target || !e.target.closest) return;
+            if (window.getSelection && !window.getSelection().isCollapsed) return;
+            const mk = e.target.closest('.lei-grifo-nota');
+            if (!mk) return;
+            const topo = leiGrifoPorId(mk.dataset.gid);
+            if (!topo) return;
+            const gs = leiMeus.grifos.filter(g => g.nota && !g.orfao && g.dispId === topo.dispId && g.ini < topo.fim && g.fim > topo.ini);
+            const r = mk.getBoundingClientRect();
+            leiMostrarBalao(gs.length ? gs : [topo], { left: r.left, top: r.top, bottom: r.bottom });
+        });
+        document.addEventListener('mouseout', (e) => {
+            if (!leiBalaoHover || !e.target || !e.target.closest || !e.target.closest('.lei-grifo-nota')) return;
+            const para = e.relatedTarget;
+            if (para && para.closest && para.closest('#lei-balao, .lei-grifo-nota')) return;
+            clearTimeout(leiBalaoTimer);
+            leiBalaoTimer = setTimeout(leiEsconderBalao, 250);
         });
         leiOuvindoSelecao = true;
     }
@@ -2462,7 +2482,7 @@ async function leiAbrir(id) {
         el.innerHTML = `<p class="questoes-vazio">${escaparHtml(err.message)}</p><button type="button" class="btn-secundario" onclick="leiVoltar()">← Voltar</button>`;
         return;
     }
-    if (leiAberta !== id) { leiBlocosAbertos = new Set(); leiCapsAbertos = new Set(); leiTrechoAberto = null; leiAnotAbertas = new Set(); leiResetEdicao(); }   // ids de uma lei não valem na outra
+    if (leiAberta !== id) { leiBlocosAbertos = new Set(); leiCapsAbertos = new Set(); leiFiltroMarc = null; leiTrechoAberto = null; leiAnotAbertas = new Set(); leiResetEdicao(); }   // ids de uma lei não valem na outra
     leiAberta = id;
     leiBusca = '';
     leiIndexar();
@@ -2628,6 +2648,7 @@ function renderizarLei() {
                 <button type="button" class="btn-secundario" onclick="leiAlternarMudancas()">🔔 O que mudou</button>
             </div>
             <p class="questoes-topico-sub" id="lei-progresso-geral">${escaparHtml(leiTextoProgressoGeral())}</p>
+            <div id="lei-marc-filtro">${leiHtmlFiltroMarc()}</div>
             ${opcoes}
             <div id="lei-mudancas" style="display:none;"></div>
             <div id="lei-leitura" class="lei-leitura"></div>
@@ -2672,6 +2693,7 @@ function leiRenderLeitura() {
         leiAtualizarProgresso();
         return;
     }
+    if (leiFiltroMarc) { area.innerHTML = leiHtmlMarcados(leiFiltroMarc); return; }
     if (leiBusca) {
         const ids = leiBuscarArtigos(leiBusca);
         area.innerHTML = ids.length
@@ -2687,6 +2709,41 @@ function leiRenderLeitura() {
         return;
     }
     area.innerHTML = leiHtmlListaTrechos();
+}
+
+// "Tudo que marquei como 🎯": lista, na ordem da lei, os trechos que têm aquele marcador (com o comentário, se houver).
+function leiHtmlFiltroMarc() {
+    const defs = leiMarcadores().map((m, i) => m ? { n: i + 1, m } : null).filter(Boolean);
+    if (!defs.length) return '';
+    return `<div class="lei-marc-filtro"><span class="lei-marc-filtro-tit">Ver o que marquei como:</span>${defs.map(d => {
+        const q = leiMeus.grifos.filter(g => !g.orfao && leiEstiloDe(g).m === d.n).length;
+        return `<button type="button" class="lei-marc-chip${leiFiltroMarc === d.n ? ' on' : ''}" data-n="${d.n}" aria-pressed="${leiFiltroMarc === d.n}" onclick="leiFiltrarMarc(Number(this.dataset.n))">${escaparHtml(d.m.e)} ${escaparHtml(d.m.n)} <b>${q}</b></button>`;
+    }).join('')}</div>`;
+}
+function leiFiltrarMarc(n) {
+    leiFiltroMarc = leiFiltroMarc === n ? null : n;
+    const box = document.getElementById('lei-marc-filtro');
+    if (box) box.innerHTML = leiHtmlFiltroMarc();
+    leiRenderLeitura();
+}
+function leiHtmlMarcados(n) {
+    const mc = leiMarc(n);
+    const ordem = new Map([...leiIdx.arts.keys()].map((a, i) => [a, i]));
+    const gs = leiMeus.grifos.filter(g => !g.orfao && leiEstiloDe(g).m === n)
+        .sort((x, y) => (ordem.get(x.dispId.split('.')[0]) ?? 1e9) - (ordem.get(y.dispId.split('.')[0]) ?? 1e9) || x.dispId.localeCompare(y.dispId) || x.ini - y.ini);
+    const cab = `<p class="questoes-topico-sub">${mc ? escaparHtml(mc.e + ' ' + mc.n) : 'Marcador'} — ${gs.length} trecho(s) nesta lei</p>`;
+    if (!gs.length) return cab + '<p class="questoes-vazio">Você ainda não marcou nada com este marcador nesta lei. Selecione um trecho e toque no marcador.</p>';
+    return cab + gs.map(g => {
+        const artId = g.dispId.split('.')[0];
+        const t = leiIdx.porId.get(leiIdx.blocoDoArt.get(artId));
+        const rot = leiRotuloDe(leiIdx.arts.get(artId) && leiIdx.arts.get(artId)[0]);
+        return `<div class="lei-marc-item">
+            <div class="lei-marc-meta">${mc ? escaparHtml(mc.e) : ''} ${rot ? 'Art. ' + escaparHtml(rot) : escaparHtml(artId)}${t ? ` · trecho ${escaparHtml(t.num)}` : ''}</div>
+            <div class="lei-marc-texto">“${escaparHtml(g.trecho)}”</div>
+            ${g.nota ? `<div class="lei-nota-texto">📝 ${escaparHtml(g.nota)}</div>` : ''}
+            <button type="button" class="btn-secundario" data-art="${escaparHtml(artId)}" onclick="leiIrParaArtigo(this.dataset.art)">Ir para o artigo</button>
+        </div>`;
+    }).join('');
 }
 
 function leiBuscarArtigos(q) {
@@ -3064,17 +3121,33 @@ function leiLimpoEst(e) {
 // Texto de um dispositivo com os grifos aplicados (<mark>), sem mudar o texto.
 // Onde vários grifos se sobrepõem, os estilos se somam (como no Word): o fundo e a cor da letra
 // mais recentes vencem; negrito, itálico e tachado se acumulam.
+// Tamanho do "rótulo" do começo do dispositivo (Art. 5º, §1º, Parágrafo único, I -, a)) para ficar em negrito.
+// É só visual: o texto continua o mesmo, então os offsets dos grifos não mudam.
+function leiTamRotulo(it) {
+    const t = it.texto || '';
+    let m = null;
+    if (it.k === 'art') m = t.match(/^Art\.?\s*\d+(?:\.\d{3})*(?:[º°]|o(?![a-zà-ú]))?(?:\s*-\s*[A-Z]+)?\.?/);
+    else if (it.k === 'inc') m = t.match(/^[IVXLCDM]+(?:-[A-Z])?\s*[-–—]/);
+    else if (it.k === 'par') m = t.match(/^(?:§\s*\d+\s*[º°o]?(?:-[A-Z]+)?|Parágrafo\s+único)\.?/);
+    else if (it.k === 'ali') m = t.match(/^[a-z]{1,2}\)/);
+    return m ? m[0].trimEnd().length : 0;
+}
+
 function leiTextoComGrifos(item, grifos) {
     const texto = item.texto || '';
-    if (!grifos || !grifos.length) return escaparHtml(texto);
+    const nRot = leiTamRotulo(item);
+    const rot = (p) => `<span class="lei-rot">${p}</span>`;
+    if (!grifos || !grifos.length) return nRot ? rot(escaparHtml(texto.slice(0, nRot))) + escaparHtml(texto.slice(nRot)) : escaparHtml(texto);
     const pontos = new Set([0, texto.length]);
+    if (nRot > 0 && nRot < texto.length) pontos.add(nRot);
     grifos.forEach(g => { pontos.add(Math.min(g.ini, texto.length)); pontos.add(Math.min(g.fim, texto.length)); });
     const ordenados = [...pontos].sort((a, b) => a - b);
     let html = '';
     for (let i = 0; i < ordenados.length - 1; i++) {
         const a = ordenados[i], b = ordenados[i + 1];
         if (a === b) continue;
-        const parte = escaparHtml(texto.slice(a, b));
+        let parte = escaparHtml(texto.slice(a, b));
+        if (b <= nRot) parte = rot(parte);
         const cobrindo = grifos.filter(g => g.ini <= a && g.fim >= b);
         if (!cobrindo.length) { html += parte; continue; }
         const est = { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0, a: 0, m: 0 };
@@ -3507,11 +3580,17 @@ function leiPosicionarBarra() {
 }
 function leiReposicionar() {
     if (leiRepos) return;
+    if (leiBalaoHover) leiEsconderBalao();   // balão de mouse em cima: a posição ficou velha ao rolar
     leiRepos = setTimeout(() => { leiRepos = null; if (viewAtual === 'leis') { leiPosicionarBarra(); leiAtualizarProgresso(); } }, 50);
 }
 
 // ---------- Balão com a anotação do trecho ----------
-function leiMostrarBalao(grifos) {
+let leiBalaoHover = false;            // balão aberto por mouse em cima (some quando o mouse sai)
+let leiBalaoRect = null;
+let leiBalaoTimer = null;
+function leiMostrarBalao(grifos, rectHover) {
+    leiBalaoHover = !!rectHover; leiBalaoRect = rectHover || null;
+    clearTimeout(leiBalaoTimer);
     const com = grifos.filter(g => g && g.nota);
     if (!com.length) return leiEsconderBalao();
     let el = document.getElementById('lei-balao');
@@ -3520,6 +3599,8 @@ function leiMostrarBalao(grifos) {
         el.id = 'lei-balao';
         el.className = 'lei-balao';
         el.addEventListener('pointerdown', leiBarraTocada);
+        el.addEventListener('mouseenter', () => clearTimeout(leiBalaoTimer));
+        el.addEventListener('mouseleave', () => { if (leiBalaoHover) leiBalaoTimer = setTimeout(leiEsconderBalao, 250); });
         document.body.appendChild(el);
     }
     el.innerHTML = com.map(g => `<div class="lei-balao-item">
@@ -3537,13 +3618,14 @@ function leiEsconderBalao() {
 function leiPosicionarBalao() {
     const el = document.getElementById('lei-balao');
     if (!el || el.style.display === 'none') return;
-    const a = leiAncoraNaTela();
+    const a = leiBalaoHover && leiBalaoRect ? leiBalaoRect : leiAncoraNaTela();
     const barra = document.getElementById('lei-barra');
     const W = window.innerWidth || 360, H = window.innerHeight || 640;
     const w = el.offsetWidth || 280, h = el.offsetHeight || 80;
     // Logo abaixo da barra de ferramentas (que está abaixo do trecho); sem barra, abaixo do trecho.
+    // (Balão de mouse em cima fica colado no próprio trecho, ignorando a barra.)
     let top;
-    if (barra && barra.style.display !== 'none' && leiBarraModo === 'ferr') top = (parseFloat(barra.style.top) || 0) + (barra.offsetHeight || 48) + 8;
+    if (!leiBalaoHover && barra && barra.style.display !== 'none' && leiBarraModo === 'ferr') top = (parseFloat(barra.style.top) || 0) + (barra.offsetHeight || 48) + 8;
     else top = a ? a.bottom + 8 : 70;
     if (top + h > H - 8) top = Math.max(8, (a ? a.top : H) - h - 8);              // sem espaço embaixo: acima do trecho
     el.style.top = top + 'px';
@@ -3649,6 +3731,16 @@ async function leiRemoverGrifos(gids) {
     leiAtualizarArtigosDe(objs.map(g => g.dispId));
     leiEsconderBarra();
 }
+// Lixeira com um bloco selecionado (vários dispositivos/linhas): apaga TODOS os grifos que encostam na seleção.
+// Se algum tiver comentário, pergunta antes (o comentário vai junto).
+async function leiRemoverNaSelecao() {
+    const trechos = leiSelecaoPendente || [];
+    const gs = leiMeus.grifos.filter(g => !g.orfao && trechos.some(t => t.dispId === g.dispId && g.ini < t.fim && g.fim > t.ini));
+    if (!gs.length) return leiDica('Não há formatação neste trecho para remover.');
+    const comNota = gs.filter(g => g.nota).length;
+    if (comNota && typeof confirm === 'function' && !confirm(`Remover a formatação de ${gs.length} trecho(s), incluindo ${comNota} comentário(s)?`)) return;
+    return leiRemoverGrifos(gs.map(g => g.id));
+}
 function leiRemoverGrifo(gid) { return gid ? leiRemoverGrifos([gid]) : null; }
 
 async function leiFerr(id) {
@@ -3659,7 +3751,7 @@ async function leiFerr(id) {
     if (id === 'nota') return leiAbrirEditorNota();
     const alvos = leiAlvosObjs();
     if (!alvos.length && !leiSelecaoPendente) return leiDica('Selecione um trecho do texto, ou toque num grifo, e escolha a ferramenta.');
-    if (id === 'remover') return alvos.length ? leiRemoverGrifos(alvos.map(g => g.id)) : leiDica('Este trecho ainda não tem grifo para remover.');
+    if (id === 'remover') return alvos.length ? leiRemoverGrifos(alvos.map(g => g.id)) : leiRemoverNaSelecao();
     const base = alvos.length ? leiEstiloDe(alvos[0]) : { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0, m: 0 };
     let mud;
     const mk = id.match(/^m(\d)$/);
@@ -3847,7 +3939,7 @@ async function leiAlternarMudancas() {
 }
 
 function leiIrParaArtigo(artId) {
-    leiBusca = ''; leiPrefs.soMeus = false;
+    leiBusca = ''; leiFiltroMarc = null; leiPrefs.soMeus = false;
     const inp = document.getElementById('lei-busca'); if (inp) inp.value = '';
     const blocoId = leiIdx.blocoDoArt.get(artId);
     if (blocoId) { leiTrechoAberto = blocoId; leiCapsAbertos.add(leiIdx.porId.get(blocoId).capId); }
