@@ -387,27 +387,7 @@ async function baixarMeusDados() {
     }
 }
 
-async function encerrarConta() {
-    if (!confirm('Encerrar a conta cancela sua assinatura e apaga TODOS os seus dados, de forma definitiva. Quer continuar?')) return;
-    const resposta = prompt('Para confirmar, digite ENCERRAR (em maiúsculas):');
-    if (resposta !== 'ENCERRAR') return;
-    try {
-        const res = await fetchOriginal('/api/conta', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ confirmacao: 'ENCERRAR' })
-        });
-        const dados = await res.json();
-        if (!dados.success) throw new Error(dados.error || 'Falha');
-        appJaIniciado = false;
-        location.reload();
-    } catch (err) {
-        console.error('Erro ao encerrar conta:', err);
-        mostrarErroAssinatura('conta-erro', err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível encerrar a conta agora.');
-    }
-}
-
-// Apagar todos os dados de estudo, mantendo a conta. Confirmação em duas
+// Limpar a conta: apaga todos os dados de estudo, mantendo a conta. Confirmação em duas
 // etapas (aviso detalhado + digitar a frase), porque não há como desfazer.
 async function apagarTudoDaConta() {
     const aviso = '⚠️ ATENÇÃO — ISSO NÃO PODE SER DESFEITO ⚠️\n\n' +
@@ -418,8 +398,8 @@ async function apagarTudoDaConta() {
         '• jogos e pontuações\n' +
         '• respostas das questões\n' +
         '• grifos, anotações e leituras das leis\n\n' +
-        'Os dados NÃO poderão ser recuperados, nem por nós. Sua conta e sua assinatura continuam ativas.\n\n' +
-        'Quer uma cópia antes? Cancele e use "Baixar meus dados".\n\nTem certeza de que quer apagar tudo?';
+        'Os dados NÃO poderão ser recuperados, nem por nós. Sua conta e sua assinatura continuam ativas, e você recomeça do zero.\n\n' +
+        'Quer uma cópia antes? Cancele e use "Baixar meus dados".\n\nTem certeza de que quer limpar a conta?';
     if (!confirm(aviso)) return;
     const resposta = prompt('Última confirmação. Para apagar tudo de forma definitiva, digite APAGAR TUDO (em maiúsculas):');
     if (resposta !== 'APAGAR TUDO') {
@@ -2664,14 +2644,14 @@ function renderizarLei() {
         : `<div class="lei-opcoes">${fonteCtl}${checks}</div>`;
     el.innerHTML = emTrecho ? `
         <section class="painel-bloco">
-            <button type="button" class="lei-voltar" onclick="leiFecharTrecho()">← Voltar para os trechos</button>
+            <button type="button" class="lei-voltar" onclick="leiFecharTrecho()">← Voltar</button>
             <div class="painel-bloco-header"><h2>📖 ${escaparHtml(l.nome)}</h2></div>
             ${opcoes}
             ${leiHtmlFita()}
             <div id="lei-leitura" class="lei-leitura"></div>
         </section>` : `
         <section class="painel-bloco">
-            <button type="button" class="lei-voltar" onclick="leiVoltar()">← Voltar para as leis</button>
+            <button type="button" class="lei-voltar" onclick="leiVoltar()">← Voltar</button>
             <div class="painel-bloco-header"><h2>📖 ${escaparHtml(l.nome)}</h2></div>
             <p class="questoes-topico-sub">Texto do Planalto · conferido em ${leiFormatarData(l.verificadoEm)}${l.atualizadoEm ? ` · última alteração do texto em ${leiFormatarData(l.atualizadoEm)}` : ''}</p>
             <div class="lei-ferramentas">
@@ -7983,7 +7963,7 @@ function renderizarFraseDoDia() {
     const d = new Date();
     // dias desde 01/01/1970 no fuso local (evita trocar a frase às 21h por causa do UTC)
     const diaNumero = Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
-    el.textContent = '✨ ' + FRASES_MOTIVACIONAIS[diaNumero % FRASES_MOTIVACIONAIS.length];
+    el.textContent = '💬 ' + FRASES_MOTIVACIONAIS[diaNumero % FRASES_MOTIVACIONAIS.length];
 }
 
 // ==================================================================
