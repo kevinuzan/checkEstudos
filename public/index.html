@@ -210,6 +210,8 @@
             <!-- ===================== VIEW: RESUMO ===================== -->
             <div id="view-resumo">
 
+                <p class="resumo-frase" id="resumo-frase"></p>
+
                 <div class="resumo-escopo-row" id="resumo-escopo-row">
                     <!-- pills "Geral" + cada plano, inseridos via JS -->
                 </div>
@@ -220,7 +222,11 @@
 
                 <section class="painel-bloco">
                     <div class="painel-bloco-header">
-                        <h2>Últimos 30 dias</h2>
+                        <h2 id="resumo-grafico-titulo">Últimos 7 dias</h2>
+                        <div class="resumo-periodo" id="resumo-periodo">
+                            <button type="button" class="escopo-pill" data-dias="7" onclick="definirPeriodoResumo(7)">7 dias</button>
+                            <button type="button" class="escopo-pill" data-dias="30" onclick="definirPeriodoResumo(30)">30 dias</button>
+                        </div>
                         <span class="painel-bloco-sub">🔥 = dia estudado, mantendo sua ofensiva</span>
                     </div>
                     <div class="chart-card">
@@ -230,76 +236,6 @@
                         <div class="chart-flames" id="chart-30-dias-flames">
                             <!-- foguinhos de ofensiva, alinhados com as barras, inseridos via JS -->
                         </div>
-                    </div>
-                </section>
-
-                <section class="painel-bloco painel-bloco-duas-colunas">
-                    <div class="painel-bloco-coluna">
-                        <div class="painel-bloco-header">
-                            <h2>Por matéria (30 dias)</h2>
-                        </div>
-                        <div class="chart-card">
-                            <div class="chart-bars" id="chart-materias-30-dias">
-                                <!-- barras empilhadas por matéria inseridas via JS -->
-                            </div>
-                            <div class="chart-legenda" id="legenda-materias-dia">
-                                <!-- legenda de cores das matérias inserida via JS -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="painel-bloco-coluna">
-                        <div class="painel-bloco-header">
-                            <h2>Por tipo de estudo (30 dias)</h2>
-                        </div>
-                        <div class="chart-card">
-                            <div class="chart-bars" id="chart-tipos-30-dias">
-                                <!-- barras empilhadas por tipo de estudo inseridas via JS -->
-                            </div>
-                            <div class="chart-legenda" id="legenda-tipos-dia">
-                                <!-- legenda de cores dos tipos de estudo inserida via JS -->
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="painel-bloco">
-                    <div class="painel-bloco-header">
-                        <h2>Tempo por matéria</h2>
-                        <span class="painel-bloco-sub">Clique na bolinha colorida para trocar a cor</span>
-                    </div>
-                    <div class="materias-indicadores" id="materias-indicadores">
-                        <!-- indicadores de matéria inseridos via JS -->
-                    </div>
-                </section>
-
-                <section class="painel-bloco">
-                    <div class="painel-bloco-header">
-                        <h2>🎯 Mapa de dificuldades</h2>
-                        <span class="painel-bloco-sub">Tópicos com maior taxa de erro nas questões (plano atual)</span>
-                    </div>
-                    <div class="mapa-dificuldades" id="mapa-dificuldades">
-                        <!-- ranking de tópicos com mais erro inserido via JS -->
-                    </div>
-                </section>
-
-                <section class="painel-bloco">
-                    <div class="painel-bloco-header">
-                        <h2>🧠 Mapa de dificuldades (Flashcards)</h2>
-                        <span class="painel-bloco-sub">Baralhos com maior taxa de "Errei"/"Difícil" nas revisões</span>
-                    </div>
-                    <div class="mapa-dificuldades" id="mapa-dificuldades-flashcards">
-                        <!-- ranking de baralhos com mais erro inserido via JS -->
-                    </div>
-                </section>
-
-                <section class="painel-bloco">
-                    <div class="painel-bloco-header">
-                        <h2>📝 Mapa de dificuldades (Questões)</h2>
-                        <span class="painel-bloco-sub">Súmulas e matérias com maior taxa de erro no banco de questões</span>
-                    </div>
-                    <div class="mapa-dificuldades" id="mapa-dificuldades-questoes">
-                        <!-- ranking de súmulas com mais erro inserido via JS -->
                     </div>
                 </section>
 
@@ -552,6 +488,8 @@
             <!-- ===================== VIEW: ESTATÍSTICAS ===================== -->
             <div id="view-estatisticas" style="display:none;">
 
+                <section class="dashboard-grid" id="estat-ritmo-grid" style="display:none;"></section>
+
                 <div class="estat-filtro-row" id="estat-filtro-row">
                     <button type="button" class="escopo-pill" data-filtro="dia" onclick="definirFiltroEstatisticas('dia')">Dia</button>
                     <button type="button" class="escopo-pill" data-filtro="semana" onclick="definirFiltroEstatisticas('semana')">Semana</button>
@@ -603,6 +541,76 @@
                         <div class="chart-card chart-card-canvas">
                             <canvas id="chart-estat-evolucao"></canvas>
                         </div>
+                    </div>
+                </section>
+
+                <section class="painel-bloco painel-bloco-duas-colunas">
+                    <div class="painel-bloco-coluna">
+                        <div class="painel-bloco-header">
+                            <h2>Por matéria (30 dias)</h2>
+                        </div>
+                        <div class="chart-card">
+                            <div class="chart-bars" id="chart-materias-30-dias">
+                                <!-- barras empilhadas por matéria inseridas via JS -->
+                            </div>
+                            <div class="chart-legenda" id="legenda-materias-dia">
+                                <!-- legenda de cores das matérias inserida via JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="painel-bloco-coluna">
+                        <div class="painel-bloco-header">
+                            <h2>Por tipo de estudo (30 dias)</h2>
+                        </div>
+                        <div class="chart-card">
+                            <div class="chart-bars" id="chart-tipos-30-dias">
+                                <!-- barras empilhadas por tipo de estudo inseridas via JS -->
+                            </div>
+                            <div class="chart-legenda" id="legenda-tipos-dia">
+                                <!-- legenda de cores dos tipos de estudo inserida via JS -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Tempo por matéria</h2>
+                        <span class="painel-bloco-sub">Clique na bolinha colorida para trocar a cor</span>
+                    </div>
+                    <div class="materias-indicadores" id="materias-indicadores">
+                        <!-- indicadores de matéria inseridos via JS -->
+                    </div>
+                </section>
+
+                <section class="painel-bloco" id="estat-bloco-mapa-sessoes">
+                    <div class="painel-bloco-header">
+                        <h2>🎯 Mapa de dificuldades (Tópicos)</h2>
+                        <span class="painel-bloco-sub">Tópicos com maior taxa de erro nas questões das suas sessões de estudo</span>
+                    </div>
+                    <div class="mapa-dificuldades" id="mapa-dificuldades">
+                        <!-- ranking de tópicos com mais erro inserido via JS -->
+                    </div>
+                </section>
+
+                <section class="painel-bloco" id="estat-bloco-mapa-flashcards">
+                    <div class="painel-bloco-header">
+                        <h2>🧠 Baralhos que mais pedem revisão</h2>
+                        <span class="painel-bloco-sub">Só conta cartões que já passaram da fase de aprendizado — errar um cartão novo não pesa aqui</span>
+                    </div>
+                    <div class="mapa-dificuldades" id="mapa-dificuldades-flashcards">
+                        <!-- ranking de baralhos com mais erro inserido via JS -->
+                    </div>
+                </section>
+
+                <section class="painel-bloco" id="estat-bloco-mapa-questoes">
+                    <div class="painel-bloco-header">
+                        <h2>📝 Mapa de dificuldades (Provas e súmulas)</h2>
+                        <span class="painel-bloco-sub">Súmulas e matérias com maior taxa de erro no banco de questões</span>
+                    </div>
+                    <div class="mapa-dificuldades" id="mapa-dificuldades-questoes">
+                        <!-- ranking de súmulas com mais erro inserido via JS -->
                     </div>
                 </section>
 
@@ -671,7 +679,7 @@
                 <section class="painel-bloco painel-bloco-duas-colunas">
                     <div class="painel-bloco-coluna">
                         <div class="painel-bloco-header">
-                            <h2>Cartões que você mais erra</h2>
+                            <h2>Baralhos que mais pedem revisão</h2>
                         </div>
                         <div class="chart-card analise-dificeis-lista" id="analise-dificeis-lista"></div>
                     </div>
@@ -759,6 +767,18 @@
                             </div>
                             <p class="config-texto-ajuda">Vale pro app inteiro (todas as abas), e fica salvo nesse aparelho.</p>
                         </div>
+                    </div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Estatísticas e mapas</h2>
+                    </div>
+                    <div class="config-card">
+                        <p class="config-texto-ajuda">Escolha quais mapas de dificuldades aparecem na aba Estatísticas. Fica salvo nesse aparelho.</p>
+                        <label class="config-check"><input type="checkbox" id="config-mapa-sessoes" onchange="definirMapaPref('sessoes', this.checked)"> <span>🎯 Tópicos das minhas sessões de estudo</span></label>
+                        <label class="config-check"><input type="checkbox" id="config-mapa-questoes" onchange="definirMapaPref('questoes', this.checked)"> <span>📝 Provas e súmulas (banco de questões)</span></label>
+                        <label class="config-check"><input type="checkbox" id="config-mapa-flashcards" onchange="definirMapaPref('flashcards', this.checked)"> <span>🧠 Baralhos que mais pedem revisão (flashcards)</span></label>
                     </div>
                 </section>
 

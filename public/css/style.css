@@ -5086,3 +5086,68 @@ input[type="checkbox"] {
 .lei-balao-marc { font-size: 14px; margin-top: 4px; }
 .lei-marc-anot { font-size: 14px; font-weight: 600; padding: 6px 8px; border-radius: var(--radius-sm); background: var(--primary-light); color: var(--primary-dark); width: 100%; box-sizing: border-box; }
 .lei-barra-titulo { font-size: 13px; font-weight: 700; }
+
+/* Botão de voltar: à esquerda, acima do título (antes ficava apertado no canto direito) */
+.lei-voltar { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 6px; padding: 6px 12px 6px 6px; background: transparent; color: var(--primary); border: 0; font-size: 14px; font-weight: 700; border-radius: var(--radius-sm); }
+.lei-voltar:hover { background: var(--primary-light); }
+.lei-ajuda { font-size: 12.5px; }
+/* Onde parei, ao lado de "Anotar" em cada artigo */
+.lei-art-acoes { display: flex; flex-wrap: wrap; gap: 6px; }
+.lei-parei-btn.ativo { background: var(--primary-light); color: var(--primary-dark); border-color: var(--primary); font-weight: 700; }
+/* Painel de limpeza */
+.lei-limpar { display: flex; flex-direction: column; gap: 10px; padding: 12px; margin: 8px 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+.lei-limpar label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-muted); font-weight: 600; }
+.lei-limpar select { width: 100%; font-size: 14px; }
+.lei-limpar-btn { align-self: flex-start; background: var(--danger, #dc2626); color: #fff; }
+
+/* --- Resumo enxuto: frase do dia, seletor 7/30 dias e gráfico de 7 dias --- */
+.resumo-frase {
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.resumo-periodo {
+    display: flex;
+    gap: 6px;
+}
+
+.chart-bars-7,
+.chart-flames-7 {
+    gap: 12px;
+}
+
+.chart-flames-7 .chart-flame {
+    font-size: 16px;
+}
+
+.chart-flames-7 .chart-flame-wrap {
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.chart-dia-sem {
+    font-size: 11px;
+    color: var(--text-faint);
+    text-transform: capitalize;
+}
+
+/* Interruptores dos mapas em Configurações */
+.config-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    font-size: 14px;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.config-check input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary);
+    flex: none;
+}

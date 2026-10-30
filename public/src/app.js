@@ -2308,6 +2308,7 @@ let leiResumoLidos = {};              // lei -> quantos trechos lidos (tela inic
 let leiMateriasAbertas = new Set(['Direito Constitucional']);
 let leiTotaisBuscando = false;
 let leiFiltroMarc = null;             // marcador (1-8) cujas marcações estão sendo listadas
+let leiLimparAberto = false;          // painel "Limpar..." aberto
 let leiCapsAbertos = new Set();       // capítulos expandidos na lista de trechos (começam todos minimizados)
 let leiAnotAbertas = new Set();       // artigos com o painel "Anotações" expandido
 let leiBusca = '';
@@ -2629,25 +2630,24 @@ function renderizarLei() {
         : `<div class="lei-opcoes">${fonteCtl}${checks}</div>`;
     el.innerHTML = emTrecho ? `
         <section class="painel-bloco">
-            <div class="painel-bloco-header">
-                <h2>📖 ${escaparHtml(l.nome)}</h2>
-                <button type="button" class="btn-secundario" onclick="leiFecharTrecho()">← Trechos</button>
-            </div>
+            <button type="button" class="lei-voltar" onclick="leiFecharTrecho()">← Voltar para os trechos</button>
+            <div class="painel-bloco-header"><h2>📖 ${escaparHtml(l.nome)}</h2></div>
             ${opcoes}
             ${leiHtmlFita()}
             <div id="lei-leitura" class="lei-leitura"></div>
         </section>` : `
         <section class="painel-bloco">
-            <div class="painel-bloco-header">
-                <h2>📖 ${escaparHtml(l.nome)}</h2>
-                <button type="button" class="btn-secundario" onclick="leiVoltar()">← Leis</button>
-            </div>
+            <button type="button" class="lei-voltar" onclick="leiVoltar()">← Voltar para as leis</button>
+            <div class="painel-bloco-header"><h2>📖 ${escaparHtml(l.nome)}</h2></div>
             <p class="questoes-topico-sub">Texto do Planalto · conferido em ${leiFormatarData(l.verificadoEm)}${l.atualizadoEm ? ` · última alteração do texto em ${leiFormatarData(l.atualizadoEm)}` : ''}</p>
             <div class="lei-ferramentas">
                 <input type="search" id="lei-busca" placeholder="Buscar: art. 5, ou uma palavra" value="${escaparHtml(leiBusca)}" oninput="leiBuscarDigitando()" autocomplete="off">
                 <button type="button" class="btn-secundario" onclick="leiAlternarMudancas()">🔔 O que mudou</button>
+                <button type="button" class="btn-secundario" onclick="leiAlternarLimpar()">🧹 Limpar…</button>
             </div>
+            <div id="lei-limpar-box">${leiLimparAberto ? leiHtmlLimpar() : ''}</div>
             <p class="questoes-topico-sub" id="lei-progresso-geral">${escaparHtml(leiTextoProgressoGeral())}</p>
+            <p class="questoes-topico-sub lei-ajuda"><strong>O que é um trecho?</strong> Um pedaço da lei com até 5 artigos, dentro de um capítulo — como uma "aula" de leitura. Leia, toque na ★ quando terminar e acompanhe sua %.</p>
             <div id="lei-marc-filtro">${leiHtmlFiltroMarc()}</div>
             ${opcoes}
             <div id="lei-mudancas" style="display:none;"></div>
@@ -2819,7 +2819,6 @@ function leiHtmlBloco(b) {
                 ${leiHtmlItensBloco(b)}
                 ${leiHtmlLido(b)}
                 <div class="lei-parei-linha">
-                    <button type="button" class="btn-secundario" onclick="leiMarcarParei()">🔖 Marcar onde parei</button>
                     <span id="lei-parei-info">${escaparHtml(leiTextoParei())}</span>
                 </div>
                 <div class="lei-nav-trechos">
@@ -2945,17 +2944,16 @@ async function leiMarcarLido(blocoId, lido) {
     leiAtualizarProgresso();
 }
 
-// "Marcar onde parei": guarda o artigo que está na linha de leitura (30% da altura da tela).
-async function leiMarcarParei() {
-    const corpo = document.querySelector('.lei-bloco-corpo');
-    const art = corpo ? leiArtNaLinha(corpo) || corpo.querySelector('.lei-art') : null;
-    if (!art) return;
+// "Marcar onde parei" (botão ao lado de "Anotar" em cada artigo): guarda aquele artigo; tocar de novo tira a marca.
+async function leiMarcarParei(artId) {
+    if (!artId || !leiIdx || !leiIdx.arts.has(artId)) return;
+    const tirar = !!(leiParei && leiParei.artId === artId);
+    const antigo = leiParei ? leiParei.artId : null;
     try {
-        const dados = await leiApi(`/api/leis/${encodeURIComponent(leiAberta)}/parei`, 'PUT', { artId: art.dataset.art });
+        const dados = await leiApi(`/api/leis/${encodeURIComponent(leiAberta)}/parei`, 'PUT', { artId: tirar ? '' : artId });
         leiParei = dados.parei ? { artId: dados.parei.artId, em: dados.parei.em } : null;
     } catch (err) { return leiAvisarErro(err); }
-    document.querySelectorAll('.lei-art-parei').forEach(e => e.classList.remove('lei-art-parei'));
-    art.classList.add('lei-art-parei');
+    leiAtualizarArtigosDe([artId, ...(antigo && antigo !== artId ? [antigo] : [])]);
     const info = document.getElementById('lei-parei-info');
     if (info) info.textContent = leiTextoParei();
 }
@@ -3020,11 +3018,11 @@ const LEI_GRUPOS_FERR = [
     { nome: 'Marca-texto', ids: ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8'] },
     { nome: 'Cor da letra', ids: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'] },
     { nome: 'Texto', ids: ['b', 'i', 'u', 's', 'a'] },
-    { nome: 'Marcadores', ids: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'notam'] },
+    { nome: 'Marcadores', ids: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8'] },
     { nome: 'Ações', ids: ['nota', 'pincel', 'desfazer', 'refazer', 'remover'] }
 ];
-const LEI_NOMES_FERR = { b: 'Negrito', i: 'Itálico', u: 'Sublinhado (toque de novo: duplo, ondulado, tirar)', s: 'Tachado', a: 'CAIXA ALTA', nota: 'Comentário', notam: 'Anotação do marcador (ex.: em qual prova caiu)', pincel: 'Pincel de formatação', desfazer: 'Desfazer', refazer: 'Refazer', remover: 'Remover formatação (apaga o grifo deste trecho)' };
-const LEI_RAPIDA_PADRAO = ['f1', 'f2', 'f3', 'f4', 'b', 'u', 'm1', 'm2', 'm3', 'notam', 'nota', 'desfazer'];
+const LEI_NOMES_FERR = { b: 'Negrito', i: 'Itálico', u: 'Sublinhado (toque de novo: duplo, ondulado, tirar)', s: 'Tachado', a: 'CAIXA ALTA', nota: 'Comentário', pincel: 'Pincel de formatação', desfazer: 'Desfazer', refazer: 'Refazer', remover: 'Remover formatação (apaga o grifo deste trecho)' };
+const LEI_RAPIDA_PADRAO = ['f1', 'f2', 'f3', 'f4', 'b', 'u', 'm1', 'm2', 'm3', 'nota', 'desfazer'];
 const LEI_TODAS_FERR = LEI_GRUPOS_FERR.flatMap(g => g.ids);
 // ---- Marcadores (importante / caiu em prova / pegadinha...): cada marcador é um emoji + um nome que a pessoa
 // escolhe. Ficam guardados neste aparelho (como as outras preferências); o grifo só guarda o número (1-8).
@@ -3220,7 +3218,8 @@ function leiHtmlArtigo(artId) {
             ${corpo}
             ${orfaos}
             ${painelNotas}
-            <div class="lei-art-acoes"><button type="button" class="btn-secundario" onclick="leiAbrirNota(this.closest('.lei-art').dataset.art)">📝 ${leiNotaDoArt(artId) ? 'Editar anotação' : 'Anotar'}</button></div>
+            <div class="lei-art-acoes"><button type="button" class="btn-secundario" onclick="leiAbrirNota(this.closest('.lei-art').dataset.art)">📝 ${leiNotaDoArt(artId) ? 'Editar anotação' : 'Anotar'}</button>
+                <button type="button" class="btn-secundario lei-parei-btn${leiParei && leiParei.artId === artId ? ' ativo' : ''}" onclick="leiMarcarParei(this.closest('.lei-art').dataset.art)" title="${leiParei && leiParei.artId === artId ? 'Você parou aqui (toque para tirar a marca)' : 'Marcar que você parou a leitura neste artigo'}">🔖 ${leiParei && leiParei.artId === artId ? 'Parei aqui' : 'Marcar onde parei'}</button></div>
             <div class="lei-nota-area"></div>
         </div>`;
 }
@@ -3316,7 +3315,6 @@ function leiBotaoFerr(id) {
     else if (id === 's') { conteudo = '<s>T</s>'; ativo = !!e.s; }
     else if (id === 'a') { conteudo = '<span class="lei-ferr-aa">AA</span>'; ativo = !!e.a; }
     else if (id === 'nota') { conteudo = '📝'; ativo = leiAlvosObjs().some(g => g.nota); }
-    else if (id === 'notam') { conteudo = '✍️'; ativo = leiAlvosObjs().some(g => g.notaM); }
     else if (id === 'pincel') { conteudo = '🖌'; ativo = !!leiPincel; }
     else if (id === 'desfazer') { conteudo = '↶'; desabilitado = !leiHist.desfazer.length; }
     else if (id === 'refazer') { conteudo = '↷'; desabilitado = !leiHist.refazer.length; }
@@ -3339,7 +3337,7 @@ function leiPreviaFerr(id) {
     if (mk) { const m = leiMarc(mk[1]); return m ? escaparHtml(m.e) : ''; }
     const m = id.match(/^([fc])(\d)$/);
     if (m) return m[1] === 'f' ? `<span class="lei-cfg-bolinha lei-f-${m[2]}"></span>` : `<span class="lei-cfg-letra lei-c-${m[2]}">A</span>`;
-    const mapa = { b: '<b>N</b>', i: '<i>I</i>', u: '<span class="lei-u1">S</span>', s: '<s>T</s>', a: '<span class="lei-ferr-aa">AA</span>', nota: '📝', notam: '✍️', pincel: '🖌', desfazer: '↶', refazer: '↷', remover: '🗑' };
+    const mapa = { b: '<b>N</b>', i: '<i>I</i>', u: '<span class="lei-u1">S</span>', s: '<s>T</s>', a: '<span class="lei-ferr-aa">AA</span>', nota: '📝', pincel: '🖌', desfazer: '↶', refazer: '↷', remover: '🗑' };
     return mapa[id] || '';
 }
 // Nome curto para caber no cartão (tira o que vem entre parênteses e o prefixo repetido do grupo).
@@ -3348,7 +3346,6 @@ function leiNomeCurtoFerr(id) {
     if (mk) { const m = leiMarc(mk[1]); return m ? (m.n || 'Marcador') : ''; }
     const m = id.match(/^([fc])(\d)$/);
     if (m) return m[1] === 'f' ? LEI_NOMES_FUNDO[+m[2]] : LEI_NOMES_LETRA[+m[2]];
-    if (id === 'notam') return 'Anotar marcador';
     return leiNomeFerr(id).replace(/\s*\(.*\)/, '').replace('Pincel de formatação', 'Pincel').replace('Remover formatação', 'Remover');
 }
 // Cada ferramenta é um cartão que liga/desliga ao toque (marcado = aparece na barra rápida).
@@ -3379,7 +3376,9 @@ function leiHtmlFita() {
         <div class="lei-fita-grupos">${LEI_GRUPOS_FERR.filter(g => g.ids.some(id => !/^m\d$/.test(id) || leiMarc(id.slice(1)))).map(g => `<div class="lei-fita-grupo"><span class="lei-fita-rotulo">${g.nome}</span><div class="lei-fita-botoes">${g.ids.map(leiBotaoFerr).join('')}</div></div>`).join('')}</div>
         <div class="lei-fita-dica">${escaparHtml(leiDicaAtual())}</div>
         <button type="button" class="btn-secundario lei-fita-config-btn" onclick="leiAlternarConfig()">⚙ ${leiConfigAberta ? 'Fechar' : 'Escolher as ferramentas da barra rápida'}</button>
-        ${leiConfigAberta ? leiHtmlConfig() : ''}` : '';
+        ${leiConfigAberta ? leiHtmlConfig() : ''}
+        <button type="button" class="btn-secundario lei-fita-config-btn" onclick="leiAlternarLimpar()">🧹 ${leiLimparAberto ? 'Fechar a limpeza' : 'Limpar formatações, anotações ou tudo…'}</button>
+        ${leiLimparAberto ? leiHtmlLimpar() : ''}` : '';
     return `<div class="lei-fita" id="lei-fita" onpointerdown="leiBarraTocada()">
         <button type="button" class="lei-fita-titulo" onclick="leiAlternarFita()"><span class="lei-seta">${aberta ? '▾' : '▸'}</span> 🎨 Ferramentas de edição</button>${corpo}</div>`;
 }
@@ -3418,6 +3417,52 @@ function leiAlternarFita() {
     leiSalvarPrefs();
     leiAtualizarFerramentas();
 }
+// ---- Limpar (formatações / anotações / tudo) no trecho, no capítulo ou na lei inteira ----
+function leiAlternarLimpar() {
+    leiLimparAberto = !leiLimparAberto;
+    const box = document.getElementById('lei-limpar-box');
+    if (box) box.innerHTML = leiLimparAberto ? leiHtmlLimpar() : '';
+    leiAtualizarFerramentas();
+}
+function leiHtmlLimpar() {
+    const t = leiTrechoAberto && leiIdx.porId.get(leiTrechoAberto);
+    const caps = [];
+    for (const b of leiIdx.blocos) if (!caps.some(c => c.id === b.capId)) caps.push({ id: b.capId, rot: b.rot, nome: b.nome });
+    const opcoes = [];
+    if (t) { opcoes.push(['trecho', `Só este trecho (${leiTituloTrecho(t)})`]); opcoes.push([`cap:${t.capId}`, `Este capítulo (${t.rot})`]); }
+    else caps.forEach(c => opcoes.push([`cap:${c.id}`, `Capítulo: ${c.rot}${c.nome ? ' — ' + c.nome : ''}`]));
+    opcoes.push(['lei', 'A lei inteira']);
+    return `<div class="lei-limpar">
+        <div class="lei-config-titulo"><strong>Limpar</strong><span>Escolha o quê e onde. Isso <b>não dá para desfazer</b>.</span></div>
+        <label>O quê<select id="lei-limpar-o"><option value="formatacao">Só as formatações (cores, negrito, marcadores…)</option><option value="anotacoes">Só as anotações (comentários, anotações de marcador e de artigo)</option><option value="tudo">Tudo (formatações e anotações)</option></select></label>
+        <label>Onde<select id="lei-limpar-esc">${opcoes.map(([v, n]) => `<option value="${escaparHtml(v)}">${escaparHtml(n)}</option>`).join('')}</select></label>
+        <button type="button" class="lei-limpar-btn" onclick="leiLimparExecutar()">🧹 Limpar</button>
+    </div>`;
+}
+async function leiLimparExecutar() {
+    const o = document.getElementById('lei-limpar-o').value, esc = document.getElementById('lei-limpar-esc').value;
+    let arts = null, onde = 'na lei inteira';
+    if (esc === 'trecho') { const t = leiIdx.porId.get(leiTrechoAberto); arts = t ? t.artIds : []; onde = 'neste trecho'; }
+    else if (esc.startsWith('cap:')) { const id = esc.slice(4); arts = leiIdx.blocos.filter(b => b.capId === id).flatMap(b => b.artIds); onde = 'neste capítulo'; }
+    const set = arts ? new Set(arts) : null;
+    const dentro = (dispId) => !set || set.has(String(dispId).split('.')[0]);
+    const gs = leiMeus.grifos.filter(g => dentro(g.dispId)), ns = leiMeus.notas.filter(n => dentro(n.dispId));
+    const qtd = o === 'formatacao' ? gs.filter(g => Object.keys(leiLimpoEst(leiEstiloDe(g))).length).length
+        : o === 'anotacoes' ? gs.filter(g => g.nota || g.notaM).length + ns.length : gs.length + ns.length;
+    if (!qtd) return leiDica('Não há nada para limpar aí.');
+    const oque = { formatacao: 'as formatações', anotacoes: 'as anotações', tudo: 'TUDO (formatações e anotações)' }[o];
+    if (typeof confirm === 'function' && !confirm(`Limpar ${oque} ${onde}? Isso mexe em ${qtd} item(ns) e NÃO dá para desfazer.`)) return;
+    try {
+        await leiApi(`/api/leis/${encodeURIComponent(leiAberta)}/limpar`, 'POST', arts ? { o, escopo: 'arts', arts } : { o, escopo: 'lei' });
+        const r = await fetch(`/api/leis/${encodeURIComponent(leiAberta)}/meus`);
+        const d = await r.json();
+        if (r.ok && d.success) leiMeus = d;
+    } catch (err) { return leiAvisarErro(err); }
+    leiHist = { desfazer: [], refazer: [] }; leiAlvos = [];   // os ids dos grifos mudaram: o histórico não vale mais
+    leiLimparAberto = false;
+    renderizarLei();
+}
+
 function leiAlternarConfig() { leiConfigAberta = !leiConfigAberta; leiAtualizarFerramentas(); }
 function leiRapidaAlternar(id, ligado) {
     const atual = leiRapida().filter(x => x !== id);
@@ -3540,7 +3585,7 @@ function leiMostrarBarra(modo) {
             <div class="lei-barra-citacao">“${escaparHtml(citado.length > 140 ? citado.slice(0, 140) + '…' : citado)}”</div>
             <textarea id="lei-barra-nota-texto" rows="4" maxlength="5000" placeholder="${marc ? 'Ex.: caiu na prova da banca X, ano Y...' : 'Seu comentário sobre este trecho...'}">${escaparHtml(g ? (marc ? (g.notaM || '') : (g.nota || '')) : '')}</textarea>
             <div class="modal-actions">
-                <button type="button" class="btn-cancelar" onclick="leiBarraVoltar()">Cancelar</button>
+                <button type="button" class="btn-cancelar" onclick="leiBarraVoltar()">${marc ? 'Pular' : 'Cancelar'}</button>
                 <button type="button" onclick="leiSalvarNotaTrecho()">Salvar</button>
             </div>
         </div>`;
@@ -3599,10 +3644,11 @@ function leiReposicionar() {
 let leiBalaoHover = false;            // balão aberto por mouse em cima (some quando o mouse sai)
 let leiBalaoRect = null;
 let leiBalaoTimer = null;
+const leiTemMarc = (g) => !!(g && leiEstiloDe(g).m && leiMarc(leiEstiloDe(g).m));
 function leiMostrarBalao(grifos, rectHover) {
     leiBalaoHover = !!rectHover; leiBalaoRect = rectHover || null;
     clearTimeout(leiBalaoTimer);
-    const com = grifos.filter(g => g && (g.nota || g.notaM));
+    const com = grifos.filter(g => g && (g.nota || g.notaM || leiTemMarc(g)));
     if (!com.length) return leiEsconderBalao();
     let el = document.getElementById('lei-balao');
     if (!el) {
@@ -3618,6 +3664,7 @@ function leiMostrarBalao(grifos, rectHover) {
             ${com.length > 1 ? `<div class="lei-balao-trecho">“${escaparHtml(g.trecho.length > 60 ? g.trecho.slice(0, 60) + '…' : g.trecho)}”</div>` : ''}
             ${g.nota ? `<div class="lei-balao-texto">${escaparHtml(g.nota)}</div>
             <button type="button" class="lei-balao-editar" data-gid="${escaparHtml(g.id)}" onclick="leiEditarNotaDoGrifo(this.dataset.gid)">Editar</button>` : ''}
+            ${!g.notaM && leiTemMarc(g) ? `<button type="button" class="lei-balao-editar" data-gid="${escaparHtml(g.id)}" onclick="leiEditarNotaMarcDoGrifo(this.dataset.gid)">✍️ Anotar em ${escaparHtml(leiMarc(leiEstiloDe(g).m).e + ' ' + leiMarc(leiEstiloDe(g).m).n)}</button>` : ''}
             ${g.notaM ? `<div class="lei-balao-marc"><strong>${leiMarc(leiEstiloDe(g).m) ? escaparHtml(leiMarc(leiEstiloDe(g).m).e + ' ' + leiMarc(leiEstiloDe(g).m).n) : 'Marcador'}:</strong> ${escaparHtml(g.notaM)}</div>
             <button type="button" class="lei-balao-editar" data-gid="${escaparHtml(g.id)}" onclick="leiEditarNotaMarcDoGrifo(this.dataset.gid)">Editar</button>` : ''}
         </div>`).join('') + '<button type="button" class="lei-balao-fechar" onclick="leiEsconderBalao()" aria-label="Fechar">✕</button>';
@@ -3762,7 +3809,6 @@ async function leiFerr(id) {
     if (id === 'refazer') return leiRefazer();
     if (id === 'pincel') return leiPincelAcao();
     if (id === 'nota') return leiAbrirEditorNota();
-    if (id === 'notam') return leiAbrirEditorNotaMarc();
     const alvos = leiAlvosObjs();
     if (!alvos.length && !leiSelecaoPendente) return leiDica('Selecione um trecho do texto, ou toque num grifo, e escolha a ferramenta.');
     if (id === 'remover') return alvos.length ? leiRemoverGrifos(alvos.map(g => g.id)) : leiRemoverNaSelecao();
@@ -3772,7 +3818,10 @@ async function leiFerr(id) {
     if (mk) {
         if (!leiMarc(mk[1])) return leiDica('Esse marcador foi removido. Crie um em ✏️ Personalizar.');
         mud = { m: base.m === Number(mk[1]) ? 0 : Number(mk[1]) };   // tocar no marcador ativo tira
-        return alvos.length ? leiMudarEstilo(alvos, mud, false) : leiAplicarNovo(mud);
+        await (alvos.length ? leiMudarEstilo(alvos, mud, false) : leiAplicarNovo(mud));
+        // O marcador já é uma anotação em potencial: ao marcar, abre o pop-up para escrever (ex.: em qual prova caiu). "Pular" deixa só o marcador.
+        if (mud.m && leiAlvosObjs().length) leiAbrirEditorNotaMarc();
+        return;
     }
     const m = id.match(/^([fc])(\d)$/);
     if (m) mud = { [m[1]]: base[m[1]] === Number(m[2]) ? 0 : Number(m[2]) };   // tocar na cor já ativa desliga
@@ -3947,7 +3996,7 @@ function leiToqueGrifo(gid) {
     leiMostrarBarra('ferr');
     leiAtualizarFerramentas();
     const g = leiGrifoPorId(gid);
-    if (g && (g.nota || g.notaM)) leiMostrarBalao([g]); else leiEsconderBalao();
+    if (g && (g.nota || g.notaM || leiTemMarc(g))) leiMostrarBalao([g]); else leiEsconderBalao();
     leiAtualizarArtigosDe(g ? [...antes, g.dispId] : antes);   // marca visualmente o grifo em edição
 }
 
@@ -4015,6 +4064,7 @@ function leiIrParaArtigo(artId) {
 async function abrirConfiguracoes() {
     renderizarSeletorTema();
     renderizarSeletorFundo();
+    sincronizarMapasPrefsUI();
     carregarAssinatura(false);
     const input = document.getElementById('config-apelido-input');
     if (!input) return;
@@ -4414,6 +4464,26 @@ function renderizarGraficosComFiltroEstatisticas() {
     renderizarGraficoEstatEvolucao();
 }
 
+// "Ritmo médio de leitura" (saiu do Resumo): tempo médio por página lida.
+function renderizarRitmoLeituraEstatisticas() {
+    const grid = document.getElementById('estat-ritmo-grid');
+    if (!grid) return;
+    let seg = 0, pag = 0;
+    sessoesEstatisticasCache.forEach(s => {
+        if (s.paginasLidas !== null && s.paginasLidas !== undefined) {
+            seg += s.duracaoSegundos || 0;
+            pag += s.paginasLidas;
+        }
+    });
+    if (pag <= 0) { grid.style.display = 'none'; grid.innerHTML = ''; return; }
+    grid.style.display = '';
+    grid.innerHTML = `
+        <div class="stat-card stat-card-destaque">
+            <span class="stat-card-label">Ritmo médio de leitura</span>
+            <span class="stat-card-valor stat-card-valor-texto">${formatarRitmo(seg / pag)}</span>
+        </div>`;
+}
+
 async function carregarEstatisticas() {
     try {
         const [resSessoes, dadosJogos] = await Promise.all([
@@ -4431,6 +4501,27 @@ async function carregarEstatisticas() {
         renderizarGraficoEstatJogos(dadosJogos);
         renderizarGraficoEstatPlanos();
         renderizarGraficoEstatEvolucao();
+
+        // Blocos que antes ficavam no Resumo. As funções leem sessoesCache;
+        // aqui usamos TODAS as sessões (a aba Estatísticas não tem escopo de
+        // plano). O Resumo e o Estudos recarregam sessoesCache ao serem abertos.
+        sessoesCache = sessoesEstatisticasCache;
+        renderizarRitmoLeituraEstatisticas();
+        renderizarGraficoMateriasEmpilhado();
+        renderizarGraficoTiposEmpilhado();
+        renderizarIndicadoresMaterias();
+
+        const prefs = lerMapasPrefs();
+        const mostrar = (id, ligado) => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = ligado ? '' : 'none';
+        };
+        mostrar('estat-bloco-mapa-sessoes', prefs.sessoes);
+        mostrar('estat-bloco-mapa-questoes', prefs.questoes);
+        mostrar('estat-bloco-mapa-flashcards', prefs.flashcards);
+        if (prefs.sessoes) renderizarMapaDificuldades();
+        if (prefs.questoes) renderizarMapaDificuldadesQuestoes();
+        if (prefs.flashcards) renderizarMapaDificuldadesFlashcards();
     } catch (err) {
         console.error('Erro ao carregar estatísticas:', err);
     }
@@ -7806,15 +7897,102 @@ async function carregarSessoesResumo() {
 async function carregarResumo() {
     renderizarSeletorEscopoResumo();
     await Promise.all([carregarSessoesResumo(), carregarMateriasCores(), atualizarStreak()]);
+    renderizarFraseDoDia();
     renderizarDashboardResumo();
     renderizarGraficoTrintaDias();
-    renderizarGraficoMateriasEmpilhado();
-    renderizarGraficoTiposEmpilhado();
-    renderizarIndicadoresMaterias();
-    renderizarMapaDificuldades();
-    renderizarMapaDificuldadesFlashcards();
-    renderizarMapaDificuldadesQuestoes();
     renderizarConquistas();
+    // Gráficos por matéria/tipo, tempo por matéria e os mapas de dificuldades
+    // agora vivem na aba Estatísticas (ver carregarEstatisticas).
+}
+
+// ==================================================================
+// FRASE MOTIVACIONAL DO DIA (Resumo)
+// ==================================================================
+// Lista fixa e curta, sem IA (custo zero). A frase muda a cada dia: o índice
+// vem do número do dia no calendário local, então é a mesma o dia todo.
+const FRASES_MOTIVACIONAIS = [
+    'Um pouquinho por dia vale mais do que muito de vez em quando.',
+    'A aprovação é construída nos dias em que dá preguiça de estudar.',
+    'Constância vence talento. Continue.',
+    'Hoje é mais um passo rumo à posse.',
+    'Não precisa estar perfeito, precisa estar em movimento.',
+    'Cada questão resolvida é uma a menos entre você e a vaga.',
+    'Quem estuda hoje agradece amanhã.',
+    'Descanse se precisar, mas não desista.',
+    'O edital parece grande, mas ele cabe em um tópico de cada vez.',
+    'Seu futuro eu está torcendo por você agora.',
+    'Errar na hora de estudar é melhor do que errar na prova.',
+    'Disciplina é fazer mesmo sem vontade. Você consegue.',
+    'Foco no processo: a aprovação vem como consequência.',
+    'Pequenas vitórias diárias viram uma grande aprovação.',
+    'Respire fundo, abra o material e comece. O resto vem.',
+    'Todo mundo que passou já esteve exatamente onde você está.',
+    'Vinte minutos hoje já contam. Comece.',
+    'Seu esforço de hoje ninguém tira de você.',
+    'A dúvida de hoje é o acerto da prova.',
+    'Não compare o seu capítulo 1 com o capítulo 10 de outra pessoa.',
+    'Revisar é o que transforma estudo em memória.',
+    'Menos desculpas, mais questões. Bora!',
+    'A posse está mais perto do que ontem.',
+    'Um dia de cada vez, um tópico de cada vez.',
+    'Você já chegou mais longe do que pensa.',
+    'Cansaço passa, aprovação fica.',
+    'Estudar também é cuidar de quem você vai ser.',
+    'Mantenha a ofensiva acesa: hoje conta!',
+    'Quem persiste, passa.',
+    'Acredite no processo. Ele funciona.'
+];
+
+function renderizarFraseDoDia() {
+    const el = document.getElementById('resumo-frase');
+    if (!el) return;
+    const d = new Date();
+    // dias desde 01/01/1970 no fuso local (evita trocar a frase às 21h por causa do UTC)
+    const diaNumero = Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+    el.textContent = '💬 ' + FRASES_MOTIVACIONAIS[diaNumero % FRASES_MOTIVACIONAIS.length];
+}
+
+// ==================================================================
+// PERÍODO DO GRÁFICO DO RESUMO (7 ou 30 dias; padrão 7)
+// ==================================================================
+let resumoPeriodoDias = (function () {
+    try { return localStorage.getItem('resumo_periodo_dias') === '30' ? 30 : 7; } catch (e) { return 7; }
+})();
+
+function definirPeriodoResumo(dias) {
+    resumoPeriodoDias = dias === 30 ? 30 : 7;
+    try { localStorage.setItem('resumo_periodo_dias', String(resumoPeriodoDias)); } catch (e) { /* sem storage: só não lembra */ }
+    renderizarGraficoTrintaDias();
+}
+
+// ==================================================================
+// QUAIS MAPAS DE DIFICULDADE APARECEM EM ESTATÍSTICAS (Configurações)
+// ==================================================================
+// Salvo por aparelho (mesmo padrão do tamanho do texto). Padrão: tópicos e
+// provas/súmulas ligados; flashcards desligado.
+const MAPAS_PREFS_PADRAO = { sessoes: true, questoes: true, flashcards: false };
+
+function lerMapasPrefs() {
+    try {
+        const salvo = JSON.parse(localStorage.getItem('mapas_prefs') || '{}');
+        return { ...MAPAS_PREFS_PADRAO, ...salvo };
+    } catch (e) {
+        return { ...MAPAS_PREFS_PADRAO };
+    }
+}
+
+function definirMapaPref(chave, ligado) {
+    const prefs = lerMapasPrefs();
+    prefs[chave] = !!ligado;
+    try { localStorage.setItem('mapas_prefs', JSON.stringify(prefs)); } catch (e) { /* sem storage */ }
+}
+
+function sincronizarMapasPrefsUI() {
+    const prefs = lerMapasPrefs();
+    ['sessoes', 'questoes', 'flashcards'].forEach(k => {
+        const el = document.getElementById('config-mapa-' + k);
+        if (el) el.checked = !!prefs[k];
+    });
 }
 
 // ==================================================================
@@ -7833,7 +8011,7 @@ async function renderizarMapaDificuldadesFlashcards() {
     }
 
     if (!Array.isArray(lista) || lista.length === 0) {
-        container.innerHTML = `<div class="lista-vazia">Responda pelo menos algumas revisões de flashcards (Errei/Difícil/Bom/Fácil) pra ver esse mapa aqui.</div>`;
+        container.innerHTML = `<div class="lista-vazia">Ainda não há revisões suficientes. Aparece aqui quando você errar cartões que já tinha aprendido (cartões novos não contam).</div>`;
         return;
     }
 
@@ -7905,6 +8083,7 @@ function renderizarMapaDificuldades() {
 
     sessoesCache.forEach(s => {
         if (s.acertos === null || s.acertos === undefined) return; // sessão sem desempenho em questões
+        if (s.tipoEstudoNome === 'Jogo') return; // jogo não é questão de estudo marcada por você
         const topicos = s.topicos || [];
         if (topicos.length === 0) return; // sem tópico vinculado, não dá pra atribuir
 
@@ -8261,22 +8440,17 @@ function renderizarDashboardResumo() {
             <span class="stat-card-valor">${totalQuestoesJogo}</span>
             ${percAcertoJogo !== null ? `<span class="stat-card-extra">${percAcertoJogo}% de acerto</span>` : ''}
         </div>` : ''}
-        ${ritmoLeitura !== null ? `
-        <div class="stat-card stat-card-destaque">
-            <span class="stat-card-label">Ritmo médio de leitura</span>
-            <span class="stat-card-valor stat-card-valor-texto">${formatarRitmo(ritmoLeitura)}</span>
-        </div>` : ''}
     `;
 }
 
 // Constrói os últimos 30 dias (do mais antigo ao mais recente) e o total de
 // segundos estudados em cada um, a partir das sessões do plano atual.
-function construirUltimosTrintaDias() {
+function construirUltimosTrintaDias(qtd = 30) {
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
     const dias = [];
-    for (let i = 29; i >= 0; i--) {
+    for (let i = qtd - 1; i >= 0; i--) {
         const d = new Date(hoje.getTime() - i * 24 * 60 * 60 * 1000);
         dias.push({ data: d, iso: formatarDataISO(d), segundos: 0 });
     }
@@ -8296,7 +8470,15 @@ function renderizarGraficoTrintaDias() {
     const containerFoguinhos = document.getElementById('chart-30-dias-flames');
     if (!container) return;
 
-    const dias = construirUltimosTrintaDias();
+    // Período escolhido no Resumo (7 dias por padrão, ou 30)
+    const dias = construirUltimosTrintaDias(resumoPeriodoDias);
+    const tituloEl = document.getElementById('resumo-grafico-titulo');
+    if (tituloEl) tituloEl.textContent = `Últimos ${resumoPeriodoDias} dias`;
+    document.querySelectorAll('#resumo-periodo .escopo-pill').forEach(b => {
+        b.classList.toggle('ativo', Number(b.dataset.dias) === resumoPeriodoDias);
+    });
+    container.classList.toggle('chart-bars-7', resumoPeriodoDias === 7);
+    if (containerFoguinhos) containerFoguinhos.classList.toggle('chart-flames-7', resumoPeriodoDias === 7);
     const maxSegundos = Math.max(...dias.map(d => d.segundos), 1);
     const hojeIso = formatarDataISO(new Date());
 
@@ -8319,6 +8501,7 @@ function renderizarGraficoTrintaDias() {
             return `
                 <div class="chart-flame-wrap" title="${label}${dia.segundos > 0 ? ' — estudado' : ''}">
                     <span class="chart-flame ${dia.segundos > 0 ? 'chart-flame-ativo' : ''}">🔥</span>
+                    ${resumoPeriodoDias === 7 ? `<span class="chart-dia-sem">${dia.data.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')}</span>` : ''}
                 </div>
             `;
         }).join('');
