@@ -2714,6 +2714,9 @@ function leiMostrarBarra(modo) {
         b = document.createElement('div');
         b.id = 'lei-barra';
         b.className = 'lei-barra';
+        // Posição no TOPO também aqui (inline), para não depender de o CSS estar atualizado:
+        // no Android a folha "Pesquisar no Google" do Chrome cobre o rodapé ao selecionar texto.
+        Object.assign(b.style, { top: '0', bottom: 'auto', zIndex: '200', borderTop: '0', borderBottom: '1px solid var(--border)', paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))', paddingBottom: '10px' });
         b.addEventListener('pointerdown', leiBarraTocada);   // cancela o "sumir" ao tocar na barra
         document.body.appendChild(b);
     }
