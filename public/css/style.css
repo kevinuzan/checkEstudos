@@ -4859,3 +4859,7 @@ input[type="checkbox"] {
 .lei-barra-citacao { font-size: 12.5px; color: var(--text-muted); font-style: italic; }
 .lei-barra-nota textarea { width: 100%; box-sizing: border-box; resize: vertical; }
 .lei-barra-nota .modal-actions { margin-top: 2px; }
+.lei-anotacoes { margin-top: 8px; }
+.lei-anot-toggle { background: var(--surface-muted); color: var(--text); padding: 6px 12px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; }
+.lei-anot-lista { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.lei-anot-lista .lei-nota { margin-top: 0; }

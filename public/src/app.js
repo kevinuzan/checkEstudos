@@ -2294,6 +2294,7 @@ let leiDados = null;                  // { lei, itens }
 let leiIdx = null;                    // índices derivados dos itens
 let leiMeus = { grifos: [], notas: [], alteracoes: {} };
 let leiBlocosAbertos = new Set();
+let leiAnotAbertas = new Set();       // artigos com o painel "Anotações" expandido
 let leiBusca = '';
 let leiPrefs = { revogados: true, notasLeg: false, soMeus: false };
 let leiBuscaTimer = null;
@@ -2568,8 +2569,18 @@ function leiHtmlArtigo(artId) {
     }).join('');
     const alt = leiMeus.alteracoes && leiMeus.alteracoes[artId];
     const aviso = alt ? `<div class="lei-alerta">⚠ Este artigo foi ${escaparHtml(({ alterado: 'alterado', incluido: 'incluído', revogado: 'revogado', removido: 'removido' })[alt.tipo] || 'alterado')} em ${leiFormatarData(alt.em)}, depois dos seus grifos/anotações. Confira se ainda fazem sentido.</div>` : '';
-    const notasTrecho = leiMeus.grifos.filter(g => g.nota && !g.orfao && g.dispId.split('.')[0] === artId)
-        .map(g => `<div class="lei-nota lei-nota-trecho"><div class="lei-nota-titulo">📝 Sobre “${escaparHtml(g.trecho.length > 90 ? g.trecho.slice(0, 90) + '…' : g.trecho)}”</div><div class="lei-nota-texto">${escaparHtml(g.nota)}</div><button type="button" class="btn-secundario" data-gid="${escaparHtml(g.id)}" onclick="leiEditarNotaDoGrifo(this.dataset.gid)">Editar</button></div>`).join('');
+    // Todas as anotações do artigo (do artigo inteiro e dos trechos) ficam num painel
+    // recolhido — com muitas notas a leitura não vira uma pilha de cartões.
+    const itensTrecho = leiMeus.grifos.filter(g => g.nota && !g.orfao && g.dispId.split('.')[0] === artId)
+        .map(g => `<div class="lei-nota lei-nota-trecho"><div class="lei-nota-titulo">📝 Sobre “${escaparHtml(g.trecho.length > 90 ? g.trecho.slice(0, 90) + '…' : g.trecho)}”</div><div class="lei-nota-texto">${escaparHtml(g.nota)}</div><button type="button" class="btn-secundario" data-gid="${escaparHtml(g.id)}" onclick="leiEditarNotaDoGrifo(this.dataset.gid)">Editar</button></div>`);
+    const notaArt = leiHtmlNotaArtigo(artId);
+    const totalNotas = itensTrecho.length + (notaArt ? 1 : 0);
+    const abertas = leiAnotAbertas.has(artId);
+    const painelNotas = totalNotas ? `
+            <div class="lei-anotacoes">
+                <button type="button" class="lei-anot-toggle" onclick="leiAlternarAnotacoes(this.closest('.lei-art').dataset.art)">${abertas ? '▾' : '▸'} 📝 Anotações (${totalNotas})</button>
+                ${abertas ? `<div class="lei-anot-lista">${notaArt}${itensTrecho.join('')}</div>` : ''}
+            </div>` : '';
     const orfaos = leiMeus.grifos.filter(g => g.orfao && g.dispId.split('.')[0] === artId)
         .map(g => `<div class="lei-orfao">Grifo que não existe mais no texto: “${escaparHtml(g.trecho)}” <button type="button" class="btn-secundario" data-gid="${escaparHtml(g.id)}" onclick="leiRemoverGrifo(this.dataset.gid)">Remover</button></div>`).join('');
     return `
@@ -2577,16 +2588,22 @@ function leiHtmlArtigo(artId) {
             ${aviso}
             ${corpo}
             ${orfaos}
-            ${notasTrecho}
+            ${painelNotas}
             <div class="lei-art-acoes"><button type="button" class="btn-secundario" onclick="leiAbrirNota(this.closest('.lei-art').dataset.art)">📝 ${leiNotaDoArt(artId) ? 'Editar anotação' : 'Anotar'}</button></div>
-            <div class="lei-nota-area">${leiHtmlNotaLeitura(artId)}</div>
+            <div class="lei-nota-area"></div>
         </div>`;
 }
 
-function leiHtmlNotaLeitura(artId) {
+// Uma nota do artigo inteiro, no formato de item do painel "Anotações".
+function leiHtmlNotaArtigo(artId) {
     const n = leiNotaDoArt(artId);
     if (!n) return '';
-    return `<div class="lei-nota"><div class="lei-nota-titulo">📝 Minha anotação</div><div class="lei-nota-texto">${escaparHtml(n.texto)}</div></div>`;
+    return `<div class="lei-nota"><div class="lei-nota-titulo">📝 Sobre o artigo todo</div><div class="lei-nota-texto">${escaparHtml(n.texto)}</div></div>`;
+}
+
+function leiAlternarAnotacoes(artId) {
+    if (leiAnotAbertas.has(artId)) leiAnotAbertas.delete(artId); else leiAnotAbertas.add(artId);
+    leiAtualizarArtigosDe([artId]);
 }
 
 // ---------- Anotações ----------
@@ -2611,7 +2628,7 @@ function leiAbrirNota(artId) {
 
 function leiCancelarNota(artId) {
     const caixa = document.getElementById('lei-art-' + artId);
-    if (caixa) caixa.querySelector('.lei-nota-area').innerHTML = leiHtmlNotaLeitura(artId);
+    if (caixa) caixa.querySelector('.lei-nota-area').innerHTML = '';
 }
 
 async function leiSalvarNota(artId) {
@@ -2631,6 +2648,7 @@ async function leiSalvarNota(artId) {
     }
     leiMeus.notas = leiMeus.notas.filter(n => n.dispId !== artId);
     if (texto) leiMeus.notas.push({ dispId: artId, texto, atualizadoEm: new Date().toISOString() });
+    leiAnotAbertas.add(artId);
     const caixa = document.getElementById('lei-art-' + artId);
     if (caixa) caixa.outerHTML = leiHtmlArtigo(artId);
 }
