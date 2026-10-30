@@ -4842,11 +4842,14 @@ input[type="checkbox"] {
 .lei-mud-grupo { margin: 8px 0; }
 .lei-mud-itens { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .lei-mud-itens button { padding: 4px 10px; font-size: 12.5px; }
+/* No TOPO da tela (não embaixo): no Android o Chrome abre uma folha "Pesquisar no Google"
+   no rodapé quando se seleciona texto, e ela cobria a barra. No topo também não briga
+   com o teclado na hora de escrever a anotação. */
 .lei-barra {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+    position: fixed; left: 0; right: 0; top: 0; z-index: 200;
     display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
-    padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
-    background: var(--card); border-top: 1px solid var(--border); box-shadow: var(--shadow-lg);
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
+    background: var(--card); border-bottom: 1px solid var(--border); box-shadow: var(--shadow-lg);
 }
 .lei-barra-rotulo { font-size: 13px; font-weight: 700; color: var(--text-muted); }
 .lei-cor-btn { width: 34px; height: 34px; min-width: 34px; padding: 0; border-radius: 50%; border: 2px solid var(--border); }
