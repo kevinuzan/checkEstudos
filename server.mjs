@@ -606,6 +606,9 @@ async function startServer() {
         const eventosColl = db.collection('eventos');
         await eventosColl.createIndex({ userId: 1, data: 1 }).catch(() => {});
         const lembretesColl = db.collection('lembretes');
+        // Preferências da aba Geral: salário alvo e categorias criadas pela pessoa.
+        const geralConfigColl = db.collection('geral_config');
+        await geralConfigColl.createIndex({ userId: 1 }, { unique: true }).catch(() => {});
         await lembretesColl.createIndex({ userId: 1, data: 1 }).catch(() => {});
         await sugestoesColl.createIndex({ userId: 1, criadoEm: -1 }).catch(() => {});
         const modeloMetaColl = db.collection('modelo_meta');
@@ -1245,7 +1248,7 @@ async function startServer() {
                 jogoPontuacoesColl, jogoRodadasColl, flashcardsBaralhosColl, flashcardsCartoesColl,
                 analiseDesempenhoColl, questoesRespostasColl,
                 leisGrifosColl, leisNotasColl, leisLeiturasColl,
-                despesasColl, eventosColl, lembretesColl, leisTemposColl];
+                despesasColl, eventosColl, lembretesColl, leisTemposColl, geralConfigColl];
         }
 
         // Apaga todos os dados de estudo mas MANTÉM a conta, o login e a
@@ -1607,6 +1610,61 @@ async function startServer() {
         const TIPOS_EVENTO = ['prova', 'aula', 'outro'];
         const REPETICOES_LEMBRETE = ['nenhuma', 'diaria', 'semanal'];
 
+        // Categorias personalizadas ficam na config do usuário. As padrão não podem ser
+        // removidas nem duplicadas (comparação sem acento/maiúscula).
+        const MAX_CATEGORIAS_PERSONALIZADAS = 30;
+        const normalizarNome = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+        const NOMES_PADRAO_DESPESA = { inscricao: 'Inscrição', curso: 'Curso', material: 'Material', viagem: 'Viagem', outros: 'Outros' };
+        const NOMES_PADRAO_EVENTO = { prova: 'Prova', aula: 'Aula', outro: 'Outro' };
+        async function lerConfigGeral(userId) {
+            const c = await geralConfigColl.findOne({ userId });
+            return {
+                salarioAlvo: c && c.salarioAlvo > 0 ? c.salarioAlvo : null,
+                categoriasDespesa: (c && c.categoriasDespesa) || [],
+                categoriasEvento: (c && c.categoriasEvento) || []
+            };
+        }
+        // Limpa uma lista de nomes: tira repetidos e os que colidem com as categorias padrão.
+        function limparNomesCategoria(lista, padrao) {
+            const vistos = new Set(Object.entries(padrao).flatMap(([k, v]) => [normalizarNome(k), normalizarNome(v)]));
+            const out = [];
+            for (const bruto of Array.isArray(lista) ? lista : []) {
+                const nome = textoLimpo(typeof bruto === 'string' ? bruto : bruto?.nome, 30);
+                const chave = normalizarNome(nome);
+                if (!nome || vistos.has(chave)) continue;
+                vistos.add(chave);
+                out.push({ nome, cor: Math.abs(Math.round(Number(bruto?.cor))) % 8 || 0 });
+                if (out.length >= MAX_CATEGORIAS_PERSONALIZADAS) break;
+            }
+            return out;
+        }
+
+        app.get('/api/geral/config', requireAuth, async (req, res) => {
+            res.json({ success: true, ...(await lerConfigGeral(req.userId)) });
+        });
+        // Atualização parcial: só mexe no que veio no corpo.
+        app.put('/api/geral/config', requireAuth, async (req, res) => {
+            try {
+                const set = {};
+                if ('salarioAlvo' in (req.body || {})) {
+                    const v = req.body.salarioAlvo;
+                    if (v === null || v === '') set.salarioAlvo = null;
+                    else {
+                        const n = Math.round(Number(v) * 100) / 100;
+                        if (!(n > 0) || n > 10000000) return res.status(400).json({ success: false, error: 'Informe um salário maior que zero.' });
+                        set.salarioAlvo = n;
+                    }
+                }
+                if ('categoriasDespesa' in (req.body || {})) set.categoriasDespesa = limparNomesCategoria(req.body.categoriasDespesa, NOMES_PADRAO_DESPESA).map(c => c.nome);
+                if ('categoriasEvento' in (req.body || {})) set.categoriasEvento = limparNomesCategoria(req.body.categoriasEvento, NOMES_PADRAO_EVENTO);
+                if (Object.keys(set).length) await geralConfigColl.updateOne({ userId: req.userId }, { $set: set }, { upsert: true });
+                res.json({ success: true, ...(await lerConfigGeral(req.userId)) });
+            } catch (err) {
+                console.error('Erro ao salvar config da aba Geral:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível salvar agora.' });
+            }
+        });
+
         async function atingiuLimiteGeral(coll, userId) {
             return (await coll.countDocuments({ userId })) >= LIMITE_ITENS_GERAL;
         }
@@ -1645,11 +1703,11 @@ async function startServer() {
         });
 
         // ---- Despesas
-        function lerDespesa(body) {
+        function lerDespesa(body, cfg) {
             const valor = Math.round(Number(body?.valor) * 100) / 100;
             if (!(valor > 0) || valor > 10000000) return { erro: 'Informe um valor maior que zero.' };
             if (!dataValida(body?.data)) return { erro: 'Informe a data.' };
-            if (!CATEGORIAS_DESPESA.includes(body?.categoria)) return { erro: 'Escolha a categoria.' };
+            if (!CATEGORIAS_DESPESA.includes(body?.categoria) && !cfg.categoriasDespesa.includes(body?.categoria)) return { erro: 'Escolha a categoria.' };
             const descricao = textoLimpo(body?.descricao, 120);
             if (!descricao) return { erro: 'Descreva a despesa.' };
             return { doc: { valor, data: body.data, categoria: body.categoria, descricao, plano: textoLimpo(body?.plano, 80) || null } };
@@ -1661,7 +1719,7 @@ async function startServer() {
             res.json({ success: true, despesas: lista.map(paraDespesa) });
         });
         app.post('/api/despesas', requireAuth, async (req, res) => {
-            const { doc, erro } = lerDespesa(req.body);
+            const { doc, erro } = lerDespesa(req.body, await lerConfigGeral(req.userId));
             if (erro) return res.status(400).json({ success: false, error: erro });
             if (await atingiuLimiteGeral(despesasColl, req.userId)) return res.status(400).json({ success: false, error: 'Limite de despesas atingido.' });
             const r = await despesasColl.insertOne({ ...doc, userId: req.userId, criadoEm: new Date() });
@@ -1669,7 +1727,7 @@ async function startServer() {
         });
         app.put('/api/despesas/:id', requireAuth, async (req, res) => {
             if (!idValido(req.params.id)) return res.status(400).json({ success: false, error: 'Despesa inválida.' });
-            const { doc, erro } = lerDespesa(req.body);
+            const { doc, erro } = lerDespesa(req.body, await lerConfigGeral(req.userId));
             if (erro) return res.status(400).json({ success: false, error: erro });
             await despesasColl.updateOne({ _id: new ObjectId(req.params.id), userId: req.userId }, { $set: doc });
             res.json({ success: true });
@@ -1681,11 +1739,11 @@ async function startServer() {
         });
 
         // ---- Agenda (provas, aulas, outros) com contagem regressiva opcional
-        function lerEvento(body) {
+        function lerEvento(body, cfg) {
             const titulo = textoLimpo(body?.titulo, 80);
             if (!titulo) return { erro: 'Dê um título ao evento.' };
             if (!dataValida(body?.data)) return { erro: 'Informe a data.' };
-            if (!TIPOS_EVENTO.includes(body?.tipo)) return { erro: 'Escolha o tipo.' };
+            if (!TIPOS_EVENTO.includes(body?.tipo) && !cfg.categoriasEvento.some(c => c.nome === body?.tipo)) return { erro: 'Escolha o tipo.' };
             const hora = body?.hora && RE_HORA.test(body.hora) ? body.hora : null;
             return { doc: { titulo, data: body.data, hora, tipo: body.tipo, contagem: body.contagem === true, obs: textoLimpo(body?.obs, 200) } };
         }
@@ -1696,7 +1754,7 @@ async function startServer() {
             res.json({ success: true, eventos: lista.map(paraEvento) });
         });
         app.post('/api/eventos', requireAuth, async (req, res) => {
-            const { doc, erro } = lerEvento(req.body);
+            const { doc, erro } = lerEvento(req.body, await lerConfigGeral(req.userId));
             if (erro) return res.status(400).json({ success: false, error: erro });
             if (await atingiuLimiteGeral(eventosColl, req.userId)) return res.status(400).json({ success: false, error: 'Limite de eventos atingido.' });
             await eventosColl.insertOne({ ...doc, userId: req.userId, criadoEm: new Date() });
@@ -1704,7 +1762,7 @@ async function startServer() {
         });
         app.put('/api/eventos/:id', requireAuth, async (req, res) => {
             if (!idValido(req.params.id)) return res.status(400).json({ success: false, error: 'Evento inválido.' });
-            const { doc, erro } = lerEvento(req.body);
+            const { doc, erro } = lerEvento(req.body, await lerConfigGeral(req.userId));
             if (erro) return res.status(400).json({ success: false, error: erro });
             await eventosColl.updateOne({ _id: new ObjectId(req.params.id), userId: req.userId }, { $set: doc });
             res.json({ success: true });

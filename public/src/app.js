@@ -4274,6 +4274,17 @@ let despesaEmEdicao = null;
 let despesaMes = null;           // AAAA-MM
 
 const NOMES_TIPO_EVENTO = { prova: 'Prova', aula: 'Aula', outro: 'Outro' };
+// Config da aba Geral (vem do servidor): salário alvo + categorias criadas pela pessoa.
+let geralConfig = { salarioAlvo: null, categoriasDespesa: [], categoriasEvento: [] };
+let lembreteEmEdicao = null;
+const nomeTipoEvento = k => NOMES_TIPO_EVENTO[k] || k;
+const nomeCategoriaDespesa = k => NOMES_CATEGORIA_DESPESA[k] || k;
+// Cor de um tipo de evento: padrão (prova/aula/outro) ou o índice 0-7 guardado na categoria personalizada.
+function classeCorEvento(tipo) {
+    if (NOMES_TIPO_EVENTO[tipo]) return 'cal-' + tipo;
+    const c = geralConfig.categoriasEvento.find(x => x.nome === tipo);
+    return 'cal-cor-' + (c ? c.cor : 0);
+}
 const NOMES_CATEGORIA_DESPESA = { inscricao: 'Inscrição', curso: 'Curso', material: 'Material', viagem: 'Viagem', outros: 'Outros' };
 const NOMES_MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
@@ -4299,8 +4310,9 @@ function formatarReais(v) { return Number(v || 0).toLocaleString('pt-BR', { styl
 
 async function geralCarregarTudo() {
     try {
-        const [e, l, d] = await Promise.all([fetch('/api/eventos'), fetch('/api/lembretes'), fetch('/api/despesas')]);
-        const [ev, lb, dp] = await Promise.all([e.json(), l.json(), d.json()]);
+        const [e, l, d, g] = await Promise.all([fetch('/api/eventos'), fetch('/api/lembretes'), fetch('/api/despesas'), fetch('/api/geral/config')]);
+        const [ev, lb, dp, cfg] = await Promise.all([e.json(), l.json(), d.json(), g.json()]);
+        if (cfg.success) geralConfig = { salarioAlvo: cfg.salarioAlvo, categoriasDespesa: cfg.categoriasDespesa || [], categoriasEvento: cfg.categoriasEvento || [] };
         geralDados.eventos = ev.eventos || [];
         geralDados.lembretes = lb.lembretes || [];
         geralDados.despesas = dp.despesas || [];
@@ -4308,6 +4320,7 @@ async function geralCarregarTudo() {
         console.error('Erro ao carregar a aba Geral:', err);
     }
     atualizarBadgeGeral();
+    renderizarSelectsCategorias();
 }
 
 // Lembretes pendentes que já venceram ou são de hoje.
@@ -4392,7 +4405,7 @@ function renderizarCalendario() {
         const tipos = [...new Set(evs.map(e => e.tipo))];
         html += `<button type="button" class="cal-dia${dia === hoje ? ' cal-hoje' : ''}${dia === calDiaSelecionado ? ' cal-sel' : ''}" data-dia="${dia}" onclick="calSelecionarDia(this.dataset.dia)">
             <span>${d}</span>
-            <span class="cal-pontos">${tipos.map(t => `<i class="cal-ponto cal-${t}"></i>`).join('')}</span>
+            <span class="cal-pontos">${tipos.map(t => `<i class="cal-ponto ${classeCorEvento(t)}"></i>`).join('')}</span>
         </button>`;
     }
     grade.innerHTML = html;
@@ -4415,10 +4428,10 @@ function htmlLinhaEvento(e) {
     const dias = diasAteData(e.data);
     return `
         <div class="admin-acesso-linha sugestao-linha">
-            <span class="cal-ponto cal-${escaparHtml(e.tipo)} cal-ponto-linha"></span>
+            <span class="cal-ponto ${classeCorEvento(e.tipo)} cal-ponto-linha"></span>
             <div class="admin-acesso-info">
                 <span class="admin-acesso-email">${escaparHtml(e.titulo)}</span>
-                <span class="admin-acesso-meta">${NOMES_TIPO_EVENTO[e.tipo] || ''} · ${dataCurtaBR(e.data)}${e.hora ? ' às ' + escaparHtml(e.hora) : ''}${e.contagem ? ' · ' + textoFaltam(dias) : ''}</span>
+                <span class="admin-acesso-meta">${escaparHtml(nomeTipoEvento(e.tipo))} · ${dataCurtaBR(e.data)}${e.hora ? ' às ' + escaparHtml(e.hora) : ''}${e.contagem ? ' · ' + textoFaltam(dias) : ''}</span>
                 ${e.obs ? `<span class="admin-acesso-meta">${escaparHtml(e.obs)}</span>` : ''}
             </div>
             <button type="button" class="btn-secundario" data-id="${escaparHtml(e.id)}" onclick="eventoEditar(this.dataset.id)">Editar</button>
@@ -4492,7 +4505,8 @@ function htmlLinhaLembrete(l, concluido) {
             </div>
             ${concluido
                 ? `<button type="button" class="btn-secundario" data-id="${escaparHtml(l.id)}" onclick="lembreteReabrir(this.dataset.id)">Reabrir</button>`
-                : `<button type="button" data-id="${escaparHtml(l.id)}" onclick="lembreteConcluir(this.dataset.id)">✓ Feito</button>`}
+                : `<button type="button" data-id="${escaparHtml(l.id)}" onclick="lembreteConcluir(this.dataset.id)">✓ Feito</button>
+                   <button type="button" class="btn-secundario" data-id="${escaparHtml(l.id)}" onclick="lembreteEditar(this.dataset.id)">Editar</button>`}
             <button type="button" class="btn-perigo" data-id="${escaparHtml(l.id)}" onclick="lembreteExcluir(this.dataset.id)">✕</button>
         </div>`;
 }
@@ -4514,14 +4528,39 @@ async function salvarLembrete() {
         hora: document.getElementById('lb-hora').value, repete: document.getElementById('lb-repete').value
     };
     try {
-        await geralEnviar('/api/lembretes', 'POST', corpo);
-        document.getElementById('lb-texto').value = '';
-        document.getElementById('lb-hora').value = '';
-        document.getElementById('lb-repete').value = 'nenhuma';
+        if (lembreteEmEdicao) await geralEnviar(`/api/lembretes/${encodeURIComponent(lembreteEmEdicao)}`, 'PUT', corpo);
+        else await geralEnviar('/api/lembretes', 'POST', corpo);
+        lembreteCancelarEdicao();
         await geralCarregarTudo();
         renderizarLembretes();
     } catch (err) { geralMostrarErro('lb-erro', err.message); }
 }
+function lembreteCancelarEdicao() {
+    lembreteEmEdicao = null;
+    document.getElementById('lb-texto').value = '';
+    document.getElementById('lb-hora').value = '';
+    document.getElementById('lb-repete').value = 'nenhuma';
+    document.getElementById('lb-form-titulo').textContent = 'Novo lembrete';
+    document.getElementById('lb-btn-salvar').textContent = 'Adicionar';
+    document.getElementById('lb-btn-cancelar').style.display = 'none';
+    geralMostrarErro('lb-erro', '');
+}
+
+function lembreteEditar(id) {
+    const l = geralDados.lembretes.find(x => x.id === id);
+    if (!l) return;
+    lembreteEmEdicao = id;
+    document.getElementById('lb-texto').value = l.texto;
+    document.getElementById('lb-data').value = l.data;
+    document.getElementById('lb-hora').value = l.hora || '';
+    document.getElementById('lb-repete').value = l.repete || 'nenhuma';
+    document.getElementById('lb-form-titulo').textContent = 'Editar lembrete';
+    document.getElementById('lb-btn-salvar').textContent = 'Salvar';
+    document.getElementById('lb-btn-cancelar').style.display = '';
+    if (window.scrollTo) window.scrollTo(0, 0);
+    document.getElementById('lb-texto').focus();
+}
+
 async function lembreteConcluir(id) {
     try { await geralEnviar(`/api/lembretes/${encodeURIComponent(id)}/concluir`, 'POST', {}); await geralCarregarTudo(); renderizarLembretes(); }
     catch (err) { alert(err.message); }
@@ -4534,6 +4573,95 @@ async function lembreteExcluir(id) {
     if (!confirm('Excluir este lembrete?')) return;
     try { await geralEnviar(`/api/lembretes/${encodeURIComponent(id)}`, 'DELETE'); await geralCarregarTudo(); renderizarLembretes(); }
     catch (err) { alert(err.message); }
+}
+
+// ---- Categorias personalizadas (despesas e eventos)
+function renderizarSelectsCategorias() {
+    const selD = document.getElementById('dp-categoria');
+    const selE = document.getElementById('ev-tipo');
+    if (selD) {
+        const atual = selD.value;
+        selD.innerHTML = [...Object.entries(NOMES_CATEGORIA_DESPESA), ...geralConfig.categoriasDespesa.map(n => [n, n])]
+            .map(([k, v]) => `<option value="${escaparHtml(k)}">${escaparHtml(v)}</option>`).join('');
+        if ([...selD.options].some(o => o.value === atual)) selD.value = atual;
+    }
+    if (selE) {
+        const atual = selE.value;
+        selE.innerHTML = [...Object.entries(NOMES_TIPO_EVENTO), ...geralConfig.categoriasEvento.map(c => [c.nome, c.nome])]
+            .map(([k, v]) => `<option value="${escaparHtml(k)}">${escaparHtml(v)}</option>`).join('');
+        if ([...selE.options].some(o => o.value === atual)) selE.value = atual;
+    }
+    const chipsD = document.getElementById('dp-cats-chips');
+    if (chipsD) chipsD.innerHTML = geralConfig.categoriasDespesa.length
+        ? geralConfig.categoriasDespesa.map(n => `<span class="geral-chip">${escaparHtml(n)} <button type="button" data-nome="${escaparHtml(n)}" onclick="categoriaRemover('despesa', this.dataset.nome)" aria-label="Remover">✕</button></span>`).join('')
+        : '<span class="config-texto-ajuda">Nenhuma categoria sua ainda.</span>';
+    const chipsE = document.getElementById('ev-cats-chips');
+    if (chipsE) chipsE.innerHTML = geralConfig.categoriasEvento.length
+        ? geralConfig.categoriasEvento.map(c => `<span class="geral-chip"><i class="cal-ponto cal-cor-${c.cor}"></i> ${escaparHtml(c.nome)} <button type="button" data-nome="${escaparHtml(c.nome)}" onclick="categoriaRemover('evento', this.dataset.nome)" aria-label="Remover">✕</button></span>`).join('')
+        : '<span class="config-texto-ajuda">Nenhuma categoria sua ainda.</span>';
+}
+
+async function categoriaSalvar(corpo) {
+    const d = await geralEnviar('/api/geral/config', 'PUT', corpo);
+    geralConfig = { salarioAlvo: d.salarioAlvo, categoriasDespesa: d.categoriasDespesa || [], categoriasEvento: d.categoriasEvento || [] };
+    renderizarSelectsCategorias();
+}
+
+async function categoriaAdicionar(qual) {
+    const input = document.getElementById(qual === 'despesa' ? 'dp-cat-nova' : 'ev-cat-nova');
+    const nome = input.value.trim();
+    if (!nome) return;
+    try {
+        if (qual === 'despesa') await categoriaSalvar({ categoriasDespesa: [...geralConfig.categoriasDespesa, nome] });
+        else {
+            // Cada categoria nova pega a próxima cor da paleta (8 cores, repete depois).
+            const cor = (geralConfig.categoriasEvento.length + 3) % 8;
+            await categoriaSalvar({ categoriasEvento: [...geralConfig.categoriasEvento, { nome, cor }] });
+        }
+        input.value = '';
+        const sel = document.getElementById(qual === 'despesa' ? 'dp-categoria' : 'ev-tipo');
+        if ([...sel.options].some(o => o.value === nome)) sel.value = nome;   // já deixa selecionada
+        if (qual === 'evento') renderizarCalendario();
+    } catch (err) { alert(err.message); }
+}
+
+async function categoriaRemover(qual, nome) {
+    if (!confirm(`Remover a categoria "${nome}"? Os itens que já usam ela continuam aparecendo com esse nome.`)) return;
+    try {
+        if (qual === 'despesa') await categoriaSalvar({ categoriasDespesa: geralConfig.categoriasDespesa.filter(n => n !== nome) });
+        else await categoriaSalvar({ categoriasEvento: geralConfig.categoriasEvento.filter(c => c.nome !== nome) });
+    } catch (err) { alert(err.message); }
+}
+
+// ---- Meta de salário: em quanto tempo o investimento volta
+async function salvarSalarioAlvo() {
+    geralMostrarErro('dp-salario-erro', '');
+    const v = document.getElementById('dp-salario').value;
+    try {
+        await categoriaSalvar({ salarioAlvo: v === '' ? null : Number(v) });
+        renderizarRetornoSalario();
+    } catch (err) { geralMostrarErro('dp-salario-erro', err.message); }
+}
+
+function renderizarRetornoSalario() {
+    const el = document.getElementById('dp-retorno');
+    const input = document.getElementById('dp-salario');
+    if (!el) return;
+    if (input && document.activeElement !== input) input.value = geralConfig.salarioAlvo || '';
+    const total = geralDados.despesas.reduce((t, d) => t + d.valor, 0);
+    const sal = geralConfig.salarioAlvo;
+    if (!sal) { el.innerHTML = '<p class="config-texto-ajuda">Informe o salário que você espera receber depois de aprovada para ver em quanto tempo o dinheiro investido volta.</p>'; return; }
+    if (!total) { el.innerHTML = '<p class="config-texto-ajuda">Lance suas despesas para calcular o retorno do investimento.</p>'; return; }
+    const meses = total / sal;
+    const dias = Math.max(1, Math.ceil(meses * 30));
+    const texto = meses < 1 ? `cerca de ${dias} dia(s) de salário` : `${meses.toFixed(1).replace('.', ',')} meses de salário (~${dias} dias)`;
+    el.innerHTML = `
+        <div class="dp-retorno-card">
+            <span>Investido até agora: <strong>${formatarReais(total)}</strong></span>
+            <span>Com ${formatarReais(sal)} por mês, você recupera esse valor em</span>
+            <strong class="dp-retorno-valor">${texto}</strong>
+            <span class="config-texto-ajuda">Conta simples: total das despesas ÷ salário líquido mensal. Não considera reajustes, impostos nem o tempo até a posse.</span>
+        </div>`;
 }
 
 // ---- Despesas
@@ -4551,6 +4679,7 @@ function renderizarDespesas() {
     if (!tit || !totais || !lista) return;
     const [y, m] = despesaMes.split('-').map(Number);
     tit.textContent = `${NOMES_MESES[m - 1]} ${y}`;
+    renderizarRetornoSalario();
     const doMes = geralDados.despesas.filter(d => d.data.startsWith(despesaMes));
     const total = doMes.reduce((t, d) => t + d.valor, 0);
     const totalGeral = geralDados.despesas.reduce((t, d) => t + d.valor, 0);
@@ -4559,12 +4688,12 @@ function renderizarDespesas() {
     totais.innerHTML = `
         <div class="dp-total-card"><span>Total do mês</span><strong>${formatarReais(total)}</strong></div>
         <div class="dp-total-card"><span>Total geral</span><strong>${formatarReais(totalGeral)}</strong></div>
-        ${Object.entries(porCat).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<div class="dp-total-card dp-total-cat"><span>${NOMES_CATEGORIA_DESPESA[c] || c}</span><strong>${formatarReais(v)}</strong></div>`).join('')}`;
+        ${Object.entries(porCat).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<div class="dp-total-card dp-total-cat"><span>${nomeCategoriaDespesa(c)}</span><strong>${formatarReais(v)}</strong></div>`).join('')}`;
     lista.innerHTML = doMes.length ? doMes.map(d => `
         <div class="admin-acesso-linha sugestao-linha">
             <div class="admin-acesso-info">
                 <span class="admin-acesso-email">${escaparHtml(d.descricao)}</span>
-                <span class="admin-acesso-meta">${dataCurtaBR(d.data)} · ${NOMES_CATEGORIA_DESPESA[d.categoria] || ''}</span>
+                <span class="admin-acesso-meta">${dataCurtaBR(d.data)} · ${nomeCategoriaDespesa(d.categoria)}</span>
             </div>
             <strong class="dp-valor">${formatarReais(d.valor)}</strong>
             <button type="button" class="btn-secundario" data-id="${escaparHtml(d.id)}" onclick="despesaEditar(this.dataset.id)">Editar</button>

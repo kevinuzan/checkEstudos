@@ -5219,3 +5219,12 @@ input[type="checkbox"] {
 .lei-cron-info { font-size: 13px; color: var(--text-muted); margin-right: auto; }
 .lei-cron-ritmo { flex-basis: 100%; font-size: 12.5px; color: var(--text-muted); }
 .lei-tempo-lido { flex: none; font-size: 12px; font-weight: 700; color: var(--primary-dark); }
+.cal-cor-0 { background: #0d9488; } .cal-cor-1 { background: #d97706; } .cal-cor-2 { background: #7c3aed; } .cal-cor-3 { background: #db2777; }
+.cal-cor-4 { background: #2563eb; } .cal-cor-5 { background: #65a30d; } .cal-cor-6 { background: #0891b2; } .cal-cor-7 { background: #9333ea; }
+.geral-cats { margin: 8px 0; font-size: 13.5px; }
+.geral-cats summary { cursor: pointer; color: var(--primary-dark); font-weight: 600; }
+.geral-cats-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.geral-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 4px 3px 10px; border: 1px solid var(--border); border-radius: 99px; background: var(--surface-muted); font-size: 13px; }
+.geral-chip button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 0 6px; font-size: 13px; }
+.dp-retorno-card { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; padding: 12px; border: 1px solid var(--primary); border-radius: var(--radius-sm); background: var(--primary-light); font-size: 14px; }
+.dp-retorno-valor { font-size: 20px; color: var(--primary-dark); }

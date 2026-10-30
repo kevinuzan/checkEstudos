@@ -757,11 +757,15 @@
                                 <div><label class="modal-label" for="ev-hora">Hora (opcional)</label><input type="time" id="ev-hora"></div>
                             </div>
                             <label class="modal-label" for="ev-tipo">Tipo</label>
-                            <select id="ev-tipo">
-                                <option value="prova">Prova</option>
-                                <option value="aula">Aula</option>
-                                <option value="outro">Outro</option>
-                            </select>
+                            <select id="ev-tipo"></select>
+                            <details class="geral-cats">
+                                <summary>Minhas categorias de evento</summary>
+                                <div class="geral-cats-chips" id="ev-cats-chips"></div>
+                                <div class="perfil-nome-row">
+                                    <input type="text" id="ev-cat-nova" maxlength="30" placeholder="Nova categoria (ex.: Simulado)">
+                                    <button type="button" class="btn-secundario" onclick="categoriaAdicionar('evento')">Adicionar</button>
+                                </div>
+                            </details>
                             <label class="config-check"><input type="checkbox" id="ev-contagem"> Mostrar contagem regressiva no Resumo</label>
                             <label class="modal-label" for="ev-obs">Observação (opcional)</label>
                             <input type="text" id="ev-obs" maxlength="200">
@@ -783,7 +787,7 @@
                 <!-- Lembretes -->
                 <div id="geral-sec-lembretes" style="display:none;">
                     <section class="painel-bloco">
-                        <div class="painel-bloco-header"><h2>🔔 Novo lembrete</h2></div>
+                        <div class="painel-bloco-header"><h2>🔔 <span id="lb-form-titulo">Novo lembrete</span></h2></div>
                         <div class="config-card">
                             <label class="modal-label" for="lb-texto">O que lembrar?</label>
                             <input type="text" id="lb-texto" maxlength="140" placeholder="Ex.: Pagar a inscrição do concurso">
@@ -799,7 +803,8 @@
                             </select>
                             <p id="lb-erro" class="login-erro" style="display:none;"></p>
                             <div class="assinatura-acoes">
-                                <button type="button" onclick="salvarLembrete()">Adicionar</button>
+                                <button type="button" id="lb-btn-salvar" onclick="salvarLembrete()">Adicionar</button>
+                                <button type="button" class="btn-secundario" id="lb-btn-cancelar" style="display:none;" onclick="lembreteCancelarEdicao()">Cancelar edição</button>
                             </div>
                             <p class="config-texto-ajuda">Os lembretes aparecem no Resumo quando chegam o dia (avisos dentro do app, sem notificação no celular por enquanto).</p>
                         </div>
@@ -824,13 +829,15 @@
                                 <div><label class="modal-label" for="dp-data">Data</label><input type="date" id="dp-data"></div>
                             </div>
                             <label class="modal-label" for="dp-categoria">Categoria</label>
-                            <select id="dp-categoria">
-                                <option value="inscricao">Inscrição</option>
-                                <option value="curso">Curso</option>
-                                <option value="material">Material</option>
-                                <option value="viagem">Viagem</option>
-                                <option value="outros">Outros</option>
-                            </select>
+                            <select id="dp-categoria"></select>
+                            <details class="geral-cats">
+                                <summary>Minhas categorias de despesa</summary>
+                                <div class="geral-cats-chips" id="dp-cats-chips"></div>
+                                <div class="perfil-nome-row">
+                                    <input type="text" id="dp-cat-nova" maxlength="30" placeholder="Nova categoria (ex.: Mentoria)">
+                                    <button type="button" class="btn-secundario" onclick="categoriaAdicionar('despesa')">Adicionar</button>
+                                </div>
+                            </details>
                             <label class="modal-label" for="dp-descricao">Descrição</label>
                             <input type="text" id="dp-descricao" maxlength="120" placeholder="Ex.: Inscrição TRT-2">
                             <p id="dp-erro" class="login-erro" style="display:none;"></p>
@@ -838,6 +845,18 @@
                                 <button type="button" id="dp-btn-salvar" onclick="salvarDespesa()">Adicionar</button>
                                 <button type="button" class="btn-secundario" id="dp-btn-cancelar" style="display:none;" onclick="despesaCancelarEdicao()">Cancelar edição</button>
                             </div>
+                        </div>
+                    </section>
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header"><h2>🎯 Meta de salário</h2></div>
+                        <div class="config-card">
+                            <label class="modal-label" for="dp-salario">Salário mensal alvo, líquido (R$)</label>
+                            <div class="perfil-nome-row">
+                                <input type="number" id="dp-salario" min="0.01" step="0.01" inputmode="decimal" placeholder="Ex.: 12000">
+                                <button type="button" onclick="salvarSalarioAlvo()">Salvar</button>
+                            </div>
+                            <p id="dp-salario-erro" class="login-erro" style="display:none;"></p>
+                            <div class="dp-retorno" id="dp-retorno"></div>
                         </div>
                     </section>
                     <section class="painel-bloco">
