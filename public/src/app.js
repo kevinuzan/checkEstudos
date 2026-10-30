@@ -2300,10 +2300,11 @@ let leiAberta = null;                 // id da lei aberta (ex.: 'cf')
 let leiDados = null;                  // { lei, itens }
 let leiIdx = null;                    // índices derivados dos itens
 let leiMeus = { grifos: [], notas: [], alteracoes: {} };
+let leiLeituras = new Map();          // blocoId -> { lidoEm, vezes } (capítulos marcados como lidos)
 let leiBlocosAbertos = new Set();
 let leiAnotAbertas = new Set();       // artigos com o painel "Anotações" expandido
 let leiBusca = '';
-let leiPrefs = { revogados: true, notasLeg: false, soMeus: false, fita: true, rapida: null, semMenuNativo: true };
+let leiPrefs = { revogados: true, notasLeg: false, soMeus: false, fita: true, rapida: null, semMenuNativo: true, fonte: 15 };
 let leiBuscaTimer = null;
 let leiSelTimer = null;
 let leiSelecaoPendente = null;        // [{dispId, ini, fim}] da seleção atual
@@ -2312,11 +2313,11 @@ let leiOuvindoSelecao = false;
 function leiLerPrefs() {
     try {
         const salvo = JSON.parse(localStorage.getItem('leis_prefs') || '{}');
-        leiPrefs = { revogados: salvo.revogados !== false, notasLeg: !!salvo.notasLeg, soMeus: false, fita: salvo.fita !== false, rapida: Array.isArray(salvo.rapida) ? salvo.rapida : null, semMenuNativo: salvo.semMenuNativo !== false };
+        leiPrefs = { revogados: salvo.revogados !== false, notasLeg: !!salvo.notasLeg, soMeus: false, fita: salvo.fita !== false, rapida: Array.isArray(salvo.rapida) ? salvo.rapida : null, semMenuNativo: salvo.semMenuNativo !== false, fonte: Math.min(30, Math.max(12, Number(salvo.fonte) || 15)) };
     } catch (err) { /* sem storage: fica no padrão */ }
 }
 function leiSalvarPrefs() {
-    try { localStorage.setItem('leis_prefs', JSON.stringify({ revogados: leiPrefs.revogados, notasLeg: leiPrefs.notasLeg, fita: leiPrefs.fita, rapida: leiPrefs.rapida, semMenuNativo: leiPrefs.semMenuNativo })); } catch (err) { /* ignora */ }
+    try { localStorage.setItem('leis_prefs', JSON.stringify({ revogados: leiPrefs.revogados, notasLeg: leiPrefs.notasLeg, fita: leiPrefs.fita, rapida: leiPrefs.rapida, semMenuNativo: leiPrefs.semMenuNativo, fonte: leiPrefs.fonte })); } catch (err) { /* ignora */ }
 }
 
 async function carregarLeis() {
@@ -2380,6 +2381,7 @@ async function leiAbrir(id) {
         if (!r1.ok || !d1.success) throw new Error((d1.error || 'Falha ao carregar a lei') + (d1.detalhe ? ` (${d1.detalhe})` : ''));
         leiDados = d1;
         leiMeus = (r2.ok && d2.success) ? d2 : { grifos: [], notas: [], alteracoes: {} };
+        leiLeituras = new Map(((r2.ok && d2.success && d2.leituras) || []).map(l => [l.blocoId, l]));
     } catch (err) {
         el.innerHTML = `<p class="questoes-vazio">${escaparHtml(err.message)}</p><button type="button" class="btn-secundario" onclick="leiVoltar()">← Voltar</button>`;
         return;
@@ -2478,7 +2480,13 @@ function renderizarLei() {
                 <input type="search" id="lei-busca" placeholder="Buscar: art. 5, ou uma palavra" value="${escaparHtml(leiBusca)}" oninput="leiBuscarDigitando()" autocomplete="off">
                 <button type="button" class="btn-secundario" onclick="leiAlternarMudancas()">🔔 O que mudou</button>
             </div>
+            <p class="questoes-topico-sub" id="lei-progresso-geral">${escaparHtml(leiTextoProgressoGeral())}</p>
             <div class="lei-opcoes">
+                <span class="lei-fonte-ctl">Tamanho do texto
+                    <button type="button" class="btn-secundario" onclick="leiFonte(-1)" aria-label="Diminuir a letra">A−</button>
+                    <span id="lei-fonte-val">${Number(leiPrefs.fonte) || 15}</span>
+                    <button type="button" class="btn-secundario" onclick="leiFonte(1)" aria-label="Aumentar a letra">A+</button>
+                </span>
                 <label><input type="checkbox" ${leiPrefs.soMeus ? 'checked' : ''} onchange="leiPref('soMeus', this.checked)"> Só meus grifos e anotações</label>
                 <label><input type="checkbox" ${leiPrefs.revogados ? 'checked' : ''} onchange="leiPref('revogados', this.checked)"> Mostrar revogados</label>
                 <label><input type="checkbox" ${leiPrefs.notasLeg ? 'checked' : ''} onchange="leiPref('notasLeg', this.checked)"> Mostrar "Redação dada…"</label>
@@ -2488,7 +2496,18 @@ function renderizarLei() {
             <div id="lei-mudancas" style="display:none;"></div>
             <div id="lei-leitura" class="lei-leitura"></div>
         </section>`;
+    el.style.setProperty('--lei-fonte', (Number(leiPrefs.fonte) || 15) + 'px');
     leiRenderLeitura();
+}
+
+// Aumenta/diminui a letra do texto das leis (só desta tela; vale para as 5 leis).
+function leiFonte(delta) {
+    leiPrefs.fonte = Math.min(30, Math.max(12, (Number(leiPrefs.fonte) || 15) + delta));
+    leiSalvarPrefs();
+    const el = document.getElementById('leis-conteudo');
+    if (el) el.style.setProperty('--lei-fonte', leiPrefs.fonte + 'px');
+    const v = document.getElementById('lei-fonte-val');
+    if (v) v.textContent = leiPrefs.fonte;
 }
 
 function leiPref(chave, valor) {
@@ -2530,6 +2549,7 @@ function leiRenderLeitura() {
         ultimoCtx = b.ctx || '';
         return cab + leiHtmlBloco(b);
     }).join('');
+    leiAtualizarProgresso();
 }
 
 function leiBuscarArtigos(q) {
@@ -2553,18 +2573,84 @@ function leiBuscarArtigos(q) {
     return ids;
 }
 
+const leiDataCurta = (v) => { const d = new Date(v); return isNaN(d) ? '' : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }); };
+
+function leiTextoProgressoGeral() {
+    const total = leiIdx ? leiIdx.blocos.length : 0;
+    const lidos = leiIdx ? leiIdx.blocos.filter(b => leiLeituras.has(b.id)).length : 0;
+    return total ? `Lidos: ${lidos} de ${total} capítulos (${Math.round(100 * lidos / total)}%)` : '';
+}
+
+// Linha "Marcar como lido" / "Lido em ..." (aparece no começo e no fim do capítulo aberto).
+function leiHtmlLido(b) {
+    const l = leiLeituras.get(b.id);
+    const id = escaparHtml(b.id);
+    if (!l) return `<div class="lei-lido-linha"><button type="button" class="lei-lido-btn" data-bloco="${id}" onclick="leiMarcarLido(this.dataset.bloco, true)">✓ Marcar como lido</button></div>`;
+    return `<div class="lei-lido-linha lei-lido-ok">✓ Lido em ${escaparHtml(leiFormatarData(l.lidoEm))}${l.vezes > 1 ? ` · ${Number(l.vezes)} leituras` : ''}
+        <button type="button" class="btn-secundario" data-bloco="${id}" onclick="leiMarcarLido(this.dataset.bloco, true)">Li de novo hoje</button>
+        <button type="button" class="btn-secundario" data-bloco="${id}" onclick="leiMarcarLido(this.dataset.bloco, false)">Desmarcar</button></div>`;
+}
+
 function leiHtmlBloco(b) {
     const aberto = leiBlocosAbertos.has(b.id);
     const marcas = b.artIds.filter(leiArtTemMarca).length;
+    const l = leiLeituras.get(b.id);
     return `
-        <div class="lei-bloco" data-bloco="${escaparHtml(b.id)}">
-            <button type="button" class="lei-bloco-titulo" onclick="leiAlternarBloco(this.closest('.lei-bloco').dataset.bloco)">
-                <span class="lei-seta">${aberto ? '▾' : '▸'}</span>
-                <span><strong>${escaparHtml(b.rot)}</strong>${b.nome ? ' — ' + escaparHtml(b.nome) : ''}</span>
-                ${marcas ? `<span class="lei-contador" title="Artigos com grifo ou anotação seus">${marcas}</span>` : ''}
-            </button>
-            ${aberto ? `<div class="lei-bloco-corpo">${leiHtmlItensBloco(b)}</div>` : ''}
+        <div class="lei-bloco${l ? ' lei-bloco-lido' : ''}" data-bloco="${escaparHtml(b.id)}">
+            <div class="lei-bloco-cab${aberto ? ' lei-cab-fixa' : ''}">
+                <button type="button" class="lei-bloco-titulo" onclick="leiAlternarBloco(this.closest('.lei-bloco').dataset.bloco)">
+                    <span class="lei-seta">${aberto ? '▾' : '▸'}</span>
+                    <span class="lei-bloco-nome"><strong>${escaparHtml(b.rot)}</strong>${b.nome ? ' — ' + escaparHtml(b.nome) : ''}</span>
+                    ${aberto ? '<span class="lei-pct" data-pct title="Onde você está neste capítulo"></span>' : ''}
+                    ${l ? `<span class="lei-lido-badge" title="Lido em ${escaparHtml(leiFormatarData(l.lidoEm))}">✓ ${escaparHtml(leiDataCurta(l.lidoEm))}</span>` : ''}
+                    ${marcas ? `<span class="lei-contador" title="Artigos com grifo ou anotação seus">${marcas}</span>` : ''}
+                </button>
+                ${aberto ? '<div class="lei-prog"><div class="lei-prog-barra" data-prog></div></div>' : ''}
+            </div>
+            ${aberto ? `<div class="lei-bloco-corpo">${leiHtmlLido(b)}${leiHtmlItensBloco(b)}${leiHtmlLido(b)}</div>` : ''}
         </div>`;
+}
+
+async function leiMarcarLido(blocoId, lido) {
+    try {
+        const dados = await leiApi(`/api/leis/${encodeURIComponent(leiAberta)}/leituras`, 'PUT', { blocoId, lido: !!lido });
+        if (dados.lido) leiLeituras.set(blocoId, { blocoId, lidoEm: dados.lidoEm, vezes: dados.vezes });
+        else leiLeituras.delete(blocoId);
+    } catch (err) { return leiAvisarErro(err); }
+    const b = leiIdx.blocos.find(x => x.id === blocoId);
+    const caixa = document.querySelector(`.lei-bloco[data-bloco="${CSS.escape(blocoId)}"]`);
+    if (b && caixa) caixa.outerHTML = leiHtmlBloco(b);
+    const g = document.getElementById('lei-progresso-geral');
+    if (g) g.textContent = leiTextoProgressoGeral();
+    leiAtualizarProgresso();
+}
+
+// "Onde estou": para cada capítulo aberto, a % já percorrida (usando uma linha de leitura a 30% da altura
+// da tela) e o artigo que está nessa linha. Atualiza só o texto/barrinha, sem redesenhar nada.
+function leiRotuloArt(artId) {
+    const it = leiIdx && leiIdx.arts.get(artId);
+    const m = it && it[0] && it[0].texto.match(/^Art\.?\s*[\d.]+\s*[º°o]?(?:-[A-Z]+)?/);
+    return m ? m[0].replace(/\s+/g, ' ').trim() : '';
+}
+function leiAtualizarProgresso() {
+    if (viewAtual !== 'leis' || !leiIdx || !document.querySelectorAll) return;
+    const H = window.innerHeight || 640, linha = H * 0.3;
+    document.querySelectorAll('.lei-bloco-corpo').forEach(corpo => {
+        const caixa = corpo.closest('.lei-bloco');
+        if (!caixa) return;
+        const r = corpo.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(100, Math.round((linha - r.top) / Math.max(1, r.height) * 100)));
+        let rotulo = '';
+        if (r.top < H && r.bottom > 0) {
+            for (const art of corpo.querySelectorAll('.lei-art')) {
+                const ra = art.getBoundingClientRect();
+                if (ra.top <= linha && ra.bottom >= linha) { rotulo = leiRotuloArt(art.dataset.art); break; }
+            }
+        }
+        const el = caixa.querySelector('[data-pct]'), barra = caixa.querySelector('[data-prog]');
+        if (el) el.textContent = (rotulo ? rotulo + ' · ' : '') + pct + '%';
+        if (barra) barra.style.width = pct + '%';
+    });
 }
 
 function leiHtmlItensBloco(b) {
@@ -2582,6 +2668,7 @@ function leiAlternarBloco(id) {
     const b = leiIdx.blocos.find(x => x.id === id);
     const caixa = document.querySelector(`.lei-bloco[data-bloco="${CSS.escape(id)}"]`);
     if (b && caixa) caixa.outerHTML = leiHtmlBloco(b);
+    leiAtualizarProgresso();
 }
 
 // ---------- Edição estilo Word: barra completa (no topo) + barra rápida (ao selecionar) ----------
@@ -2853,7 +2940,7 @@ function leiHtmlRapida() {
     return `${leiDicaTexto ? `<span class="lei-barra-dica">${escaparHtml(leiDicaTexto)}</span>` : ''}
         ${ids.length ? ids.map(leiBotaoFerr).join('') : '<span class="lei-barra-rotulo">Nenhuma ferramenta escolhida</span>'}
         ${leiPincel && leiSelecaoPendente ? '<button type="button" class="btn-secundario" onclick="leiFerr(\'pincel\')">🖌 Aplicar formato</button>' : ''}
-        <button type="button" class="btn-secundario lei-personalizar" onclick="leiBarraConfig()" aria-label="Personalizar a barra" title="Escolher as ferramentas desta barra">⚙ Personalizar</button>
+        <button type="button" class="btn-secundario lei-personalizar" onclick="leiBarraConfig()" aria-label="Personalizar as ferramentas desta barra" title="Personalizar: escolher as ferramentas desta barra">✏️</button>
         <button type="button" class="btn-secundario" onclick="leiEsconderBarra()" aria-label="Fechar" title="Fechar">✕</button>`;
 }
 
@@ -3036,8 +3123,11 @@ function leiPosicionarBarra() {
     if (!a || a.bottom < 0 || a.top > H) { top = 8; left = (W - w) / 2; }       // trecho fora da tela: topo
     else {
         left = (a.left + a.right) / 2 - w / 2;
-        top = a.top - h - 10;                                                   // acima do trecho
-        if (top < 8) top = Math.min(a.bottom + 40, H - h - 8);                  // sem espaço em cima: abaixo (e das alças da seleção)
+        // ABAIXO do trecho: o menu que o navegador/aparelho abre ao selecionar (Copiar, Pesquisar...)
+        // fica em cima. No toque, desce mais um pouco para não cobrir as alças da seleção.
+        const toque = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        top = a.bottom + (toque ? 40 : 12);
+        if (top + h > H - 8) top = a.top - h - (toque ? 8 : 12);                // sem espaço embaixo: em cima
     }
     b.style.left = Math.max(8, Math.min(left, W - w - 8)) + 'px';
     b.style.top = Math.max(8, top) + 'px';
@@ -3045,7 +3135,7 @@ function leiPosicionarBarra() {
 }
 function leiReposicionar() {
     if (leiRepos) return;
-    leiRepos = setTimeout(() => { leiRepos = null; if (viewAtual === 'leis') leiPosicionarBarra(); }, 50);
+    leiRepos = setTimeout(() => { leiRepos = null; if (viewAtual === 'leis') { leiPosicionarBarra(); leiAtualizarProgresso(); } }, 50);
 }
 
 // ---------- Balão com a anotação do trecho ----------
@@ -3076,13 +3166,16 @@ function leiPosicionarBalao() {
     const el = document.getElementById('lei-balao');
     if (!el || el.style.display === 'none') return;
     const a = leiAncoraNaTela();
+    const barra = document.getElementById('lei-barra');
     const W = window.innerWidth || 360, H = window.innerHeight || 640;
     const w = el.offsetWidth || 280, h = el.offsetHeight || 80;
-    let top = a ? a.bottom + (leiSelecaoPendente ? 34 : 8) : 70;   // abaixo do trecho (a seleção tem alças embaixo)
-    let left = a ? a.left : 8;
-    if (top + h > H - 8) top = Math.max(8, H - h - 8);
+    // Logo abaixo da barra de ferramentas (que está abaixo do trecho); sem barra, abaixo do trecho.
+    let top;
+    if (barra && barra.style.display !== 'none' && leiBarraModo === 'ferr') top = (parseFloat(barra.style.top) || 0) + (barra.offsetHeight || 48) + 8;
+    else top = a ? a.bottom + 8 : 70;
+    if (top + h > H - 8) top = Math.max(8, (a ? a.top : H) - h - 8);              // sem espaço embaixo: acima do trecho
     el.style.top = top + 'px';
-    el.style.left = Math.max(8, Math.min(left, W - w - 8)) + 'px';
+    el.style.left = Math.max(8, Math.min(a ? a.left : 8, W - w - 8)) + 'px';
 }
 // Grifos com anotação que a seleção atual encosta.
 function leiGrifosComNotaEm(trechos) {
@@ -3122,6 +3215,12 @@ async function leiCriarGrifos(trechos, est, nota) {
 
 // ---------- Ferramentas ----------
 
+// Depois de uma alteração o texto é "desselecionado" (some a seleção do navegador) e o balão da anotação fecha.
+function leiDesselecionar() {
+    try { const sel = window.getSelection(); if (sel && sel.removeAllRanges) sel.removeAllRanges(); } catch (err) { /* sem seleção */ }
+    leiEsconderBalao();
+}
+
 // Cria grifo(s) a partir do trecho selecionado, já com o estilo da primeira ferramenta usada.
 async function leiAplicarNovo(estilo, nota, exato) {
     const trechos = leiSelecaoPendente;
@@ -3136,7 +3235,7 @@ async function leiAplicarNovo(estilo, nota, exato) {
         leiHistRegistrar({ tipo: 'criar', itens: criados.map(g => ({ gid: g.id, dispId: g.dispId, ini: g.ini, fim: g.fim, est: leiLimpoEst(leiEstiloDe(g)), nota: g.nota || '' })) });
         leiSelecaoPendente = null;
         leiNotaModo = null;
-        const sel = window.getSelection(); if (sel) sel.removeAllRanges();
+        leiDesselecionar();
         leiAtualizarArtigosDe(criados.map(g => g.dispId));
         if (leiBarraVisivel()) leiMostrarBarra('ferr');
         leiAtualizarFerramentas();
@@ -3161,6 +3260,7 @@ async function leiMudarEstilo(alvos, mudanca, limpar) {
         }
     } catch (err) { return leiAvisarErro(err); }
     if (manter.length) leiHistRegistrar({ tipo: 'estilo', itens: manter.map(({ gid, de, para }) => ({ gid, de, para })) });
+    leiDesselecionar();
     leiAtualizarArtigosDe(alvos.map(g => g.dispId));
     if (apagar.length) return leiRemoverGrifos(apagar.map(it => it.gid));
     leiAtualizarFerramentas();
@@ -3262,6 +3362,7 @@ async function leiRodarOp(op, desfazer) {
             tocados.push(g.dispId);
         }
     }
+    leiDesselecionar();
     if (op.tipo === 'criar' || op.tipo === 'remover') leiAlvos = [];   // ids podem ter mudado; estilo/nota mantêm o grifo em edição
     leiAtualizarArtigosDe(tocados);
 }
@@ -3311,6 +3412,7 @@ async function leiSalvarNotaTrecho() {
     g.nota = texto;
     leiHistRegistrar({ tipo: 'nota', gid: g.id, de, para: texto });
     leiNotaModo = null;
+    leiDesselecionar();
     leiAtualizarArtigosDe([g.dispId]);
     // Sem comentário e sem formatação não sobra nada para mostrar: remove o grifo.
     if (!texto && !Object.keys(leiLimpoEst(leiEstiloDe(g))).length) return leiRemoverGrifos([g.id]);
@@ -3334,7 +3436,7 @@ function leiToqueGrifo(gid) {
     leiMostrarBarra('ferr');
     leiAtualizarFerramentas();
     const g = leiGrifoPorId(gid);
-    if (g && g.nota) leiMostrarBalao([g]);
+    if (g && g.nota) leiMostrarBalao([g]); else leiEsconderBalao();
     leiAtualizarArtigosDe(g ? [...antes, g.dispId] : antes);   // marca visualmente o grifo em edição
 }
 

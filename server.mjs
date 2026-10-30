@@ -395,6 +395,8 @@ const LEIS_TEXTO_COLLECTION = "leis_texto";
 const LEIS_MUDANCAS_COLLECTION = "leis_mudancas";
 const LEIS_GRIFOS_COLLECTION = "leis_grifos";
 const LEIS_NOTAS_COLLECTION = "leis_notas";
+const LEIS_LEITURAS_COLLECTION = "leis_leituras";   // capítulos/títulos que a pessoa marcou como lidos (e quando)
+const LEIS_MAX_LEITURAS_POR_USUARIO = 3000;
 
 // --- LIMITE DE USO DA IA (sugestão de edital via PDF) ---
 // Enquanto o app é gratuito, cada usuário tem uma cota mensal de tokens,
@@ -491,9 +493,11 @@ async function startServer() {
         const leisMudancasColl = db.collection(LEIS_MUDANCAS_COLLECTION);
         const leisGrifosColl = db.collection(LEIS_GRIFOS_COLLECTION);
         const leisNotasColl = db.collection(LEIS_NOTAS_COLLECTION);
+        const leisLeiturasColl = db.collection(LEIS_LEITURAS_COLLECTION);
         await leisMudancasColl.createIndex({ lei: 1, em: -1 }).catch(() => {});
         await leisGrifosColl.createIndex({ userId: 1, lei: 1, dispId: 1 }).catch(() => {});
         await leisNotasColl.createIndex({ userId: 1, lei: 1, dispId: 1 }, { unique: true }).catch(() => {});
+        await leisLeiturasColl.createIndex({ userId: 1, lei: 1, blocoId: 1 }, { unique: true }).catch(() => {});
 
         // --- MIGRAÇÃO: garante que todo item tenha um array "planos" ---
         // Itens antigos (de antes de existir o conceito de "plano") são
@@ -3553,9 +3557,10 @@ async function startServer() {
         app.get('/api/leis/:lei/meus', requireAuth, async (req, res) => {
             if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
             const filtro = { userId: req.userId, lei: req.params.lei };
-            const [grifos, notas] = await Promise.all([
+            const [grifos, notas, leituras] = await Promise.all([
                 leisGrifosColl.find(filtro).toArray(),
-                leisNotasColl.find(filtro).toArray()
+                leisNotasColl.find(filtro).toArray(),
+                leisLeiturasColl.find(filtro).toArray()
             ]);
             const datas = [...grifos.map(g => g.criadoEm), ...notas.map(n => n.atualizadoEm)].filter(Boolean);
             const alteracoes = {};
@@ -3577,8 +3582,34 @@ async function startServer() {
                 success: true,
                 grifos: grifos.map(grifoParaApi),
                 notas: notas.map(n => ({ dispId: n.dispId, texto: n.texto, atualizadoEm: n.atualizadoEm })),
+                leituras: leituras.map(l => ({ blocoId: l.blocoId, lidoEm: l.lidoEm, vezes: l.vezes || 1 })),
                 alteracoes
             });
+        });
+
+        // Marca (ou desmarca) um capítulo como lido. Ao marcar, guarda o dia; marcar de novo = "li outra vez"
+        // (atualiza a data e soma uma leitura). O blocoId é o id do capítulo/título/ADCT da lei.
+        app.put('/api/leis/:lei/leituras', requireAuth, async (req, res) => {
+            if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
+            const blocoId = typeof req.body.blocoId === 'string' ? req.body.blocoId.trim() : '';
+            if (!blocoId || blocoId.length > 160 || !/^[\p{L}\p{N}_.~\-]+$/u.test(blocoId)) return res.status(400).json({ success: false, error: 'Capítulo inválido' });
+            const filtro = { userId: req.userId, lei: req.params.lei, blocoId };
+            if (!req.body.lido) {
+                await leisLeiturasColl.deleteOne(filtro);
+                return res.json({ success: true, lido: false });
+            }
+            const existe = await leisLeiturasColl.findOne(filtro, { projection: { _id: 1 } });
+            if (!existe && await leisLeiturasColl.countDocuments({ userId: req.userId }) >= LEIS_MAX_LEITURAS_POR_USUARIO) {
+                return res.status(400).json({ success: false, error: 'Limite de capítulos marcados atingido' });
+            }
+            const agora = new Date();
+            await leisLeiturasColl.updateOne(filtro, {
+                $set: { lidoEm: agora },
+                $inc: { vezes: 1 },
+                $push: { historico: { $each: [agora], $slice: -20 } }
+            }, { upsert: true });
+            const doc = await leisLeiturasColl.findOne(filtro);
+            res.json({ success: true, lido: true, lidoEm: doc.lidoEm, vezes: doc.vezes || 1 });
         });
 
         // Cria grifos (um por dispositivo tocado pela seleção). O trecho é extraído
