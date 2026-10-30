@@ -3653,6 +3653,7 @@ async function startServer() {
             if (n(e.f, 8)) o.f = n(e.f, 8);
             if (n(e.c, 6)) o.c = n(e.c, 6);
             if (n(e.u, 3)) o.u = n(e.u, 3);
+            if (n(e.m, 8)) o.m = n(e.m, 8);   // marcador (emoji + nome definidos pela pessoa no aparelho)
             if (e.b) o.b = 1;
             if (e.i) o.i = 1;
             if (e.s) o.s = 1;

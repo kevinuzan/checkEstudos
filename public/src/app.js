@@ -2307,9 +2307,10 @@ let leiParei = null;                  // { artId, em }: onde a pessoa parou nest
 let leiResumoLidos = {};              // lei -> quantos trechos lidos (tela inicial)
 let leiMateriasAbertas = new Set(['Direito Constitucional']);
 let leiTotaisBuscando = false;
+let leiCapsAbertos = new Set();       // capítulos expandidos na lista de trechos (começam todos minimizados)
 let leiAnotAbertas = new Set();       // artigos com o painel "Anotações" expandido
 let leiBusca = '';
-let leiPrefs = { revogados: true, notasLeg: false, soMeus: false, fita: true, rapida: null, semMenuNativo: true, fonte: 15 };
+let leiPrefs = { corrido: false, marcadores: null, revogados: true, notasLeg: false, soMeus: false, fita: true, rapida: null, semMenuNativo: true, fonte: 15 };
 let leiBuscaTimer = null;
 let leiSelTimer = null;
 let leiSelecaoPendente = null;        // [{dispId, ini, fim}] da seleção atual
@@ -2318,11 +2319,11 @@ let leiOuvindoSelecao = false;
 function leiLerPrefs() {
     try {
         const salvo = JSON.parse(localStorage.getItem('leis_prefs') || '{}');
-        leiPrefs = { revogados: salvo.revogados !== false, notasLeg: !!salvo.notasLeg, soMeus: false, fita: salvo.fita !== false, rapida: Array.isArray(salvo.rapida) ? salvo.rapida : null, semMenuNativo: salvo.semMenuNativo !== false, fonte: Math.min(30, Math.max(12, Number(salvo.fonte) || 15)) };
+        leiPrefs = { revogados: salvo.revogados !== false, notasLeg: !!salvo.notasLeg, soMeus: false, fita: salvo.fita !== false, rapida: Array.isArray(salvo.rapida) ? salvo.rapida : null, semMenuNativo: salvo.semMenuNativo !== false, fonte: Math.min(30, Math.max(12, Number(salvo.fonte) || 15)), corrido: !!salvo.corrido, marcadores: leiLimparMarcadores(salvo.marcadores) };
     } catch (err) { /* sem storage: fica no padrão */ }
 }
 function leiSalvarPrefs() {
-    try { localStorage.setItem('leis_prefs', JSON.stringify({ revogados: leiPrefs.revogados, notasLeg: leiPrefs.notasLeg, fita: leiPrefs.fita, rapida: leiPrefs.rapida, semMenuNativo: leiPrefs.semMenuNativo, fonte: leiPrefs.fonte })); } catch (err) { /* ignora */ }
+    try { localStorage.setItem('leis_prefs', JSON.stringify({ revogados: leiPrefs.revogados, notasLeg: leiPrefs.notasLeg, fita: leiPrefs.fita, rapida: leiPrefs.rapida, semMenuNativo: leiPrefs.semMenuNativo, fonte: leiPrefs.fonte, corrido: leiPrefs.corrido, marcadores: leiPrefs.marcadores })); } catch (err) { /* ignora */ }
 }
 
 async function carregarLeis() {
@@ -2335,7 +2336,7 @@ async function carregarLeis() {
         // Menu nativo do aparelho (copiar, pesquisar...) ao segurar o texto: some, para só aparecer o nosso.
         // Opção desligável, porque em alguns navegadores isso pode atrapalhar a seleção.
         document.addEventListener('contextmenu', (e) => {
-            if (viewAtual === 'leis' && leiPrefs.semMenuNativo !== false && e.target && e.target.closest && e.target.closest('#lei-leitura')) e.preventDefault();
+            if (viewAtual === 'leis' && e.target && e.target.closest && e.target.closest('#lei-leitura')) e.preventDefault();
         });
         // Tocou fora da barra / do balão / da faixa de ferramentas / de um grifo: fecha o editor (senão ficava para sempre).
         // Não fecha enquanto a pessoa escreve um comentário ou personaliza a barra.
@@ -2461,7 +2462,7 @@ async function leiAbrir(id) {
         el.innerHTML = `<p class="questoes-vazio">${escaparHtml(err.message)}</p><button type="button" class="btn-secundario" onclick="leiVoltar()">← Voltar</button>`;
         return;
     }
-    if (leiAberta !== id) { leiBlocosAbertos = new Set(); leiTrechoAberto = null; leiAnotAbertas = new Set(); leiResetEdicao(); }   // ids de uma lei não valem na outra
+    if (leiAberta !== id) { leiBlocosAbertos = new Set(); leiCapsAbertos = new Set(); leiTrechoAberto = null; leiAnotAbertas = new Set(); leiResetEdicao(); }   // ids de uma lei não valem na outra
     leiAberta = id;
     leiBusca = '';
     leiIndexar();
@@ -2598,11 +2599,11 @@ function renderizarLei() {
                     <button type="button" class="btn-secundario" onclick="leiFonte(-1)" aria-label="Diminuir a letra">A−</button>
                     <span id="lei-fonte-val">${Number(leiPrefs.fonte) || 15}</span>
                     <button type="button" class="btn-secundario" onclick="leiFonte(1)" aria-label="Aumentar a letra">A+</button>
-                </span>`;
+                </span>
+                <button type="button" class="btn-secundario lei-corrido-btn${leiPrefs.corrido ? ' ativo' : ''}" aria-pressed="${!!leiPrefs.corrido}" onclick="leiPref('corrido', !leiPrefs.corrido)" title="Mostra artigos, parágrafos e incisos todos alinhados à esquerda, sem recuo">☰ Texto corrido: ${leiPrefs.corrido ? 'ligado' : 'desligado'}</button>`;
     const checks = `${emTrecho ? '' : `<label><input type="checkbox" ${leiPrefs.soMeus ? 'checked' : ''} onchange="leiPref('soMeus', this.checked)"> Só meus grifos e anotações</label>`}
                 <label><input type="checkbox" ${leiPrefs.revogados ? 'checked' : ''} onchange="leiPref('revogados', this.checked)"> Mostrar revogados</label>
-                <label><input type="checkbox" ${leiPrefs.notasLeg ? 'checked' : ''} onchange="leiPref('notasLeg', this.checked)"> Mostrar "Redação dada…"</label>
-                <label><input type="checkbox" ${leiPrefs.semMenuNativo !== false ? 'checked' : ''} onchange="leiPref('semMenuNativo', this.checked)"> Esconder o menu de copiar do aparelho</label>`;
+                <label><input type="checkbox" ${leiPrefs.notasLeg ? 'checked' : ''} onchange="leiPref('notasLeg', this.checked)"> Mostrar "Redação dada…"</label>`;
     const opcoes = emTrecho
         ? `<div class="lei-opcoes">${fonteCtl}<details class="lei-mais-opcoes"><summary>Mais opções</summary>${checks}</details></div>`
         : `<div class="lei-opcoes">${fonteCtl}${checks}</div>`;
@@ -2632,6 +2633,7 @@ function renderizarLei() {
             <div id="lei-leitura" class="lei-leitura"></div>
         </section>`;
     el.style.setProperty('--lei-fonte', (Number(leiPrefs.fonte) || 15) + 'px');
+    if (el.classList) el.classList.toggle('lei-corrido', !!leiPrefs.corrido);   // sem recuo: tudo alinhado à esquerda
     leiRenderLeitura();
 }
 
@@ -2648,6 +2650,7 @@ function leiFonte(delta) {
 function leiPref(chave, valor) {
     leiPrefs[chave] = valor;
     leiSalvarPrefs();
+    if (chave === 'corrido') return renderizarLei();   // o botão e a classe do texto mudam juntos
     leiRenderLeitura();
 }
 
@@ -2798,22 +2801,50 @@ function leiHtmlCartaoTrecho(b) {
 }
 
 function leiHtmlListaTrechos() {
-    let ultimoCtx = '', ultimoCap = '';
+    let ultimoCtx = '';
     const topo = leiTextoParei()
         ? `<button type="button" class="lei-continuar" onclick="leiIrParaParei()">${escaparHtml(leiTextoParei())} · continuar de onde parei →</button>` : '';
-    return topo + leiIdx.blocos.map(b => {
+    // Agrupa os trechos por capítulo (cada capítulo é um toggle, minimizado até a pessoa tocar).
+    const caps = [];
+    for (const b of leiIdx.blocos) {
+        let c = caps[caps.length - 1];
+        if (!c || c.id !== b.capId) { c = { id: b.capId, rot: b.rot, nome: b.nome, ctx: b.ctx, trechos: [] }; caps.push(c); }
+        c.trechos.push(b);
+    }
+    const todosAbertos = caps.length && caps.every(c => leiCapsAbertos.has(c.id));
+    const barra = caps.length > 1 ? `<div class="lei-caps-barra"><button type="button" class="btn-secundario" onclick="leiCapsTodos(${todosAbertos ? 'false' : 'true'})">${todosAbertos ? '▴ Recolher todos' : '▾ Expandir todos'}</button></div>` : '';
+    return topo + barra + caps.map(c => {
         let cab = '';
-        if (b.ctx && b.ctx !== ultimoCtx) cab += `<div class="lei-contexto">${escaparHtml(b.ctx)}</div>`;
-        ultimoCtx = b.ctx || ultimoCtx;
-        if (b.capId !== ultimoCap) cab += `<div class="lei-cap-cab"><strong>${escaparHtml(b.rot)}</strong>${b.nome ? ' — ' + escaparHtml(b.nome) : ''}</div>`;
-        ultimoCap = b.capId;
-        return cab + leiHtmlCartaoTrecho(b);
+        if (c.ctx && c.ctx !== ultimoCtx) cab += `<div class="lei-contexto">${escaparHtml(c.ctx)}</div>`;
+        ultimoCtx = c.ctx || ultimoCtx;
+        const aberto = leiCapsAbertos.has(c.id);
+        const lidos = c.trechos.filter(t => leiLeituras.has(t.id)).length;
+        const temParei = leiParei && c.trechos.some(t => t.artIds.includes(leiParei.artId));
+        return cab + `<div class="lei-cap${aberto ? ' aberto' : ''}" data-cap="${escaparHtml(c.id)}">
+            <button type="button" class="lei-cap-cab" aria-expanded="${aberto}" onclick="leiAlternarCap(this.closest('.lei-cap').dataset.cap)">
+                <span class="lei-seta">${aberto ? '▾' : '▸'}</span>
+                <span class="lei-cap-nome"><strong>${escaparHtml(c.rot)}</strong>${c.nome ? ' — ' + escaparHtml(c.nome) : ''}</span>
+                ${temParei ? '<span class="lei-cap-parei" title="Você parou aqui">🔖</span>' : ''}
+                <span class="lei-cap-cont${lidos === c.trechos.length ? ' completo' : ''}" title="Trechos lidos neste capítulo">${lidos}/${c.trechos.length}</span>
+            </button>
+            ${aberto ? `<div class="lei-cap-corpo">${c.trechos.map(leiHtmlCartaoTrecho).join('')}</div>` : ''}
+        </div>`;
     }).join('');
+}
+
+function leiAlternarCap(id) {
+    if (leiCapsAbertos.has(id)) leiCapsAbertos.delete(id); else leiCapsAbertos.add(id);
+    leiRenderLeitura();
+}
+function leiCapsTodos(abrir) {
+    leiCapsAbertos = abrir ? new Set(leiIdx.blocos.map(b => b.capId)) : new Set();
+    leiRenderLeitura();
 }
 
 function leiAbrirTrecho(id) {
     if (!leiIdx || !leiIdx.porId.has(id)) return;
     leiTrechoAberto = id;
+    leiCapsAbertos.add(leiIdx.porId.get(id).capId);
     leiBusca = '';
     renderizarLei();
     const b = leiIdx.porId.get(id);
@@ -2825,6 +2856,8 @@ function leiAbrirTrecho(id) {
 function leiFecharTrecho() {
     const id = leiTrechoAberto;
     leiTrechoAberto = null;
+    const t = id && leiIdx.porId.get(id);
+    if (t) leiCapsAbertos.add(t.capId);   // volta com o capítulo daquele trecho aberto
     renderizarLei();
     const card = id && document.querySelector ? document.querySelector(`.lei-trecho[data-bloco="${CSS.escape(id)}"]`) : null;
     if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center' });
@@ -2848,7 +2881,7 @@ async function leiMarcarLido(blocoId, lido) {
     const aberto = document.querySelector(`.lei-bloco[data-bloco="${CSS.escape(blocoId)}"]`);
     const cartao = document.querySelector(`.lei-trecho[data-bloco="${CSS.escape(blocoId)}"]`);
     if (b && aberto) aberto.outerHTML = leiHtmlBloco(b);
-    if (b && cartao) cartao.outerHTML = leiHtmlCartaoTrecho(b);
+    if (b && cartao) { if (leiRenderLeitura) leiRenderLeitura(); }   // redesenha a lista: o contador X/Y do capítulo também muda
     const g = document.getElementById('lei-progresso-geral');
     if (g) g.textContent = leiTextoProgressoGeral();
     leiAtualizarProgresso();
@@ -2929,11 +2962,67 @@ const LEI_GRUPOS_FERR = [
     { nome: 'Marca-texto', ids: ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8'] },
     { nome: 'Cor da letra', ids: ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'] },
     { nome: 'Texto', ids: ['b', 'i', 'u', 's', 'a'] },
-    { nome: 'Ações', ids: ['nota', 'limpar', 'pincel', 'desfazer', 'refazer', 'remover'] }
+    { nome: 'Marcadores', ids: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8'] },
+    { nome: 'Ações', ids: ['nota', 'pincel', 'desfazer', 'refazer', 'remover'] }
 ];
-const LEI_NOMES_FERR = { b: 'Negrito', i: 'Itálico', u: 'Sublinhado (toque de novo: duplo, ondulado, tirar)', s: 'Tachado', a: 'CAIXA ALTA', nota: 'Comentário', limpar: 'Limpar formatação', pincel: 'Pincel de formatação', desfazer: 'Desfazer', refazer: 'Refazer', remover: 'Remover grifo' };
-const LEI_RAPIDA_PADRAO = ['f1', 'f2', 'f3', 'f4', 'b', 'u', 'nota', 'desfazer'];
+const LEI_NOMES_FERR = { b: 'Negrito', i: 'Itálico', u: 'Sublinhado (toque de novo: duplo, ondulado, tirar)', s: 'Tachado', a: 'CAIXA ALTA', nota: 'Comentário', pincel: 'Pincel de formatação', desfazer: 'Desfazer', refazer: 'Refazer', remover: 'Remover formatação (apaga o grifo deste trecho)' };
+const LEI_RAPIDA_PADRAO = ['f1', 'f2', 'f3', 'f4', 'b', 'u', 'm1', 'm2', 'm3', 'nota', 'desfazer'];
 const LEI_TODAS_FERR = LEI_GRUPOS_FERR.flatMap(g => g.ids);
+// ---- Marcadores (importante / caiu em prova / pegadinha...): cada marcador é um emoji + um nome que a pessoa
+// escolhe. Ficam guardados neste aparelho (como as outras preferências); o grifo só guarda o número (1-8).
+const LEI_MARC_MAX = 8;
+const LEI_MARC_PADRAO = [{ e: '🔥', n: 'Importante' }, { e: '🎯', n: 'Caiu em prova' }, { e: '⚠️', n: 'Pegadinha' }];
+const LEI_EMOJIS = ['🔥', '⭐', '🎯', '⚠️', '❗', '❓', '💡', '📌', '🚨', '✅', '❌', '🧠', '⚖️', '🏛️', '📖', '🔑', '💥', '👀', '🤔', '😱', '🏆', '⏰', '📅', '🔁', '💬', '📎', '🔖', '🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '⬛'];
+let leiEmojiSlot = null;              // posição (0-7) do marcador que está escolhendo emoji
+
+function leiLimparMarcadores(v) {
+    if (!Array.isArray(v)) return null;
+    return v.slice(0, LEI_MARC_MAX).map(m => (m && typeof m.e === 'string' && m.e.trim()) ? { e: m.e.trim().slice(0, 8), n: String(m.n || '').slice(0, 24) } : null);
+}
+function leiMarcadores() {
+    const arr = Array.isArray(leiPrefs.marcadores) ? leiPrefs.marcadores : LEI_MARC_PADRAO;
+    return Array.from({ length: LEI_MARC_MAX }, (_, i) => (arr[i] && arr[i].e) ? { e: arr[i].e, n: arr[i].n || '' } : null);
+}
+const leiMarc = (n) => leiMarcadores()[Number(n) - 1] || null;
+function leiGravarMarcadores(arr) { leiPrefs.marcadores = arr; leiSalvarPrefs(); leiRefazerConfig(); }
+function leiMarcNome(i, valor) { const a = leiMarcadores(); if (a[i]) { a[i].n = String(valor).trim().slice(0, 24); leiGravarMarcadores(a); } }
+function leiMarcAbrirEmoji(i) { leiEmojiSlot = leiEmojiSlot === i ? null : i; leiRefazerConfig(); }
+function leiMarcEmoji(emoji) {
+    const e = String(emoji || '').trim().slice(0, 8);
+    const a = leiMarcadores();
+    if (e && leiEmojiSlot !== null && a[leiEmojiSlot]) a[leiEmojiSlot].e = e;
+    leiEmojiSlot = null;
+    leiGravarMarcadores(a);
+}
+function leiMarcNovo() {
+    const a = leiMarcadores();
+    const i = a.findIndex(m => !m);
+    if (i < 0) return;
+    a[i] = { e: '🔖', n: 'Novo marcador' };
+    leiEmojiSlot = i;
+    leiGravarMarcadores(a);
+}
+function leiMarcRemover(i) {
+    const a = leiMarcadores();
+    a[i] = null;
+    if (leiEmojiSlot === i) leiEmojiSlot = null;
+    leiGravarMarcadores(a);
+}
+function leiHtmlMarcadoresEditor() {
+    const a = leiMarcadores();
+    const linhas = a.map((m, i) => m ? `<div class="lei-marc-linha">
+            <button type="button" class="lei-emoji-btn" data-i="${i}" title="Trocar o emoji" aria-label="Trocar o emoji de ${escaparHtml(m.n)}" onclick="leiMarcAbrirEmoji(Number(this.dataset.i))">${escaparHtml(m.e)}</button>
+            <input type="text" class="lei-marc-nome" value="${escaparHtml(m.n)}" maxlength="24" placeholder="Nome do marcador" data-i="${i}" onchange="leiMarcNome(Number(this.dataset.i), this.value)">
+            <button type="button" class="btn-secundario" data-i="${i}" title="Remover este marcador" aria-label="Remover o marcador ${escaparHtml(m.n)}" onclick="leiMarcRemover(Number(this.dataset.i))">🗑</button>
+        </div>
+        ${leiEmojiSlot === i ? `<div class="lei-emoji-caixa">${LEI_EMOJIS.map(e => `<button type="button" class="lei-emoji-op" data-emoji="${e}" onclick="leiMarcEmoji(this.dataset.emoji)">${e}</button>`).join('')}
+            <input type="text" class="lei-emoji-livre" maxlength="8" placeholder="Ou digite/cole outro emoji" onchange="leiMarcEmoji(this.value)"></div>` : ''}` : '').join('');
+    return `<div class="lei-config-grupo"><div class="lei-config-rotulo">Seus marcadores</div>
+        <div class="lei-config-titulo"><span>Toque no emoji para trocar e escreva o nome que quiser. Depois use-os na barra para marcar um trecho (ex.: caiu em prova).</span></div>
+        ${linhas}
+        ${a.some(m => !m) ? '<button type="button" class="btn-secundario" onclick="leiMarcNovo()">＋ Novo marcador</button>' : ''}</div>`;
+}
+
 
 let leiAlvos = [];                    // ids dos grifos em edição (tocados, ou recém-criados pela ferramenta)
 let leiPincel = null;                 // estilo copiado pelo pincel
@@ -2947,6 +3036,8 @@ let leiHideTimer = null;
 let leiNotaModo = null;               // { tipo: 'nova' } ou { tipo: 'editar', gid }
 
 function leiNomeFerr(id) {
+    const mk = id.match(/^m(\d)$/);
+    if (mk) { const m = leiMarc(mk[1]); return m ? `${m.e} ${m.n || 'Marcador'}` : 'Marcador'; }
     const m = id.match(/^([fc])(\d)$/);
     if (m) return m[1] === 'f' ? `Marca-texto ${LEI_NOMES_FUNDO[+m[2]]}` : `Letra ${LEI_NOMES_LETRA[+m[2]]}`;
     return LEI_NOMES_FERR[id] || id;
@@ -2961,11 +3052,11 @@ const leiAlvosObjs = () => leiAlvos.map(leiGrifoPorId).filter(Boolean);
 // Estilo normalizado; grifos antigos (só "cor") viram marca-texto dessa cor.
 function leiEstiloDe(g) {
     const e = g && g.est ? g.est : (g && g.cor ? { f: g.cor } : {});
-    return { f: Number(e.f) || 0, c: Number(e.c) || 0, b: e.b ? 1 : 0, i: e.i ? 1 : 0, u: Number(e.u) || 0, s: e.s ? 1 : 0, a: e.a ? 1 : 0 };
+    return { f: Number(e.f) || 0, c: Number(e.c) || 0, b: e.b ? 1 : 0, i: e.i ? 1 : 0, u: Number(e.u) || 0, s: e.s ? 1 : 0, a: e.a ? 1 : 0, m: Number(e.m) || 0 };
 }
 function leiLimpoEst(e) {
     const o = {};
-    for (const k of ['f', 'c', 'u']) if (e[k]) o[k] = e[k];
+    for (const k of ['f', 'c', 'u', 'm']) if (e[k]) o[k] = e[k];
     for (const k of ['b', 'i', 's', 'a']) if (e[k]) o[k] = 1;
     return o;
 }
@@ -2986,10 +3077,11 @@ function leiTextoComGrifos(item, grifos) {
         const parte = escaparHtml(texto.slice(a, b));
         const cobrindo = grifos.filter(g => g.ini <= a && g.fim >= b);
         if (!cobrindo.length) { html += parte; continue; }
-        const est = { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0, a: 0 };
+        const est = { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0, a: 0, m: 0 };
         let nota = false;
         for (const g of cobrindo) {
             const e = leiEstiloDe(g);
+            if (e.m) est.m = e.m;
             if (e.f) est.f = e.f;
             if (e.c) est.c = e.c;
             if (e.u) est.u = e.u;
@@ -3008,7 +3100,11 @@ function leiTextoComGrifos(item, grifos) {
         if (nota) cls.push('lei-grifo-nota');
         if (!est.f && !est.c && !est.b && !est.i && !est.u && !est.s && !est.a) cls.push('lei-so-nota');
         if (leiAlvos.length && leiAlvos.some(id => leiGid(id) === topo.id)) cls.push('lei-grifo-sel');
-        html += `<mark class="${cls.join(' ')}" data-gid="${escaparHtml(topo.id)}" onclick="leiToqueGrifo(this.dataset.gid)">${parte}</mark>`;
+        // O emoji do marcador aparece no começo do trecho marcado (só no 1º pedaço, não em cada fatia).
+        const mIni = cobrindo.filter(g => g.ini === a && leiEstiloDe(g).m && leiMarc(leiEstiloDe(g).m)).pop();
+        const mc = mIni ? leiMarc(leiEstiloDe(mIni).m) : null;
+        const badge = mc ? `<span class="lei-marc" title="${escaparHtml(mc.n)}" aria-label="${escaparHtml(mc.n)}">${escaparHtml(mc.e)}</span>` : '';
+        html += `<mark class="${cls.join(' ')}" data-gid="${escaparHtml(topo.id)}" onclick="leiToqueGrifo(this.dataset.gid)">${badge}${parte}</mark>`;
     }
     return html;
 }
@@ -3124,24 +3220,26 @@ async function leiSalvarNota(artId) {
 
 function leiEstadoFerr() {
     const alvos = leiAlvosObjs();
-    return alvos.length ? leiEstiloDe(alvos[0]) : { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0 };
+    return alvos.length ? leiEstiloDe(alvos[0]) : { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0, m: 0 };
 }
 
 function leiBotaoFerr(id) {
     const e = leiEstadoFerr();
+    const mk = id.match(/^m(\d)$/);
+    if (mk && !leiMarc(mk[1])) return '';   // marcador que não existe (removido ou ainda não criado)
     let cls = 'lei-ferr', conteudo = '', ativo = false, desabilitado = false, nome = leiNomeFerr(id);
     const m = id.match(/^([fc])(\d)$/);
     if (m) {
         const n = Number(m[2]);
         if (m[1] === 'f') { cls += ` lei-ferr-cor lei-f-${n}`; ativo = e.f === n; conteudo = ativo ? '✓' : ''; }
         else { cls += ' lei-ferr-letra'; ativo = e.c === n; conteudo = `<span class="lei-c-${n}">A</span>`; }
-    } else if (id === 'b') { conteudo = '<b>N</b>'; ativo = !!e.b; }
+    } else if (mk) { conteudo = escaparHtml(leiMarc(mk[1]).e); ativo = e.m === Number(mk[1]); }
+    else if (id === 'b') { conteudo = '<b>N</b>'; ativo = !!e.b; }
     else if (id === 'i') { conteudo = '<i>I</i>'; ativo = !!e.i; }
     else if (id === 'u') { conteudo = `<span class="lei-u${e.u || 1}">S</span>`; ativo = !!e.u; if (e.u) nome = `Sublinhado ${LEI_NOMES_SUBLINHADO[e.u]} (toque para mudar)`; }
     else if (id === 's') { conteudo = '<s>T</s>'; ativo = !!e.s; }
     else if (id === 'a') { conteudo = '<span class="lei-ferr-aa">AA</span>'; ativo = !!e.a; }
     else if (id === 'nota') { conteudo = '📝'; ativo = leiAlvosObjs().some(g => g.nota); }
-    else if (id === 'limpar') conteudo = '🧹';
     else if (id === 'pincel') { conteudo = '🖌'; ativo = !!leiPincel; }
     else if (id === 'desfazer') { conteudo = '↶'; desabilitado = !leiHist.desfazer.length; }
     else if (id === 'refazer') { conteudo = '↷'; desabilitado = !leiHist.refazer.length; }
@@ -3160,16 +3258,20 @@ function leiDicaAtual() {
 
 // Prévia visual de uma ferramenta (mesmo desenho do botão real, mas sem ação) para a tela de personalizar.
 function leiPreviaFerr(id) {
+    const mk = id.match(/^m(\d)$/);
+    if (mk) { const m = leiMarc(mk[1]); return m ? escaparHtml(m.e) : ''; }
     const m = id.match(/^([fc])(\d)$/);
     if (m) return m[1] === 'f' ? `<span class="lei-cfg-bolinha lei-f-${m[2]}"></span>` : `<span class="lei-cfg-letra lei-c-${m[2]}">A</span>`;
-    const mapa = { b: '<b>N</b>', i: '<i>I</i>', u: '<span class="lei-u1">S</span>', s: '<s>T</s>', a: '<span class="lei-ferr-aa">AA</span>', nota: '📝', limpar: '🧹', pincel: '🖌', desfazer: '↶', refazer: '↷', remover: '🗑' };
+    const mapa = { b: '<b>N</b>', i: '<i>I</i>', u: '<span class="lei-u1">S</span>', s: '<s>T</s>', a: '<span class="lei-ferr-aa">AA</span>', nota: '📝', pincel: '🖌', desfazer: '↶', refazer: '↷', remover: '🗑' };
     return mapa[id] || '';
 }
 // Nome curto para caber no cartão (tira o que vem entre parênteses e o prefixo repetido do grupo).
 function leiNomeCurtoFerr(id) {
+    const mk = id.match(/^m(\d)$/);
+    if (mk) { const m = leiMarc(mk[1]); return m ? (m.n || 'Marcador') : ''; }
     const m = id.match(/^([fc])(\d)$/);
     if (m) return m[1] === 'f' ? LEI_NOMES_FUNDO[+m[2]] : LEI_NOMES_LETRA[+m[2]];
-    return leiNomeFerr(id).replace(/\s*\(.*\)/, '').replace('Limpar formatação', 'Limpar').replace('Pincel de formatação', 'Pincel').replace('Remover grifo', 'Remover');
+    return leiNomeFerr(id).replace(/\s*\(.*\)/, '').replace('Pincel de formatação', 'Pincel').replace('Remover formatação', 'Remover');
 }
 // Cada ferramenta é um cartão que liga/desliga ao toque (marcado = aparece na barra rápida).
 function leiRapidaToggle(id) {
@@ -3183,10 +3285,11 @@ function leiHtmlConfig() {
     const rapida = leiRapida();
     return `<div class="lei-config">
         <div class="lei-config-titulo"><strong>Barra rápida</strong><span>Toque nas ferramentas que você quer ver ao selecionar um trecho. Marcadas: <b>${rapida.length}</b>.</span></div>
-        ${LEI_GRUPOS_FERR.map(g => `<div class="lei-config-grupo"><div class="lei-config-rotulo">${g.nome}</div><div class="lei-cfg-grade">${g.ids.map(id => {
+        ${LEI_GRUPOS_FERR.map(g => ({ ...g, ids: g.ids.filter(id => !/^m\d$/.test(id) || leiMarc(id.slice(1))) })).filter(g => g.ids.length).map(g => `<div class="lei-config-grupo"><div class="lei-config-rotulo">${g.nome}</div><div class="lei-cfg-grade">${g.ids.map(id => {
             const on = rapida.includes(id);
             return `<button type="button" class="lei-cfg-chip${on ? ' on' : ''}" data-ferr="${id}" role="switch" aria-checked="${on}" aria-label="${escaparHtml(leiNomeFerr(id))}" onmousedown="event.preventDefault()" onclick="leiRapidaToggle(this.dataset.ferr)"><span class="lei-cfg-previa">${leiPreviaFerr(id)}</span><span class="lei-cfg-nome">${escaparHtml(leiNomeCurtoFerr(id))}</span>${on ? '<span class="lei-cfg-ok">✓</span>' : ''}</button>`;
         }).join('')}</div></div>`).join('')}
+        ${leiHtmlMarcadoresEditor()}
         <button type="button" class="btn-secundario" onclick="leiRapidaPadrao()">Restaurar padrão</button>
     </div>`;
 }
@@ -3195,7 +3298,7 @@ function leiHtmlConfig() {
 function leiHtmlFita() {
     const aberta = leiPrefs.fita !== false;
     const corpo = aberta ? `
-        <div class="lei-fita-grupos">${LEI_GRUPOS_FERR.map(g => `<div class="lei-fita-grupo"><span class="lei-fita-rotulo">${g.nome}</span><div class="lei-fita-botoes">${g.ids.map(leiBotaoFerr).join('')}</div></div>`).join('')}</div>
+        <div class="lei-fita-grupos">${LEI_GRUPOS_FERR.filter(g => g.ids.some(id => !/^m\d$/.test(id) || leiMarc(id.slice(1)))).map(g => `<div class="lei-fita-grupo"><span class="lei-fita-rotulo">${g.nome}</span><div class="lei-fita-botoes">${g.ids.map(leiBotaoFerr).join('')}</div></div>`).join('')}</div>
         <div class="lei-fita-dica">${escaparHtml(leiDicaAtual())}</div>
         <button type="button" class="btn-secundario lei-fita-config-btn" onclick="leiAlternarConfig()">⚙ ${leiConfigAberta ? 'Fechar' : 'Escolher as ferramentas da barra rápida'}</button>
         ${leiConfigAberta ? leiHtmlConfig() : ''}` : '';
@@ -3496,7 +3599,7 @@ async function leiAplicarNovo(estilo, nota, exato) {
     if (!trechos) return;
     try {
         // Só entra o que a pessoa escolheu: negrito é só negrito, sem marca-texto amarelo escondido.
-        const base = { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0, a: 0, ...estilo };
+        const base = { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0, a: 0, m: 0, ...estilo };
         const criados = await leiCriarGrifos(trechos, leiLimpoEst(base), nota);
         leiAlvos = criados.map(g => g.id);
         leiHistRegistrar({ tipo: 'criar', itens: criados.map(g => ({ gid: g.id, dispId: g.dispId, ini: g.ini, fim: g.fim, est: leiLimpoEst(leiEstiloDe(g)), nota: g.nota || '' })) });
@@ -3557,9 +3660,14 @@ async function leiFerr(id) {
     const alvos = leiAlvosObjs();
     if (!alvos.length && !leiSelecaoPendente) return leiDica('Selecione um trecho do texto, ou toque num grifo, e escolha a ferramenta.');
     if (id === 'remover') return alvos.length ? leiRemoverGrifos(alvos.map(g => g.id)) : leiDica('Este trecho ainda não tem grifo para remover.');
-    if (id === 'limpar') return alvos.length ? leiMudarEstilo(alvos, {}, true) : leiDica('Este trecho ainda não tem formatação.');
-    const base = alvos.length ? leiEstiloDe(alvos[0]) : { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0 };
+    const base = alvos.length ? leiEstiloDe(alvos[0]) : { f: 0, c: 0, b: 0, i: 0, u: 0, s: 0, m: 0 };
     let mud;
+    const mk = id.match(/^m(\d)$/);
+    if (mk) {
+        if (!leiMarc(mk[1])) return leiDica('Esse marcador foi removido. Crie um em ✏️ Personalizar.');
+        mud = { m: base.m === Number(mk[1]) ? 0 : Number(mk[1]) };   // tocar no marcador ativo tira
+        return alvos.length ? leiMudarEstilo(alvos, mud, false) : leiAplicarNovo(mud);
+    }
     const m = id.match(/^([fc])(\d)$/);
     if (m) mud = { [m[1]]: base[m[1]] === Number(m[2]) ? 0 : Number(m[2]) };   // tocar na cor já ativa desliga
     else if (id === 'u') mud = { u: (base.u + 1) % 4 };                        // simples → duplo → ondulado → sem
@@ -3742,7 +3850,7 @@ function leiIrParaArtigo(artId) {
     leiBusca = ''; leiPrefs.soMeus = false;
     const inp = document.getElementById('lei-busca'); if (inp) inp.value = '';
     const blocoId = leiIdx.blocoDoArt.get(artId);
-    if (blocoId) leiTrechoAberto = blocoId;
+    if (blocoId) { leiTrechoAberto = blocoId; leiCapsAbertos.add(leiIdx.porId.get(blocoId).capId); }
     renderizarLei();
     const alvo = document.getElementById('lei-art-' + artId);
     if (alvo) {
