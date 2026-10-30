@@ -5074,3 +5074,15 @@ input[type="checkbox"] {
 .lei-marc-meta { font-size: 12px; font-weight: 700; color: var(--text-muted); }
 .lei-marc-texto { font-size: var(--lei-fonte, 15px); line-height: 1.5; }
 .lei-marc-item .btn-secundario { padding: 4px 12px; font-size: 12.5px; }
+
+/* Pop-up de comentário: flutua junto ao trecho em vez de ocupar o topo da tela */
+.lei-barra.lei-barra-pop { width: min(360px, calc(100vw - 16px)); max-width: none; padding: 10px; flex-wrap: nowrap; }
+.lei-barra.lei-barra-pop .lei-barra-nota { max-width: none; }
+.lei-barra.lei-barra-pop textarea { min-height: 84px; }
+
+/* Anotação do marcador (ex.: em qual prova caiu) */
+.lei-grifo-notam::after { content: "✍️"; font-size: 0.7em; margin-left: 2px; vertical-align: super; }
+.lei-grifo-nota.lei-grifo-notam::after { content: "📝✍️"; }
+.lei-balao-marc { font-size: 14px; margin-top: 4px; }
+.lei-marc-anot { font-size: 14px; font-weight: 600; padding: 6px 8px; border-radius: var(--radius-sm); background: var(--primary-light); color: var(--primary-dark); width: 100%; box-sizing: border-box; }
+.lei-barra-titulo { font-size: 13px; font-weight: 700; }

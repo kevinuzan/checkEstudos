@@ -3662,7 +3662,7 @@ async function startServer() {
         }
         // Grifos antigos só têm "cor" (1-4): viram estilo de marca-texto dessa cor.
         const estiloDoGrifo = (g) => g.est || (g.cor ? { f: g.cor } : {});
-        const grifoParaApi = (g) => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor || 0, est: estiloDoGrifo(g), orfao: !!g.orfao, nota: g.nota || '' });
+        const grifoParaApi = (g) => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor || 0, est: estiloDoGrifo(g), orfao: !!g.orfao, nota: g.nota || '', notaM: g.notaM || '' });
 
         app.post('/api/leis/:lei/grifos', requireAuth, async (req, res) => {
             if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
@@ -3703,6 +3703,11 @@ async function startServer() {
             if (req.body.nota !== undefined) {
                 const nota = typeof req.body.nota === 'string' ? req.body.nota.trim().slice(0, LEIS_MAX_NOTA) : '';
                 if (nota) set.nota = nota; else unset.nota = '';
+            }
+            // Anotação do marcador (ex.: em qual prova caiu): separada do comentário comum do trecho.
+            if (req.body.notaM !== undefined) {
+                const notaM = typeof req.body.notaM === 'string' ? req.body.notaM.trim().slice(0, 1000) : '';
+                if (notaM) set.notaM = notaM; else unset.notaM = '';
             }
             if (req.body.est !== undefined) {
                 const est = sanitizarEstiloGrifo(req.body.est);
