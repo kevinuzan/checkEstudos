@@ -407,6 +407,41 @@ async function encerrarConta() {
     }
 }
 
+// Apagar todos os dados de estudo, mantendo a conta. Confirmação em duas
+// etapas (aviso detalhado + digitar a frase), porque não há como desfazer.
+async function apagarTudoDaConta() {
+    const aviso = '⚠️ ATENÇÃO — ISSO NÃO PODE SER DESFEITO ⚠️\n\n' +
+        'Vamos apagar TODOS os seus dados de estudo:\n' +
+        '• edital, planos e tipos de estudo\n' +
+        '• sessões e histórico de estudos\n' +
+        '• flashcards (baralhos e cartões)\n' +
+        '• jogos e pontuações\n' +
+        '• respostas das questões\n' +
+        '• grifos, anotações e leituras das leis\n\n' +
+        'Os dados NÃO poderão ser recuperados, nem por nós. Sua conta e sua assinatura continuam ativas.\n\n' +
+        'Quer uma cópia antes? Cancele e use "Baixar meus dados".\n\nTem certeza de que quer apagar tudo?';
+    if (!confirm(aviso)) return;
+    const resposta = prompt('Última confirmação. Para apagar tudo de forma definitiva, digite APAGAR TUDO (em maiúsculas):');
+    if (resposta !== 'APAGAR TUDO') {
+        if (resposta !== null) alert('A frase não confere. Nada foi apagado.');
+        return;
+    }
+    try {
+        const res = await fetchOriginal('/api/conta/dados', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirmacao: 'APAGAR TUDO' })
+        });
+        const dados = await res.json();
+        if (!dados.success) throw new Error(dados.error || 'Falha');
+        appJaIniciado = false;
+        location.reload();
+    } catch (err) {
+        console.error('Erro ao apagar os dados da conta:', err);
+        mostrarErroAssinatura('conta-erro', err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível apagar os dados agora.');
+    }
+}
+
 async function sairDaConta() {
     await fetchOriginal('/api/auth/logout', { method: 'POST' });
     appJaIniciado = false;
@@ -2321,7 +2356,7 @@ let leiOuvindoSelecao = false;
 function leiLerPrefs() {
     try {
         const salvo = JSON.parse(localStorage.getItem('leis_prefs') || '{}');
-        leiPrefs = { revogados: salvo.revogados !== false, notasLeg: !!salvo.notasLeg, soMeus: false, fita: salvo.fita !== false, rapida: Array.isArray(salvo.rapida) ? salvo.rapida : null, semMenuNativo: salvo.semMenuNativo !== false, fonte: Math.min(30, Math.max(12, Number(salvo.fonte) || 15)), corrido: !!salvo.corrido, marcadores: leiLimparMarcadores(salvo.marcadores) };
+        leiPrefs = { revogados: true, notasLeg: !!salvo.notasLeg, soMeus: false, fita: salvo.fita !== false, rapida: Array.isArray(salvo.rapida) ? salvo.rapida : null, semMenuNativo: salvo.semMenuNativo !== false, fonte: Math.min(30, Math.max(12, Number(salvo.fonte) || 15)), corrido: !!salvo.corrido, marcadores: leiLimparMarcadores(salvo.marcadores) };
     } catch (err) { /* sem storage: fica no padrão */ }
 }
 function leiSalvarPrefs() {
@@ -2623,7 +2658,6 @@ function renderizarLei() {
                 </span>
                 <button type="button" class="btn-secundario lei-corrido-btn${leiPrefs.corrido ? ' ativo' : ''}" aria-pressed="${!!leiPrefs.corrido}" onclick="leiPref('corrido', !leiPrefs.corrido)" title="Mostra artigos, parágrafos e incisos todos alinhados à esquerda, sem recuo">☰ Texto corrido: ${leiPrefs.corrido ? 'ligado' : 'desligado'}</button>`;
     const checks = `${emTrecho ? '' : `<label><input type="checkbox" ${leiPrefs.soMeus ? 'checked' : ''} onchange="leiPref('soMeus', this.checked)"> Só meus grifos e anotações</label>`}
-                <label><input type="checkbox" ${leiPrefs.revogados ? 'checked' : ''} onchange="leiPref('revogados', this.checked)"> Mostrar revogados</label>
                 <label><input type="checkbox" ${leiPrefs.notasLeg ? 'checked' : ''} onchange="leiPref('notasLeg', this.checked)"> Mostrar "Redação dada…"</label>`;
     const opcoes = emTrecho
         ? `<div class="lei-opcoes">${fonteCtl}<details class="lei-mais-opcoes"><summary>Mais opções</summary>${checks}</details></div>`
@@ -7949,7 +7983,7 @@ function renderizarFraseDoDia() {
     const d = new Date();
     // dias desde 01/01/1970 no fuso local (evita trocar a frase às 21h por causa do UTC)
     const diaNumero = Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
-    el.textContent = '💬 ' + FRASES_MOTIVACIONAIS[diaNumero % FRASES_MOTIVACIONAIS.length];
+    el.textContent = '✨ ' + FRASES_MOTIVACIONAIS[diaNumero % FRASES_MOTIVACIONAIS.length];
 }
 
 // ==================================================================

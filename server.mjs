@@ -1050,6 +1050,37 @@ async function startServer() {
             }
         });
 
+        // Coleções com TUDO que a pessoa produziu estudando. Fora daqui, de
+        // propósito: o usuário (login), a assinatura e a cota mensal de IA
+        // (iaUsoColl) — senão "apagar tudo" serviria pra zerar a cota de IA.
+        // Os textos das leis e o banco de questões são compartilhados, não
+        // são dados da pessoa.
+        function colecoesDeDadosDeEstudo() {
+            return [editalColl, planosColl, tiposEstudoColl, sessoesColl, materiasCorColl,
+                jogoPontuacoesColl, jogoRodadasColl, flashcardsBaralhosColl, flashcardsCartoesColl,
+                analiseDesempenhoColl, questoesRespostasColl,
+                leisGrifosColl, leisNotasColl, leisLeiturasColl];
+        }
+
+        // Apaga todos os dados de estudo mas MANTÉM a conta, o login e a
+        // assinatura (diferente de "Encerrar conta"). Exige a frase
+        // "APAGAR TUDO" no corpo. Depois recria plano e tipos de estudo
+        // padrão, pro app continuar utilizável como numa conta nova.
+        app.delete('/api/conta/dados', requireAuth, async (req, res) => {
+            try {
+                if ((req.body?.confirmacao || '') !== 'APAGAR TUDO') {
+                    return res.status(400).json({ success: false, error: 'Confirmação ausente.' });
+                }
+                const filtro = { userId: req.userId };
+                for (const colecao of colecoesDeDadosDeEstudo()) await colecao.deleteMany(filtro);
+                await garantirDadosIniciaisDoUsuario(req.userId);
+                res.json({ success: true });
+            } catch (err) {
+                console.error('Erro ao apagar os dados da conta:', err);
+                res.status(500).json({ success: false, error: 'Erro ao apagar os dados da conta' });
+            }
+        });
+
         // Apaga TUDO da pessoa. Antes, cancela a assinatura na Stripe — se isso
         // falhar, NÃO apaga nada (senão a pessoa continuaria sendo cobrada sem
         // ter mais conta). Exige confirmação explícita no corpo da requisição.
@@ -1076,9 +1107,9 @@ async function startServer() {
                 }
 
                 const filtro = { userId: req.userId };
-                const colecoes = [editalColl, planosColl, tiposEstudoColl, sessoesColl, materiasCorColl,
-                    jogoPontuacoesColl, jogoRodadasColl, flashcardsBaralhosColl, flashcardsCartoesColl,
-                    iaUsoColl, analiseDesempenhoColl];
+                // Inclui também as respostas do banco de questões e tudo da aba
+                // Leis (grifos, anotações e leituras), que ficavam pra trás.
+                const colecoes = [...colecoesDeDadosDeEstudo(), iaUsoColl];
                 for (const colecao of colecoes) await colecao.deleteMany(filtro);
                 await usuariosColl.deleteOne({ _id: usuario._id });
                 res.clearCookie('sessao');

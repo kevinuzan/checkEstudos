@@ -4826,8 +4826,8 @@ input[type="checkbox"] {
 /* LEIS (leitura, grifo marca-texto e anotações)                  */
 /* ============================================================ */
 .lei-ferramentas { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
-.lei-ferramentas input[type="search"] { flex: 1 1 200px; min-width: 0; }
-.lei-opcoes { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--text-muted); margin-bottom: 10px; }
+.lei-ferramentas input[type="search"] { flex: 1 1 200px; min-width: 0; font-size: 16px; padding: 12px 14px; }
+.lei-opcoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 15px; color: var(--text-muted); margin-bottom: 10px; }
 .lei-opcoes label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .lei-opcoes input { width: auto; }
 .lei-bloco { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; background: var(--card); overflow: clip; }   /* clip (e não hidden): hidden quebra o cabeçalho fixo */
@@ -4996,7 +4996,7 @@ input[type="checkbox"] {
 .lei-lido-btn { padding: 6px 14px; font-size: 13px; }
 .lei-lido-linha .btn-secundario { padding: 3px 10px; font-size: 12.5px; }
 .lei-fonte-ctl { display: inline-flex; align-items: center; gap: 6px; }
-.lei-fonte-ctl .btn-secundario { padding: 2px 10px; font-size: 13px; }
+.lei-fonte-ctl .btn-secundario { padding: 6px 14px; font-size: 15px; }
 
 /* ---- Leis por matéria / trechos (lista, leitura, onde parei) ---- */
 .lei-materia { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); margin-bottom: 8px; overflow: hidden; }
@@ -5005,37 +5005,52 @@ input[type="checkbox"] {
 .lei-lei-linha { position: relative; display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 12px 34px 12px 14px; background: transparent; color: var(--text); text-align: left; border-radius: 0; border-bottom: 1px solid var(--border); }
 .lei-lei-linha:last-child { border-bottom: 0; }
 .lei-lei-linha:disabled { opacity: .55; }
-.lei-lei-nome { font-size: 14px; font-weight: 600; }
-.lei-lei-sub { font-size: 12px; color: var(--text-muted); font-weight: 400; }
+.lei-lei-nome { font-size: 17px; font-weight: 600; }
+.lei-lei-sub { font-size: 14px; color: var(--text-muted); font-weight: 400; }
 .lei-lei-seta { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 20px; }
 .lei-mini-prog { height: 5px; border-radius: 99px; background: var(--border); overflow: hidden; }
 .lei-mini-barra { height: 100%; background: var(--primary); }
 
 /* Capítulo como toggle (minimizado por padrão): o cabeçalho é um botão largo, fácil de tocar. */
-.lei-cap { margin: 8px 0; }
-.lei-cap-cab { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); font-size: 13.5px; text-align: left; font-weight: 400; }
+.lei-cap { margin: 10px 0; }
+.lei-cap-cab { display: flex; align-items: center; gap: 8px; width: 100%; padding: 16px 16px; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); font-size: 16px; line-height: 1.3; text-align: left; font-weight: 400; }
 .lei-cap.aberto .lei-cap-cab { border-color: var(--primary); }
 .lei-cap-nome { flex: 1; min-width: 0; }
-.lei-cap-cont { flex: none; font-size: 12px; font-weight: 700; color: var(--text-muted); background: var(--surface-muted); border-radius: 99px; padding: 1px 8px; }
+.lei-cap-cont { flex: none; font-size: 14px; font-weight: 700; color: var(--text-muted); background: var(--surface-muted); border-radius: 99px; padding: 3px 11px; }
 .lei-cap-cont.completo { color: var(--primary-dark); background: var(--primary-light); }
 .lei-cap-corpo { padding-top: 8px; }
 .lei-caps-barra { display: flex; justify-content: flex-end; margin: 0 0 4px; }
-.lei-caps-barra button { padding: 4px 12px; font-size: 12.5px; }
-.lei-trecho { display: flex; align-items: stretch; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); margin-bottom: 8px; overflow: hidden; }
+.lei-caps-barra button { padding: 8px 16px; font-size: 14px; }
+.lei-trecho { display: flex; align-items: stretch; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); margin-bottom: 10px; overflow: hidden; }
 .lei-trecho-lido { border-color: var(--primary); }
-.lei-trecho-corpo { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px 8px 10px 12px; background: transparent; color: var(--text); text-align: left; border-radius: 0; font-weight: 400; }
-.lei-trecho-n { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--primary-light); color: var(--primary-dark); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; }
+.lei-trecho-corpo { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 14px 10px 14px 14px; background: transparent; color: var(--text); text-align: left; border-radius: 0; font-weight: 400; }
+.lei-trecho-n { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--primary-light); color: var(--primary-dark); display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; }
 .lei-trecho-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.lei-trecho-tit { font-size: 14px; font-weight: 700; }
-.lei-trecho-sub { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lei-trecho-st { font-size: 12px; color: var(--text-muted); }
+.lei-trecho-tit { font-size: 17px; font-weight: 700; }
+.lei-trecho-sub { font-size: 14px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lei-trecho-st { font-size: 14px; color: var(--text-muted); }
 .lei-trecho-lido .lei-trecho-st { color: var(--primary-dark); font-weight: 600; }
-.lei-pilula { flex: none; padding: 5px 12px; border-radius: 99px; background: var(--primary); color: #fff; font-size: 12px; font-weight: 700; }
+.lei-pilula { flex: none; padding: 7px 14px; border-radius: 99px; background: var(--primary); color: #fff; font-size: 14px; font-weight: 700; }
 .lei-trecho-lido .lei-pilula, .lei-trecho-novo .lei-pilula { background: var(--primary-light); color: var(--primary-dark); }
 .lei-trecho-andamento .lei-pilula { background: var(--primary); }
-.lei-estrela { flex: none; width: 46px; background: transparent; color: var(--text-muted); font-size: 22px; border-radius: 0; border-left: 1px solid var(--border); padding: 0; }
+.lei-estrela { flex: none; width: 56px; background: transparent; color: var(--text-muted); font-size: 26px; border-radius: 0; border-left: 1px solid var(--border); padding: 0; }
 .lei-estrela.on { color: var(--primary); }
-.lei-continuar { display: block; width: 100%; margin: 4px 0 10px; padding: 12px 14px; text-align: left; font-size: 14px; border-radius: var(--radius); }
+.lei-continuar { display: block; width: 100%; margin: 4px 0 12px; padding: 16px 18px; text-align: left; font-size: 16px; border-radius: var(--radius); }
+
+@media (min-width: 900px) {
+    .lei-cap-cab { font-size: 19px; padding: 20px 22px; }
+    .lei-cap-cont { font-size: 15px; }
+    .lei-trecho-corpo { gap: 16px; padding: 18px 14px 18px 20px; }
+    .lei-trecho-n { width: 48px; height: 48px; font-size: 16px; }
+    .lei-trecho-tit { font-size: 20px; }
+    .lei-trecho-sub, .lei-trecho-st { font-size: 15.5px; }
+    .lei-pilula { font-size: 15px; padding: 8px 18px; }
+    .lei-estrela { width: 68px; font-size: 30px; }
+    .lei-continuar { font-size: 18px; padding: 20px 24px; }
+    .lei-lei-nome { font-size: 19px; }
+    .lei-lei-sub { font-size: 15.5px; }
+    .lei-lei-linha { padding: 16px 40px 16px 18px; }
+}
 
 .lei-bloco-sub { display: block; font-size: 12px; font-weight: 400; color: var(--text-muted); }
 .lei-parei-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; font-size: 13px; color: var(--text-muted); }
@@ -5045,8 +5060,8 @@ input[type="checkbox"] {
 .lei-art-parei { border-left: 3px solid var(--primary); padding-left: 8px; }
 .lei-art-parei::before { content: "🔖 Parei aqui"; display: block; font-size: 11px; font-weight: 700; color: var(--primary-dark); margin-bottom: 2px; }
 .lei-mais-opcoes { flex-basis: 100%; }
-.lei-mais-opcoes summary { cursor: pointer; font-size: 13px; color: var(--primary-dark); font-weight: 600; padding: 4px 0; }
-.lei-mais-opcoes label { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 0; }
+.lei-mais-opcoes summary { cursor: pointer; font-size: 15px; color: var(--primary-dark); font-weight: 600; padding: 4px 0; }
+.lei-mais-opcoes label { display: flex; align-items: center; gap: 8px; font-size: 15px; padding: 4px 0; }
 
 /* Texto corrido: artigo, parágrafo, inciso e alínea alinhados 100% à esquerda, sem recuo. */
 .lei-corrido .lei-disp { padding-left: 0 !important; margin-left: 0; text-indent: 0; }
@@ -5067,7 +5082,7 @@ input[type="checkbox"] {
 
 /* Ver o que marquei como... */
 .lei-marc-filtro { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0 10px; }
-.lei-marc-filtro-tit { font-size: 12.5px; color: var(--text-muted); width: 100%; }
+.lei-marc-filtro-tit { font-size: 14.5px; color: var(--text-muted); width: 100%; }
 .lei-marc-chip { padding: 6px 12px; border-radius: 99px; font-size: 13px; background: var(--card); color: var(--text); border: 2px solid var(--border); font-weight: 600; }
 .lei-marc-chip.on { border-color: var(--primary); background: var(--primary-light); color: var(--primary-dark); }
 .lei-marc-item { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 10px 12px; margin-bottom: 8px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
@@ -5090,7 +5105,7 @@ input[type="checkbox"] {
 /* Botão de voltar: à esquerda, acima do título (antes ficava apertado no canto direito) */
 .lei-voltar { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 6px; padding: 6px 12px 6px 6px; background: transparent; color: var(--primary); border: 0; font-size: 14px; font-weight: 700; border-radius: var(--radius-sm); }
 .lei-voltar:hover { background: var(--primary-light); }
-.lei-ajuda { font-size: 12.5px; }
+.lei-ajuda { font-size: 14.5px; line-height: 1.45; }
 /* Onde parei, ao lado de "Anotar" em cada artigo */
 .lei-art-acoes { display: flex; flex-wrap: wrap; gap: 6px; }
 .lei-parei-btn.ativo { background: var(--primary-light); color: var(--primary-dark); border-color: var(--primary); font-weight: 700; }
@@ -5102,10 +5117,21 @@ input[type="checkbox"] {
 
 /* --- Resumo enxuto: frase do dia, seletor 7/30 dias e gráfico de 7 dias --- */
 .resumo-frase {
-    margin: 0 0 12px;
-    font-size: 14px;
-    color: var(--text-muted);
-    line-height: 1.4;
+    margin: 0 0 16px;
+    padding: 16px 18px;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--primary-dark);
+    background: linear-gradient(135deg, var(--primary-light), var(--card));
+    border: 1px solid var(--primary);
+    border-left-width: 5px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+}
+
+@media (min-width: 900px) {
+    .resumo-frase { font-size: 21px; padding: 20px 24px; }
 }
 
 .resumo-periodo {
@@ -5150,4 +5176,20 @@ input[type="checkbox"] {
     height: 18px;
     accent-color: var(--primary);
     flex: none;
+}
+
+/* Aba Leis: botões, filtros e textos de apoio maiores (leitura mais confortável) */
+#leis-conteudo .lei-ferramentas .btn-secundario,
+#leis-conteudo .lei-opcoes .btn-secundario,
+#leis-conteudo .lei-marc-filtro button { font-size: 15px; padding: 10px 16px; }
+#leis-conteudo .lei-opcoes input[type="checkbox"] { width: 18px; height: 18px; }
+.lei-voltar { font-size: 16px; }
+
+@media (min-width: 900px) {
+    .lei-opcoes { font-size: 16.5px; }
+    .lei-ajuda, .lei-marc-filtro-tit { font-size: 16px; }
+    .lei-voltar { font-size: 17px; }
+    #leis-conteudo .lei-ferramentas .btn-secundario,
+    #leis-conteudo .lei-opcoes .btn-secundario,
+    #leis-conteudo .lei-marc-filtro button { font-size: 16.5px; padding: 12px 20px; }
 }
