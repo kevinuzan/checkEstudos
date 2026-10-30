@@ -42,7 +42,18 @@
     --grifo-2: #bbf7d0;
     --grifo-3: #fbcfe8;
     --grifo-4: #bfdbfe;
+    --grifo-5: #fed7aa;
+    --grifo-6: #e9d5ff;
+    --grifo-7: #a5f3fc;
+    --grifo-8: #e5e7eb;
     --grifo-texto: #0f172a;
+    /* Cor da letra (ferramenta "Cor da letra" das Leis) */
+    --letra-1: #dc2626;
+    --letra-2: #1d4ed8;
+    --letra-3: #15803d;
+    --letra-4: #c2410c;
+    --letra-5: #7e22ce;
+    --letra-6: #475569;
 }
 
 /* ============================================================ */
@@ -88,7 +99,17 @@
     --grifo-2: #15803d;
     --grifo-3: #be185d;
     --grifo-4: #1d4ed8;
+    --grifo-5: #c2410c;
+    --grifo-6: #7e22ce;
+    --grifo-7: #0e7490;
+    --grifo-8: #475569;
     --grifo-texto: #f8fafc;
+    --letra-1: #f87171;
+    --letra-2: #60a5fa;
+    --letra-3: #4ade80;
+    --letra-4: #fb923c;
+    --letra-5: #c084fc;
+    --letra-6: #94a3b8;
     --bg: #0f172a;
     --bg-suave: #0f172a;
     --card: #1e293b;
@@ -4825,11 +4846,22 @@ input[type="checkbox"] {
 .lei-nivel-4 { padding-left: 56px; }
 .lei-revogado .lei-txt { text-decoration: line-through; color: var(--text-muted); }
 .lei-notas-leg { color: var(--text-faint); font-size: 12px; font-style: italic; }
-.lei-grifo { color: var(--grifo-texto); border-radius: 3px; padding: 0 1px; cursor: pointer; }
-.lei-cor-1 { background: var(--grifo-1); }
-.lei-cor-2 { background: var(--grifo-2); }
-.lei-cor-3 { background: var(--grifo-3); }
-.lei-cor-4 { background: var(--grifo-4); }
+.lei-grifo { border-radius: 3px; padding: 0 1px; cursor: pointer; color: inherit; }
+.lei-f-1 { background: var(--grifo-1); } .lei-f-2 { background: var(--grifo-2); } .lei-f-3 { background: var(--grifo-3); } .lei-f-4 { background: var(--grifo-4); }
+.lei-f-5 { background: var(--grifo-5); } .lei-f-6 { background: var(--grifo-6); } .lei-f-7 { background: var(--grifo-7); } .lei-f-8 { background: var(--grifo-8); }
+.lei-grifo[class*="lei-f-"] { color: var(--grifo-texto); }
+/* Cor da letra vem DEPOIS do fundo: vence a cor padrão do marca-texto. */
+.lei-c-1 { color: var(--letra-1) !important; } .lei-c-2 { color: var(--letra-2) !important; } .lei-c-3 { color: var(--letra-3) !important; }
+.lei-c-4 { color: var(--letra-4) !important; } .lei-c-5 { color: var(--letra-5) !important; } .lei-c-6 { color: var(--letra-6) !important; }
+.lei-b { font-weight: 700; }
+.lei-i { font-style: italic; }
+.lei-u1, .lei-u2, .lei-u3 { text-decoration-line: underline; text-underline-offset: 2px; }
+.lei-u1 { text-decoration-style: solid; } .lei-u2 { text-decoration-style: double; } .lei-u3 { text-decoration-style: wavy; }
+.lei-s { text-decoration-line: line-through; }
+.lei-s.lei-u1, .lei-s.lei-u2, .lei-s.lei-u3 { text-decoration-line: underline line-through; }
+/* Trecho só com comentário (sem formatação): fundo discreto para a pessoa achar o balão 📝 */
+.lei-so-nota { background: var(--surface-muted); border-bottom: 1px dotted var(--text-muted); }
+.lei-grifo-sel { outline: 2px solid var(--primary); outline-offset: 1px; }
 .lei-art-acoes { margin-top: 6px; }
 .lei-art-acoes button { padding: 4px 10px; font-size: 12.5px; }
 .lei-nota { margin-top: 8px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--surface-muted); border-left: 3px solid var(--primary); }
@@ -4868,3 +4900,29 @@ input[type="checkbox"] {
 .lei-contexto { margin: 18px 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--text-muted); }
 .lei-rubrica { font-size: 13px; font-weight: 600; font-style: italic; color: var(--text-muted); margin-bottom: 2px; }
 .lei-k-pena { border-left: 3px solid var(--border); margin-left: 4px; }
+
+/* Leis: barra completa de edição (estilo Word) e barra rápida */
+.lei-fita { margin: 10px 0 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); }
+.lei-fita-titulo { width: 100%; text-align: left; background: transparent; border: 0; padding: 8px 10px; font-weight: 700; font-size: 14px; color: var(--text); cursor: pointer; }
+.lei-fita-grupos { display: flex; flex-wrap: wrap; gap: 10px 16px; padding: 4px 10px 6px; }
+.lei-fita-grupo { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.lei-fita-rotulo { font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--text-muted); }
+.lei-fita-botoes { display: flex; flex-wrap: wrap; gap: 4px; }
+.lei-fita-dica { padding: 2px 10px 6px; font-size: 12.5px; color: var(--text-muted); }
+.lei-fita-config-btn { margin: 0 10px 10px; padding: 4px 10px; font-size: 12.5px; }
+.lei-ferr { min-width: 34px; height: 34px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border); font-size: 15px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; user-select: none; -webkit-user-select: none; }
+.lei-ferr:not(.lei-ferr-cor) { background: var(--card); color: var(--text); }
+.lei-ferr.ativo { outline: 2px solid var(--primary); outline-offset: 1px; }
+.lei-ferr:disabled { opacity: .4; cursor: default; }
+.lei-ferr-cor { color: var(--grifo-texto); width: 30px; min-width: 30px; height: 30px; padding: 0; border-radius: 50%; font-weight: 700; }
+.lei-ferr-letra span { font-weight: 800; font-size: 16px; }
+.lei-barra-dica { flex-basis: 100%; text-align: center; font-size: 12.5px; color: var(--text-muted); }
+.lei-barra .lei-ferr { height: 34px; }
+.lei-barra-config { width: 100%; max-width: 640px; max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.lei-config { display: flex; flex-direction: column; gap: 8px; padding: 0 10px 10px; }
+.lei-barra-config .lei-config { padding: 0; }
+.lei-config-titulo { font-size: 13px; color: var(--text-muted); }
+.lei-config-grupo { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.lei-config-grupo strong { flex-basis: 100%; }
+.lei-config-grupo label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.lei-config-grupo input { width: auto; }

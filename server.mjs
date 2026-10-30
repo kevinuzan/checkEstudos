@@ -3575,7 +3575,7 @@ async function startServer() {
             }
             res.json({
                 success: true,
-                grifos: grifos.map(g => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor, orfao: !!g.orfao, nota: g.nota || '' })),
+                grifos: grifos.map(grifoParaApi),
                 notas: notas.map(n => ({ dispId: n.dispId, texto: n.texto, atualizadoEm: n.atualizadoEm })),
                 alteracoes
             });
@@ -3583,10 +3583,29 @@ async function startServer() {
 
         // Cria grifos (um por dispositivo tocado pela seleção). O trecho é extraído
         // do texto GUARDADO no servidor, nunca do que o cliente manda.
+        // Estilo de um trecho grifado (como a formatação do Word): f = cor do fundo (1-8), c = cor da letra (1-6),
+        // b negrito, i itálico, s tachado, u sublinhado (1 simples, 2 duplo, 3 ondulado). Só guarda o que está ligado.
+        function sanitizarEstiloGrifo(e) {
+            const o = {};
+            if (!e || typeof e !== 'object') return o;
+            const n = (v, max) => { v = Number(v); return Number.isInteger(v) && v >= 1 && v <= max ? v : 0; };
+            if (n(e.f, 8)) o.f = n(e.f, 8);
+            if (n(e.c, 6)) o.c = n(e.c, 6);
+            if (n(e.u, 3)) o.u = n(e.u, 3);
+            if (e.b) o.b = 1;
+            if (e.i) o.i = 1;
+            if (e.s) o.s = 1;
+            return o;
+        }
+        // Grifos antigos só têm "cor" (1-4): viram estilo de marca-texto dessa cor.
+        const estiloDoGrifo = (g) => g.est || (g.cor ? { f: g.cor } : {});
+        const grifoParaApi = (g) => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor || 0, est: estiloDoGrifo(g), orfao: !!g.orfao, nota: g.nota || '' });
+
         app.post('/api/leis/:lei/grifos', requireAuth, async (req, res) => {
             if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
-            const cor = Number(req.body.cor);
-            if (!Number.isInteger(cor) || cor < 1 || cor > 4) return res.status(400).json({ success: false, error: 'Cor inválida' });
+            // Aceita "est" (estilo completo) ou, nos clientes antigos, só "cor" (1-4). Estilo vazio é permitido
+            // quando há anotação (comentário sem formatação), conferido mais abaixo.
+            let est = req.body.est !== undefined ? sanitizarEstiloGrifo(req.body.est) : sanitizarEstiloGrifo({ f: req.body.cor });
             const trechos = Array.isArray(req.body.trechos) ? req.body.trechos.slice(0, 60) : [];
             if (!trechos.length) return res.status(400).json({ success: false, error: 'Nada selecionado' });
             const atuais = await leisGrifosColl.countDocuments({ userId: req.userId });
@@ -3602,22 +3621,37 @@ async function startServer() {
                 if (!item || !item.texto || !Number.isInteger(ini) || !Number.isInteger(fim) || ini < 0 || fim <= ini || fim > item.texto.length) continue;
                 const trecho = item.texto.slice(ini, fim);
                 if (!trecho.trim()) continue;
-                docs.push({ userId: req.userId, lei: req.params.lei, dispId: t.dispId, ini, fim, trecho, cor, orfao: false, criadoEm: new Date() });
+                docs.push({ userId: req.userId, lei: req.params.lei, dispId: t.dispId, ini, fim, trecho, est, cor: est.f && est.f <= 4 ? est.f : 0, orfao: false, criadoEm: new Date() });
             }
             if (!docs.length) return res.status(400).json({ success: false, error: 'Seleção inválida' });
             // Anotação sobre o trecho: fica no próprio grifo (um grifo pode ter nota).
             const nota = typeof req.body.nota === 'string' ? req.body.nota.trim().slice(0, LEIS_MAX_NOTA) : '';
+            if (!Object.keys(est).length && !nota) return res.status(400).json({ success: false, error: 'Escolha uma formatação ou escreva uma anotação' });
             if (nota) docs[0].nota = nota;
             await leisGrifosColl.insertMany(docs);
-            res.json({ success: true, grifos: docs.map(g => ({ id: String(g._id), dispId: g.dispId, ini: g.ini, fim: g.fim, trecho: g.trecho, cor: g.cor, orfao: false, nota: g.nota || '' })) });
+            res.json({ success: true, grifos: docs.map(grifoParaApi) });
         });
 
-        // Define, troca ou apaga a anotação de um grifo existente (texto vazio apaga).
+        // Troca o estilo (est) e/ou a anotação (nota) de um grifo existente. Só mexe no que veio no corpo;
+        // nota vazia apaga a anotação.
         app.patch('/api/leis/:lei/grifos/:id', requireAuth, async (req, res) => {
             if (!leiValida(req.params.lei) || !ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, error: 'Pedido inválido' });
-            const nota = typeof req.body.nota === 'string' ? req.body.nota.trim().slice(0, LEIS_MAX_NOTA) : '';
+            const set = {}, unset = {};
+            if (req.body.nota !== undefined) {
+                const nota = typeof req.body.nota === 'string' ? req.body.nota.trim().slice(0, LEIS_MAX_NOTA) : '';
+                if (nota) set.nota = nota; else unset.nota = '';
+            }
+            if (req.body.est !== undefined) {
+                const est = sanitizarEstiloGrifo(req.body.est);
+                set.est = est;
+                set.cor = est.f && est.f <= 4 ? est.f : 0;
+            }
+            if (!Object.keys(set).length && !Object.keys(unset).length) return res.status(400).json({ success: false, error: 'Nada para alterar' });
+            const update = {};
+            if (Object.keys(set).length) update.$set = set;
+            if (Object.keys(unset).length) update.$unset = unset;
             const filtro = { _id: new ObjectId(req.params.id), userId: req.userId, lei: req.params.lei };
-            const r = await leisGrifosColl.updateOne(filtro, nota ? { $set: { nota } } : { $unset: { nota: '' } });
+            const r = await leisGrifosColl.updateOne(filtro, update);
             if (!r.matchedCount) return res.status(404).json({ success: false, error: 'Grifo não encontrado' });
             res.json({ success: true });
         });
