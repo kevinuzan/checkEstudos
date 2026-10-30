@@ -119,7 +119,7 @@
                     <span class="view-tab-icone">📝</span> Questões
                 </button>
                 <button class="view-tab" id="tab-leis" onclick="trocarView('leis')">
-                    <span class="view-tab-icone">📖</span> Leis
+                    <span class="view-tab-icone">📖</span> Leis <span class="admin-badge" id="lei-cron-tab" style="display:none;">⏱</span>
                 </button>
                 <button class="view-tab" id="tab-jogo" onclick="trocarView('jogo')">
                     <span class="view-tab-icone">🎮</span> Jogo
@@ -458,6 +458,7 @@
             </div>
 
             <div id="view-leis" style="display:none;">
+                <div class="lei-cron-barra" id="lei-cron-barra" style="display:none;"></div>
                 <div id="leis-conteudo"><!-- telas de Leis inseridas via JS --></div>
             </div>
 

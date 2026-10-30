@@ -513,6 +513,10 @@ async function startServer() {
         const leisGrifosColl = db.collection(LEIS_GRIFOS_COLLECTION);
         const leisNotasColl = db.collection(LEIS_NOTAS_COLLECTION);
         const leisLeiturasColl = db.collection(LEIS_LEITURAS_COLLECTION);
+        // Tempo de leitura por trecho de lei (soma de todas as vezes que a pessoa cronometrou),
+        // usado pra calcular o ritmo médio dela (min por trecho / seg por artigo).
+        const leisTemposColl = db.collection('leis_tempos');
+        await leisTemposColl.createIndex({ userId: 1, lei: 1, blocoId: 1 }, { unique: true }).catch(() => {});
         await leisMudancasColl.createIndex({ lei: 1, em: -1 }).catch(() => {});
         await leisGrifosColl.createIndex({ userId: 1, lei: 1, dispId: 1 }).catch(() => {});
         await leisNotasColl.createIndex({ userId: 1, lei: 1, dispId: 1 }, { unique: true }).catch(() => {});
@@ -1241,7 +1245,7 @@ async function startServer() {
                 jogoPontuacoesColl, jogoRodadasColl, flashcardsBaralhosColl, flashcardsCartoesColl,
                 analiseDesempenhoColl, questoesRespostasColl,
                 leisGrifosColl, leisNotasColl, leisLeiturasColl,
-                despesasColl, eventosColl, lembretesColl];
+                despesasColl, eventosColl, lembretesColl, leisTemposColl];
         }
 
         // Apaga todos os dados de estudo mas MANTÉM a conta, o login e a
@@ -1607,6 +1611,38 @@ async function startServer() {
             return (await coll.countDocuments({ userId })) >= LIMITE_ITENS_GERAL;
         }
         function idValido(id) { return typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id); }
+
+        // ---- Tempo de leitura das Leis (por trecho)
+        app.get('/api/leis/:lei/tempos', requireAuth, async (req, res) => {
+            if (!LEIS[req.params.lei]) return res.status(404).json({ success: false, error: 'Lei não encontrada.' });
+            const lista = await leisTemposColl.find({ userId: req.userId, lei: req.params.lei }).toArray();
+            res.json({ success: true, tempos: lista.map(t => ({ blocoId: t.blocoId, segundos: t.segundos || 0, vezes: t.vezes || 0, artigos: t.artigos || 0 })) });
+        });
+        // Soma os tempos de uma sessão de leitura: [{ blocoId, segundos, artigos }]
+        app.post('/api/leis/:lei/tempos', requireAuth, async (req, res) => {
+            try {
+                if (!LEIS[req.params.lei]) return res.status(404).json({ success: false, error: 'Lei não encontrada.' });
+                const trechos = Array.isArray(req.body?.trechos) ? req.body.trechos.slice(0, 200) : [];
+                let salvos = 0;
+                for (const t of trechos) {
+                    const blocoId = typeof t?.blocoId === 'string' ? t.blocoId.slice(0, 120) : '';
+                    const segundos = Math.round(Number(t?.segundos));
+                    const artigos = Math.round(Number(t?.artigos));
+                    // Menos de 10s é só passagem pelo trecho (não é leitura) e > 24h é erro.
+                    if (!blocoId || !(segundos >= 10) || segundos > 86400 || !(artigos >= 1) || artigos > 5000) continue;
+                    await leisTemposColl.updateOne(
+                        { userId: req.userId, lei: req.params.lei, blocoId },
+                        { $inc: { segundos, vezes: 1, artigos }, $set: { atualizadoEm: new Date() } },
+                        { upsert: true }
+                    );
+                    salvos++;
+                }
+                res.json({ success: true, salvos });
+            } catch (err) {
+                console.error('Erro ao salvar tempos de leitura:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível salvar os tempos.' });
+            }
+        });
 
         // ---- Despesas
         function lerDespesa(body) {

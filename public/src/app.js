@@ -1652,6 +1652,7 @@ async function confirmarImportacaoSugestaoEdital() {
 
 async function trocarView(nome) {
     viewAtual = nome;
+    leiCronSincronizar();   // sair da aba Leis tira o trecho "atual" do cronômetro de leitura
     document.getElementById('view-resumo').style.display = nome === 'resumo' ? 'block' : 'none';
     document.getElementById('view-edital').style.display = nome === 'edital' ? 'block' : 'none';
     document.getElementById('view-estudos').style.display = nome === 'estudos' ? 'block' : 'none';
@@ -2561,6 +2562,7 @@ async function leiAbrir(id) {
     const meta = leisLista.find(x => x.id === id);
     if (meta) leiSalvarTotal(id, meta.totalArtigos, leiIdx.blocos.length);
     renderizarLei();
+    leiCarregarTempos().then(() => { if (leiTrechoAberto && viewAtual === 'leis') leiRenderLeitura(); });
 }
 
 function leiResetEdicao() {
@@ -2570,6 +2572,8 @@ function leiResetEdicao() {
 function leiVoltar() {
     leiAberta = null; leiDados = null; leiIdx = null; leiTrechoAberto = null; leiParei = null;
     leiResetEdicao();
+    leiTempos = new Map();
+    leiCronSincronizar();
     renderizarLeisInicio();
     // atualiza os "X de Y lidos" com o que foi marcado enquanto a lei estava aberta
     fetch('/api/leis/leituras/resumo').then(r => r.json()).then(d => { if (d.success && !leiAberta && viewAtual === 'leis') { leiResumoLidos = d.lidos || {}; renderizarLeisInicio(); } }).catch(() => {});
@@ -2757,6 +2761,7 @@ function leiBuscarDigitando() {
 function leiRenderLeitura() {
     const area = document.getElementById('lei-leitura');
     if (!area || !leiIdx) return;
+    leiCronSincronizar();
     leiEsconderBarra();
     if (leiTrechoAberto && leiIdx.porId.has(leiTrechoAberto)) {
         area.innerHTML = leiHtmlBloco(leiIdx.porId.get(leiTrechoAberto));
@@ -2881,11 +2886,11 @@ function leiHtmlBloco(b) {
                     <span class="lei-bloco-nome"><strong>${escaparHtml(leiTituloTrecho(b))}</strong><span class="lei-bloco-sub">${escaparHtml(leiSubTrecho(b))}</span></span>
                     <span class="lei-pct" data-pct title="Onde você está neste trecho"></span>
                     ${l ? `<span class="lei-lido-badge" title="Lido em ${escaparHtml(leiFormatarData(l.lidoEm))}">★ ${escaparHtml(leiDataCurta(l.lidoEm))}</span>` : ''}
+                    ${leiTempos.has(b.id) ? `<span class="lei-tempo-lido" title="Tempo total que você já cronometrou neste trecho">⏱ ${Math.max(1, Math.round(leiTempos.get(b.id).segundos / 60))} min</span>` : ''}
                     ${marcas ? `<span class="lei-contador" title="Artigos com grifo ou anotação seus">${marcas}</span>` : ''}
                 </button>
                 <div class="lei-prog"><div class="lei-prog-barra" data-prog></div></div>
             </div>
-            ${leiHtmlEstudo(b)}
             <div class="lei-bloco-corpo">
                 ${leiHtmlItensBloco(b)}
                 ${leiHtmlLido(b)}
@@ -4639,85 +4644,133 @@ async function carregarAgendaResumo() {
 }
 
 // ==================================================================
-// LEIS: cronômetro de estudo por trecho (vira sessão "Lei Seca")
+// LEIS: cronômetro de leitura (contínuo entre trechos) → sessão "Lei Seca"
 // ==================================================================
-// Independente do cronômetro da aba Estudos (que é um só e global): aqui o tempo
-// fica ligado ao trecho aberto, sobrevive a recarregar a página (localStorage)
-// e, ao salvar, entra nos estudos como qualquer outra sessão.
+// Um relógio só, separado do cronômetro da aba Estudos. Ele NÃO para quando a pessoa
+// troca de trecho: o tempo vai sendo atribuído ao trecho que está aberto naquele
+// momento (leiCron.trechos) e o que sobra (lista de trechos, outras abas) fica em
+// foraMs. Ao salvar vira UMA sessão de estudo com o total, e o tempo por trecho
+// alimenta o ritmo médio de leitura (rota /api/leis/:lei/tempos).
+// Sobrevive a recarregar a página (localStorage).
 const LEI_CRON_CHAVE = 'lei_cron';
 function leiCronLer() {
-    try { const c = JSON.parse(localStorage.getItem(LEI_CRON_CHAVE)); return c && c.blocoId ? c : null; } catch (err) { return null; }
+    try { const c = JSON.parse(localStorage.getItem(LEI_CRON_CHAVE)); return c && c.leiId && c.trechos ? c : null; } catch (err) { return null; }
 }
 let leiCron = leiCronLer();
+let leiTempos = new Map();   // blocoId -> { segundos, vezes, artigos } da lei aberta
 function leiCronSalvar() {
     try { if (leiCron) localStorage.setItem(LEI_CRON_CHAVE, JSON.stringify(leiCron)); else localStorage.removeItem(LEI_CRON_CHAVE); } catch (err) { /* sem storage: segue só em memória */ }
 }
-function leiCronMs() {
-    if (!leiCron) return 0;
-    return leiCron.acumuladoMs + (leiCron.status === 'rodando' ? Date.now() - leiCron.inicioSegmento : 0);
+
+// Passa o tempo decorrido desde o último marco para o trecho atual (ou "fora").
+function leiCronAcumular() {
+    if (!leiCron || leiCron.status !== 'rodando') return;
+    const agora = Date.now(), delta = Math.max(0, agora - leiCron.ultimoMarco);
+    if (leiCron.atual && leiCron.trechos[leiCron.atual]) leiCron.trechos[leiCron.atual].ms += delta;
+    else leiCron.foraMs += delta;
+    leiCron.ultimoMarco = agora;
 }
+function leiCronTotalMs() {
+    if (!leiCron) return 0;
+    const soma = Object.values(leiCron.trechos).reduce((t, x) => t + x.ms, 0) + leiCron.foraMs;
+    return soma + (leiCron.status === 'rodando' ? Math.max(0, Date.now() - leiCron.ultimoMarco) : 0);
+}
+
+// Descobre em que trecho a pessoa está agora e registra a troca. Chamado a cada
+// renderização das Leis, ao voltar pra lista e ao trocar de aba.
+function leiCronSincronizar() {
+    if (leiCron) {
+        const noTrecho = viewAtual === 'leis' && leiAberta === leiCron.leiId && leiTrechoAberto && leiIdx && leiIdx.porId.has(leiTrechoAberto);
+        const novo = noTrecho ? leiTrechoAberto : '';
+        if (novo !== leiCron.atual) {
+            leiCronAcumular();
+            leiCron.atual = novo;
+            if (novo && !leiCron.trechos[novo]) {
+                const b = leiIdx.porId.get(novo);
+                leiCron.trechos[novo] = { ms: 0, rotulo: leiTituloTrecho(b), artigos: b.artIds.length };
+            }
+            leiCronSalvar();
+        }
+    }
+    leiCronRenderBarra();
+}
+
 setInterval(() => {
     if (!leiCron) return;
-    document.querySelectorAll('[data-lei-cron-tempo]').forEach(el => { el.textContent = formatarHMS(leiCronMs()); });
+    document.querySelectorAll('[data-lei-cron-tempo]').forEach(el => { el.textContent = formatarHMS(leiCronTotalMs()); });
 }, 1000);
 
-function leiHtmlEstudo(b) {
-    if (leiCron && leiCron.blocoId === b.id) {
-        const rodando = leiCron.status === 'rodando';
-        return `
-            <div class="lei-estudo-linha lei-estudo-ativo">
-                <span class="lei-estudo-tempo">⏱ <span data-lei-cron-tempo>${formatarHMS(leiCronMs())}</span></span>
-                <button type="button" class="btn-secundario" onclick="leiCronPausarRetomar()">${rodando ? 'Pausar' : 'Retomar'}</button>
-                <button type="button" onclick="leiCronSalvarSessao()">Salvar nos estudos</button>
-                <button type="button" class="btn-perigo" onclick="leiCronDescartar()" title="Descartar sem salvar">✕</button>
-            </div>`;
+function leiRitmoTexto() {
+    if (!leiTempos.size) return '';
+    let seg = 0, vezes = 0, art = 0;
+    leiTempos.forEach(t => { seg += t.segundos; vezes += t.vezes; art += t.artigos; });
+    if (!vezes || !art) return '';
+    const minTrecho = seg / vezes / 60;
+    return `Seu ritmo nesta lei: ~${minTrecho < 10 ? minTrecho.toFixed(1).replace('.', ',') : Math.round(minTrecho)} min por trecho · ~${Math.round(seg / art)} s por artigo`;
+}
+
+function leiCronRenderBarra() {
+    const el = document.getElementById('lei-cron-barra');
+    const tab = document.getElementById('lei-cron-tab');
+    if (tab) tab.style.display = leiCron ? 'inline-block' : 'none';
+    if (!el) return;
+    if (!leiCron && !leiAberta) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'flex';
+    const ritmo = leiRitmoTexto();
+    if (!leiCron) {
+        el.innerHTML = `<button type="button" class="btn-secundario" onclick="leiCronIniciar()" title="Conta o tempo de leitura (continua quando você troca de trecho) e salva como sessão de estudo (Lei Seca)">⏱ Cronometrar minha leitura</button>${ritmo ? `<span class="lei-cron-ritmo">${escaparHtml(ritmo)}</span>` : ''}`;
+        return;
     }
-    if (leiCron) {
-        return `<div class="lei-estudo-linha"><span class="config-texto-ajuda">⏱ Há um cronômetro de leitura ativo em outro trecho (${escaparHtml(leiCron.rotulo)}).</span> <button type="button" class="btn-secundario" data-bloco="${escaparHtml(leiCron.blocoId)}" onclick="leiAbrirTrecho(this.dataset.bloco)">Ir até ele</button></div>`;
-    }
-    return `<div class="lei-estudo-linha"><button type="button" class="btn-secundario" onclick="leiCronIniciar()" title="Conta o tempo que você leva neste trecho e salva como sessão de estudo (Lei Seca)">⏱ Estudar este trecho</button></div>`;
+    const rodando = leiCron.status === 'rodando';
+    const nTrechos = Object.values(leiCron.trechos).filter(t => t.ms >= 10000).length;
+    el.innerHTML = `
+        <span class="lei-estudo-tempo">⏱ <span data-lei-cron-tempo>${formatarHMS(leiCronTotalMs())}</span></span>
+        <span class="lei-cron-info">${escaparHtml(leiCron.leiSigla)}${nTrechos ? ` · ${nTrechos} trecho(s)` : ''}${rodando ? '' : ' · pausado'}</span>
+        <button type="button" class="btn-secundario" onclick="leiCronPausarRetomar()">${rodando ? 'Pausar' : 'Retomar'}</button>
+        <button type="button" onclick="leiCronSalvarSessao()">Salvar nos estudos</button>
+        <button type="button" class="btn-perigo" onclick="leiCronDescartar()" title="Descartar sem salvar">✕</button>
+        ${ritmo ? `<span class="lei-cron-ritmo">${escaparHtml(ritmo)}</span>` : ''}`;
 }
 
 function leiCronIniciar() {
-    if (!leiTrechoAberto || !leiIdx || !leiIdx.porId.has(leiTrechoAberto)) return;
+    if (!leiAberta || !leiDados) return;
     if (cronometroEstado && cronometroEstado.status !== 'parado') {
         return alert('O cronômetro da aba Estudos está ligado. Pare ou salve aquela sessão antes, para o mesmo tempo não ser contado duas vezes.');
     }
-    const b = leiIdx.porId.get(leiTrechoAberto);
-    leiCron = {
-        status: 'rodando', inicioSegmento: Date.now(), acumuladoMs: 0,
-        leiSigla: leiDados.lei.sigla, blocoId: b.id, rotulo: `${leiDados.lei.sigla} — ${leiTituloTrecho(b)}`
-    };
-    leiCronSalvar();
-    leiRenderLeitura();
+    leiCron = { status: 'rodando', ultimoMarco: Date.now(), leiId: leiAberta, leiSigla: leiDados.lei.sigla, atual: '', trechos: {}, foraMs: 0 };
+    leiCronSincronizar();   // já registra o trecho aberto, se houver
 }
 
 function leiCronPausarRetomar() {
     if (!leiCron) return;
-    if (leiCron.status === 'rodando') { leiCron.acumuladoMs += Date.now() - leiCron.inicioSegmento; leiCron.status = 'pausado'; }
-    else { leiCron.status = 'rodando'; leiCron.inicioSegmento = Date.now(); }
+    if (leiCron.status === 'rodando') { leiCronAcumular(); leiCron.status = 'pausado'; }
+    else { leiCron.status = 'rodando'; leiCron.ultimoMarco = Date.now(); }
     leiCronSalvar();
-    leiRenderLeitura();
+    leiCronRenderBarra();
 }
 
 function leiCronDescartar() {
     if (!leiCron) return;
-    if (!confirm(`Descartar ${formatarHMS(leiCronMs())} de leitura sem salvar?`)) return;
+    if (!confirm(`Descartar ${formatarHMS(leiCronTotalMs())} de leitura sem salvar?`)) return;
     leiCron = null;
     leiCronSalvar();
-    leiRenderLeitura();
+    leiCronRenderBarra();
+    if (leiTrechoAberto) leiRenderLeitura();
 }
 
 async function leiCronSalvarSessao() {
     if (!leiCron) return;
-    const duracaoSegundos = Math.round(leiCronMs() / 1000);
+    leiCronAcumular();
+    const duracaoSegundos = Math.round(leiCronTotalMs() / 1000);
     if (duracaoSegundos < 60) return alert('Menos de 1 minuto de leitura — continue estudando um pouco mais ou descarte o cronômetro.');
+    const c = leiCron;
     try {
         const resTipos = await fetch('/api/tipos-estudo');
         const tipos = await resTipos.json();
-        const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
         const tipo = (Array.isArray(tipos) ? tipos : []).find(t => norm(t.nome) === 'lei seca');
         if (!tipo) return alert('Não encontrei o tipo de estudo "Lei Seca". Crie-o em Estudos e tente de novo.');
+        const trechos = Object.entries(c.trechos).filter(([, t]) => t.ms >= 10000);
         const fim = new Date();
         const res = await fetch('/api/sessoes', {
             method: 'POST',
@@ -4726,21 +4779,42 @@ async function leiCronSalvarSessao() {
                 inicio: new Date(fim.getTime() - duracaoSegundos * 1000).toISOString(), fim: fim.toISOString(), duracaoSegundos,
                 plano: planoAtual, tipoEstudoId: tipo._id, tipoEstudoNome: tipo.nome, topicos: [],
                 acertos: null, erros: null, paginasLidas: null,
-                observacoes: `Leitura de lei — ${leiCron.rotulo}`, revisao: { agendada: false, dias: null }
+                observacoes: `Leitura de lei — ${c.leiSigla}${trechos.length ? ` (${trechos.length} trecho(s))` : ''}`, revisao: { agendada: false, dias: null }
             })
         });
         const d = await res.json();
         if (!res.ok || !d.success) throw new Error(d.error || 'Falha');
+        // A sessão já está salva; o tempo por trecho é um extra (se falhar, não perde a sessão).
+        try {
+            await fetch(`/api/leis/${encodeURIComponent(c.leiId)}/tempos`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trechos: trechos.map(([blocoId, t]) => ({ blocoId, segundos: Math.round(t.ms / 1000), artigos: t.artigos })) })
+            });
+        } catch (err) { console.error('Erro ao salvar tempos por trecho:', err); }
         const minutos = Math.round(duracaoSegundos / 60);
         leiCron = null;
         leiCronSalvar();
         try { await atualizarStreak(); } catch (err) { /* não impede o registro */ }
-        leiRenderLeitura();
+        await leiCarregarTempos();
+        if (leiTrechoAberto) leiRenderLeitura(); else leiCronRenderBarra();
         alert(`Sessão salva nos seus estudos: ${minutos} min de Lei Seca.`);
     } catch (err) {
         console.error('Erro ao salvar sessão de lei:', err);
         alert('Não foi possível salvar nos estudos agora. O cronômetro continua guardado — tente de novo.');
     }
+}
+
+async function leiCarregarTempos() {
+    leiTempos = new Map();
+    if (!leiAberta) return;
+    const id = leiAberta;
+    try {
+        const res = await fetch(`/api/leis/${encodeURIComponent(id)}/tempos`);
+        const d = await res.json();
+        if (d.success && leiAberta === id) leiTempos = new Map(d.tempos.map(t => [t.blocoId, t]));
+    } catch (err) { /* o ritmo é opcional */ }
+    leiCronRenderBarra();
 }
 
 // --- Aba Admin: uso do app, tentativas barradas e sugestões ---
