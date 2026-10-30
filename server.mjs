@@ -3584,7 +3584,7 @@ async function startServer() {
         // Cria grifos (um por dispositivo tocado pela seleção). O trecho é extraído
         // do texto GUARDADO no servidor, nunca do que o cliente manda.
         // Estilo de um trecho grifado (como a formatação do Word): f = cor do fundo (1-8), c = cor da letra (1-6),
-        // b negrito, i itálico, s tachado, u sublinhado (1 simples, 2 duplo, 3 ondulado). Só guarda o que está ligado.
+        // b negrito, i itálico, s tachado, a caixa alta, u sublinhado (1 simples, 2 duplo, 3 ondulado). Só guarda o que está ligado.
         function sanitizarEstiloGrifo(e) {
             const o = {};
             if (!e || typeof e !== 'object') return o;
@@ -3595,6 +3595,7 @@ async function startServer() {
             if (e.b) o.b = 1;
             if (e.i) o.i = 1;
             if (e.s) o.s = 1;
+            if (e.a) o.a = 1;   // CAIXA ALTA (só visual: o texto da lei não muda)
             return o;
         }
         // Grifos antigos só têm "cor" (1-4): viram estilo de marca-texto dessa cor.

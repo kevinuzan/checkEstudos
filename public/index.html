@@ -19,6 +19,7 @@
                 if (tema) document.documentElement.setAttribute('data-tema', tema);
                 var fundo = localStorage.getItem('checkestudos_fundo');
                 if (fundo === 'neutro') document.documentElement.setAttribute('data-fundo', 'neutro');
+                if (localStorage.getItem('checkestudos_sidebar_oculta') === '1') document.documentElement.classList.add('sidebar-oculta');
                 var fonteEscala = localStorage.getItem('checkestudos_fonte_escala');
                 if (fonteEscala) document.documentElement.style.setProperty('--fonte-escala', fonteEscala);
                 var fonteEditorEscala = localStorage.getItem('checkestudos_fonte_editor_escala');
@@ -67,6 +68,8 @@
         </div>
     </div>
 
+    <button type="button" class="btn-sidebar-mostrar" onclick="alternarSidebar()" title="Mostrar o menu" aria-label="Mostrar o menu lateral">☰</button>
+
     <div class="layout">
 
         <!-- ===================== BARRA LATERAL (menu/desktop) / TOPO (mobile) ===================== -->
@@ -91,6 +94,7 @@
                     </svg>
                     <span class="app-bar-title">Direto <span class="brand-acento">à Posse</span></span>
                 </div>
+                <button type="button" class="btn-sidebar-recolher" onclick="alternarSidebar()" title="Esconder o menu para ganhar espaço" aria-label="Esconder o menu lateral">«</button>
                 <div class="streak-badge" id="streak-badge" title="Dias seguidos estudando">
                     <span class="streak-icone">🔥</span>
                     <span class="streak-numero" id="streak-numero">0</span>
