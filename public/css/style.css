@@ -5171,3 +5171,47 @@ input[type="checkbox"] {
 .sugestao-status { flex: none; max-width: 130px; }
 #sug-texto { width: 100%; resize: vertical; box-sizing: border-box; }
 .admin-acesso-tag { flex: none; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--primary-light); color: var(--primary-dark); }
+
+/* ---- Aba Geral ---- */
+.geral-nav-mes { display: flex; align-items: center; gap: 6px; }
+.geral-mes-titulo { font-size: 14px; font-weight: 600; min-width: 110px; text-align: center; }
+.geral-linha-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.geral-linha-campos input { width: 100%; box-sizing: border-box; }
+.cal-grade { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-cab { text-align: center; font-size: 12px; font-weight: 700; color: var(--text-muted); padding: 4px 0; }
+.cal-vazio { min-height: 46px; }
+.cal-dia { min-height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px; padding: 5px 0 3px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); color: var(--text); font-size: 14px; cursor: pointer; }
+.cal-dia:hover { background: var(--surface-muted); }
+.cal-hoje { border-color: var(--primary); font-weight: 800; }
+.cal-sel { background: var(--primary-light); border-color: var(--primary); }
+.cal-pontos { display: flex; gap: 3px; min-height: 8px; }
+.cal-ponto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.cal-ponto-linha { flex: none; margin-top: 6px; }
+.cal-prova { background: var(--danger); }
+.cal-aula { background: var(--primary); }
+.cal-outro { background: var(--text-faint); }
+.cal-legenda { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 12.5px; color: var(--text-muted); }
+.lembrete-atrasado { border-color: var(--danger); background: var(--danger-light); }
+.dp-totais { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.dp-total-card { flex: 1 1 130px; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-muted); }
+.dp-total-card span { font-size: 12.5px; color: var(--text-muted); }
+.dp-total-card strong { font-size: 16px; }
+.dp-total-cat { flex-basis: 110px; background: var(--card); }
+.dp-valor { flex: none; font-size: 14px; }
+/* Faixa de avisos no Resumo */
+.resumo-agenda { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.resumo-agenda-item { flex: 1 1 200px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); color: var(--text); text-align: left; cursor: pointer; }
+.resumo-agenda-icone { font-size: 20px; }
+.resumo-agenda-texto { display: flex; flex-direction: column; min-width: 0; font-size: 13px; }
+.resumo-agenda-texto strong { overflow-wrap: anywhere; font-size: 14px; }
+.resumo-agenda-texto span { color: var(--text-muted); }
+.resumo-agenda-aviso { border-color: #d97706; }
+.resumo-agenda-urgente { border-color: var(--danger); background: var(--danger-light); }
+/* Cronômetro de leitura nas Leis */
+.lei-estudo-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; }
+.lei-estudo-ativo { background: var(--primary-light); border-radius: var(--radius-sm); margin: 6px 12px; padding: 8px 10px; }
+.lei-estudo-tempo { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; margin-right: auto; }
+@media (max-width: 600px) {
+    .cal-dia { min-height: 42px; font-size: 13px; }
+    .sugestao-linha { flex-wrap: wrap; }
+}

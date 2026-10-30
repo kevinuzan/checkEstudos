@@ -1662,6 +1662,8 @@ async function trocarView(nome) {
     document.getElementById('view-estatisticas').style.display = nome === 'estatisticas' ? 'block' : 'none';
     document.getElementById('view-analise').style.display = nome === 'analise' ? 'block' : 'none';
     document.getElementById('view-conquistas').style.display = nome === 'conquistas' ? 'block' : 'none';
+    document.getElementById('view-geral').style.display = nome === 'geral' ? 'block' : 'none';
+    document.getElementById('tab-geral').classList.toggle('ativo', nome === 'geral');
     document.getElementById('view-sugestoes').style.display = nome === 'sugestoes' ? 'block' : 'none';
     document.getElementById('view-admin').style.display = nome === 'admin' ? 'block' : 'none';
     document.getElementById('view-configuracoes').style.display = nome === 'configuracoes' ? 'block' : 'none';
@@ -1705,6 +1707,7 @@ async function trocarView(nome) {
     if (nome === 'analise') await carregarAnaliseDesempenho();
     if (nome === 'conquistas') await abrirConquistas();
     if (nome === 'configuracoes') await abrirConfiguracoes();
+    if (nome === 'geral') await abrirGeral();
     if (nome === 'sugestoes') await abrirSugestoes();
     if (nome === 'admin') await abrirAdmin();
     registrarUso(nome);
@@ -2882,6 +2885,7 @@ function leiHtmlBloco(b) {
                 </button>
                 <div class="lei-prog"><div class="lei-prog-barra" data-prog></div></div>
             </div>
+            ${leiHtmlEstudo(b)}
             <div class="lei-bloco-corpo">
                 ${leiHtmlItensBloco(b)}
                 ${leiHtmlLido(b)}
@@ -4252,11 +4256,498 @@ async function publicarModeloPadrao() {
     }
 }
 
+// ==================================================================
+// ABA GERAL: calendário (provas/aulas + contagem regressiva), lembretes e despesas
+// ==================================================================
+// Datas são texto AAAA-MM-DD (igual ao servidor), sempre no relógio LOCAL da pessoa.
+let geralDados = { eventos: [], lembretes: [], despesas: [] };
+let geralSecao = 'calendario';
+let calMesAtual = null;          // 1º dia do mês exibido no calendário
+let calDiaSelecionado = null;    // AAAA-MM-DD
+let eventoEmEdicao = null;
+let despesaEmEdicao = null;
+let despesaMes = null;           // AAAA-MM
+
+const NOMES_TIPO_EVENTO = { prova: 'Prova', aula: 'Aula', outro: 'Outro' };
+const NOMES_CATEGORIA_DESPESA = { inscricao: 'Inscrição', curso: 'Curso', material: 'Material', viagem: 'Viagem', outros: 'Outros' };
+const NOMES_MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+function dataParaStr(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function hojeStr() { return dataParaStr(new Date()); }
+function strParaData(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function dataCurtaBR(s) { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; }
+// Dias entre hoje e a data (negativo = já passou). Usa meio-dia pra não errar no horário de verão.
+function diasAteData(s) {
+    const a = strParaData(hojeStr()), b = strParaData(s);
+    a.setHours(12); b.setHours(12);
+    return Math.round((b - a) / 86400000);
+}
+function textoFaltam(dias) {
+    if (dias === 0) return 'É hoje!';
+    if (dias === 1) return 'É amanhã!';
+    if (dias < 0) return `Passou há ${-dias} dia(s)`;
+    return `Faltam ${dias} dias`;
+}
+function formatarReais(v) { return Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+
+async function geralCarregarTudo() {
+    try {
+        const [e, l, d] = await Promise.all([fetch('/api/eventos'), fetch('/api/lembretes'), fetch('/api/despesas')]);
+        const [ev, lb, dp] = await Promise.all([e.json(), l.json(), d.json()]);
+        geralDados.eventos = ev.eventos || [];
+        geralDados.lembretes = lb.lembretes || [];
+        geralDados.despesas = dp.despesas || [];
+    } catch (err) {
+        console.error('Erro ao carregar a aba Geral:', err);
+    }
+    atualizarBadgeGeral();
+}
+
+// Lembretes pendentes que já venceram ou são de hoje.
+function lembretesDeHoje() {
+    const hoje = hojeStr();
+    return geralDados.lembretes.filter(l => !l.feito && l.data <= hoje);
+}
+function atualizarBadgeGeral() {
+    const el = document.getElementById('geral-badge');
+    if (!el) return;
+    const n = lembretesDeHoje().length;
+    el.textContent = n > 99 ? '99+' : String(n);
+    el.style.display = n > 0 ? 'inline-block' : 'none';
+}
+
+async function abrirGeral() {
+    const hoje = new Date();
+    if (!calMesAtual) calMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    if (!calDiaSelecionado) calDiaSelecionado = hojeStr();
+    if (!despesaMes) despesaMes = hojeStr().slice(0, 7);
+    ['ev-data', 'lb-data', 'dp-data'].forEach(id => { const el = document.getElementById(id); if (el && !el.value) el.value = hojeStr(); });
+    await geralCarregarTudo();
+    geralMostrarSecao(geralSecao);
+}
+
+function geralMostrarSecao(secao) {
+    geralSecao = secao;
+    ['calendario', 'lembretes', 'despesas'].forEach(s => {
+        const el = document.getElementById('geral-sec-' + s);
+        if (el) el.style.display = s === secao ? 'block' : 'none';
+    });
+    document.querySelectorAll('#geral-secoes .escopo-pill').forEach(b => b.classList.toggle('ativo', b.dataset.secao === secao));
+    if (secao === 'calendario') renderizarCalendario();
+    if (secao === 'lembretes') renderizarLembretes();
+    if (secao === 'despesas') renderizarDespesas();
+}
+
+function geralMostrarErro(id, msg) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.display = msg ? 'block' : 'none';
+}
+async function geralEnviar(url, metodo, corpo) {
+    const res = await fetch(url, { method: metodo, headers: { 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.success) throw new Error(d.error || 'Não foi possível salvar agora.');
+    return d;
+}
+
+// ---- Calendário
+function calMudarMes(delta) {
+    const hoje = new Date();
+    if (delta === 0) { calMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1); calDiaSelecionado = hojeStr(); }
+    else calMesAtual = new Date(calMesAtual.getFullYear(), calMesAtual.getMonth() + delta, 1);
+    renderizarCalendario();
+}
+
+function calSelecionarDia(dia) {
+    calDiaSelecionado = dia;
+    renderizarCalendario();
+}
+
+function renderizarCalendario() {
+    const titulo = document.getElementById('cal-titulo-mes');
+    const grade = document.getElementById('cal-grade');
+    if (!titulo || !grade) return;
+    titulo.textContent = `${NOMES_MESES[calMesAtual.getMonth()]} ${calMesAtual.getFullYear()}`;
+
+    const ano = calMesAtual.getFullYear(), mes = calMesAtual.getMonth();
+    const primeiroDiaSemana = new Date(ano, mes, 1).getDay();
+    const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+    const hoje = hojeStr();
+    const porDia = new Map();
+    geralDados.eventos.forEach(e => { if (!porDia.has(e.data)) porDia.set(e.data, []); porDia.get(e.data).push(e); });
+
+    let html = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(d => `<div class="cal-cab">${d}</div>`).join('');
+    for (let i = 0; i < primeiroDiaSemana; i++) html += '<div class="cal-vazio"></div>';
+    for (let d = 1; d <= diasNoMes; d++) {
+        const dia = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const evs = porDia.get(dia) || [];
+        const tipos = [...new Set(evs.map(e => e.tipo))];
+        html += `<button type="button" class="cal-dia${dia === hoje ? ' cal-hoje' : ''}${dia === calDiaSelecionado ? ' cal-sel' : ''}" data-dia="${dia}" onclick="calSelecionarDia(this.dataset.dia)">
+            <span>${d}</span>
+            <span class="cal-pontos">${tipos.map(t => `<i class="cal-ponto cal-${t}"></i>`).join('')}</span>
+        </button>`;
+    }
+    grade.innerHTML = html;
+
+    const tituloDia = document.getElementById('cal-dia-titulo');
+    if (tituloDia) tituloDia.textContent = calDiaSelecionado === hoje ? `Hoje (${dataCurtaBR(calDiaSelecionado)})` : dataCurtaBR(calDiaSelecionado);
+    const lista = document.getElementById('cal-dia-lista');
+    if (lista) {
+        const doDia = porDia.get(calDiaSelecionado) || [];
+        lista.innerHTML = doDia.length ? doDia.map(htmlLinhaEvento).join('') : '<p class="config-texto-ajuda">Nenhum evento neste dia.</p>';
+    }
+    const prox = document.getElementById('cal-proximos');
+    if (prox) {
+        const futuros = geralDados.eventos.filter(e => e.data >= hoje).slice(0, 8);
+        prox.innerHTML = futuros.length ? futuros.map(htmlLinhaEvento).join('') : '<p class="config-texto-ajuda">Nenhum evento futuro. Que tal cadastrar a data da sua prova?</p>';
+    }
+}
+
+function htmlLinhaEvento(e) {
+    const dias = diasAteData(e.data);
+    return `
+        <div class="admin-acesso-linha sugestao-linha">
+            <span class="cal-ponto cal-${escaparHtml(e.tipo)} cal-ponto-linha"></span>
+            <div class="admin-acesso-info">
+                <span class="admin-acesso-email">${escaparHtml(e.titulo)}</span>
+                <span class="admin-acesso-meta">${NOMES_TIPO_EVENTO[e.tipo] || ''} · ${dataCurtaBR(e.data)}${e.hora ? ' às ' + escaparHtml(e.hora) : ''}${e.contagem ? ' · ' + textoFaltam(dias) : ''}</span>
+                ${e.obs ? `<span class="admin-acesso-meta">${escaparHtml(e.obs)}</span>` : ''}
+            </div>
+            <button type="button" class="btn-secundario" data-id="${escaparHtml(e.id)}" onclick="eventoEditar(this.dataset.id)">Editar</button>
+            <button type="button" class="btn-perigo" data-id="${escaparHtml(e.id)}" onclick="eventoExcluir(this.dataset.id)">✕</button>
+        </div>`;
+}
+
+function eventoAbrirForm() {
+    eventoEmEdicao = null;
+    document.getElementById('ev-titulo').value = '';
+    document.getElementById('ev-data').value = calDiaSelecionado || hojeStr();
+    document.getElementById('ev-hora').value = '';
+    document.getElementById('ev-tipo').value = 'prova';
+    document.getElementById('ev-contagem').checked = true;
+    document.getElementById('ev-obs').value = '';
+    geralMostrarErro('ev-erro', '');
+    document.getElementById('ev-form').style.display = 'block';
+    document.getElementById('ev-titulo').focus();
+}
+function eventoFecharForm() { document.getElementById('ev-form').style.display = 'none'; eventoEmEdicao = null; }
+
+function eventoEditar(id) {
+    const e = geralDados.eventos.find(x => x.id === id);
+    if (!e) return;
+    eventoAbrirForm();
+    eventoEmEdicao = id;
+    document.getElementById('ev-titulo').value = e.titulo;
+    document.getElementById('ev-data').value = e.data;
+    document.getElementById('ev-hora').value = e.hora || '';
+    document.getElementById('ev-tipo').value = e.tipo;
+    document.getElementById('ev-contagem').checked = !!e.contagem;
+    document.getElementById('ev-obs').value = e.obs || '';
+}
+
+async function salvarEvento() {
+    geralMostrarErro('ev-erro', '');
+    const corpo = {
+        titulo: document.getElementById('ev-titulo').value, data: document.getElementById('ev-data').value,
+        hora: document.getElementById('ev-hora').value, tipo: document.getElementById('ev-tipo').value,
+        contagem: document.getElementById('ev-contagem').checked, obs: document.getElementById('ev-obs').value
+    };
+    try {
+        if (eventoEmEdicao) await geralEnviar(`/api/eventos/${encodeURIComponent(eventoEmEdicao)}`, 'PUT', corpo);
+        else await geralEnviar('/api/eventos', 'POST', corpo);
+        if (corpo.data) { calDiaSelecionado = corpo.data; calMesAtual = new Date(strParaData(corpo.data).getFullYear(), strParaData(corpo.data).getMonth(), 1); }
+        eventoFecharForm();
+        await geralCarregarTudo();
+        renderizarCalendario();
+    } catch (err) { geralMostrarErro('ev-erro', err.message); }
+}
+
+async function eventoExcluir(id) {
+    if (!confirm('Excluir este evento?')) return;
+    try {
+        await geralEnviar(`/api/eventos/${encodeURIComponent(id)}`, 'DELETE');
+        await geralCarregarTudo();
+        renderizarCalendario();
+    } catch (err) { alert(err.message); }
+}
+
+// ---- Lembretes
+function htmlLinhaLembrete(l, concluido) {
+    const dias = diasAteData(l.data);
+    const atrasado = !concluido && dias < 0;
+    const rep = l.repete === 'diaria' ? ' · todo dia' : l.repete === 'semanal' ? ' · toda semana' : '';
+    return `
+        <div class="admin-acesso-linha sugestao-linha${atrasado ? ' lembrete-atrasado' : ''}">
+            <div class="admin-acesso-info">
+                <span class="admin-acesso-email">${escaparHtml(l.texto)}</span>
+                <span class="admin-acesso-meta">${dataCurtaBR(l.data)}${l.hora ? ' às ' + escaparHtml(l.hora) : ''}${rep}${concluido ? '' : ' · ' + (atrasado ? 'Atrasado' : textoFaltam(dias))}</span>
+            </div>
+            ${concluido
+                ? `<button type="button" class="btn-secundario" data-id="${escaparHtml(l.id)}" onclick="lembreteReabrir(this.dataset.id)">Reabrir</button>`
+                : `<button type="button" data-id="${escaparHtml(l.id)}" onclick="lembreteConcluir(this.dataset.id)">✓ Feito</button>`}
+            <button type="button" class="btn-perigo" data-id="${escaparHtml(l.id)}" onclick="lembreteExcluir(this.dataset.id)">✕</button>
+        </div>`;
+}
+
+function renderizarLembretes() {
+    const pend = document.getElementById('lb-pendentes');
+    const conc = document.getElementById('lb-concluidos');
+    if (!pend || !conc) return;
+    const pendentes = geralDados.lembretes.filter(l => !l.feito);
+    const feitos = geralDados.lembretes.filter(l => l.feito).slice(-10).reverse();
+    pend.innerHTML = pendentes.length ? pendentes.map(l => htmlLinhaLembrete(l, false)).join('') : '<p class="config-texto-ajuda">Nenhum lembrete pendente. 🎉</p>';
+    conc.innerHTML = feitos.length ? feitos.map(l => htmlLinhaLembrete(l, true)).join('') : '<p class="config-texto-ajuda">Nada concluído ainda.</p>';
+}
+
+async function salvarLembrete() {
+    geralMostrarErro('lb-erro', '');
+    const corpo = {
+        texto: document.getElementById('lb-texto').value, data: document.getElementById('lb-data').value,
+        hora: document.getElementById('lb-hora').value, repete: document.getElementById('lb-repete').value
+    };
+    try {
+        await geralEnviar('/api/lembretes', 'POST', corpo);
+        document.getElementById('lb-texto').value = '';
+        document.getElementById('lb-hora').value = '';
+        document.getElementById('lb-repete').value = 'nenhuma';
+        await geralCarregarTudo();
+        renderizarLembretes();
+    } catch (err) { geralMostrarErro('lb-erro', err.message); }
+}
+async function lembreteConcluir(id) {
+    try { await geralEnviar(`/api/lembretes/${encodeURIComponent(id)}/concluir`, 'POST', {}); await geralCarregarTudo(); renderizarLembretes(); }
+    catch (err) { alert(err.message); }
+}
+async function lembreteReabrir(id) {
+    try { await geralEnviar(`/api/lembretes/${encodeURIComponent(id)}/concluir`, 'POST', { feito: false }); await geralCarregarTudo(); renderizarLembretes(); }
+    catch (err) { alert(err.message); }
+}
+async function lembreteExcluir(id) {
+    if (!confirm('Excluir este lembrete?')) return;
+    try { await geralEnviar(`/api/lembretes/${encodeURIComponent(id)}`, 'DELETE'); await geralCarregarTudo(); renderizarLembretes(); }
+    catch (err) { alert(err.message); }
+}
+
+// ---- Despesas
+function despesaMudarMes(delta) {
+    const [y, m] = despesaMes.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    despesaMes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    renderizarDespesas();
+}
+
+function renderizarDespesas() {
+    const tit = document.getElementById('dp-mes-titulo');
+    const totais = document.getElementById('dp-totais');
+    const lista = document.getElementById('dp-lista');
+    if (!tit || !totais || !lista) return;
+    const [y, m] = despesaMes.split('-').map(Number);
+    tit.textContent = `${NOMES_MESES[m - 1]} ${y}`;
+    const doMes = geralDados.despesas.filter(d => d.data.startsWith(despesaMes));
+    const total = doMes.reduce((t, d) => t + d.valor, 0);
+    const totalGeral = geralDados.despesas.reduce((t, d) => t + d.valor, 0);
+    const porCat = {};
+    doMes.forEach(d => { porCat[d.categoria] = (porCat[d.categoria] || 0) + d.valor; });
+    totais.innerHTML = `
+        <div class="dp-total-card"><span>Total do mês</span><strong>${formatarReais(total)}</strong></div>
+        <div class="dp-total-card"><span>Total geral</span><strong>${formatarReais(totalGeral)}</strong></div>
+        ${Object.entries(porCat).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<div class="dp-total-card dp-total-cat"><span>${NOMES_CATEGORIA_DESPESA[c] || c}</span><strong>${formatarReais(v)}</strong></div>`).join('')}`;
+    lista.innerHTML = doMes.length ? doMes.map(d => `
+        <div class="admin-acesso-linha sugestao-linha">
+            <div class="admin-acesso-info">
+                <span class="admin-acesso-email">${escaparHtml(d.descricao)}</span>
+                <span class="admin-acesso-meta">${dataCurtaBR(d.data)} · ${NOMES_CATEGORIA_DESPESA[d.categoria] || ''}</span>
+            </div>
+            <strong class="dp-valor">${formatarReais(d.valor)}</strong>
+            <button type="button" class="btn-secundario" data-id="${escaparHtml(d.id)}" onclick="despesaEditar(this.dataset.id)">Editar</button>
+            <button type="button" class="btn-perigo" data-id="${escaparHtml(d.id)}" onclick="despesaExcluir(this.dataset.id)">✕</button>
+        </div>`).join('') : '<p class="config-texto-ajuda">Nenhuma despesa neste mês.</p>';
+}
+
+function despesaCancelarEdicao() {
+    despesaEmEdicao = null;
+    document.getElementById('dp-valor').value = '';
+    document.getElementById('dp-descricao').value = '';
+    document.getElementById('dp-form-titulo').textContent = 'Nova despesa';
+    document.getElementById('dp-btn-salvar').textContent = 'Adicionar';
+    document.getElementById('dp-btn-cancelar').style.display = 'none';
+    geralMostrarErro('dp-erro', '');
+}
+
+function despesaEditar(id) {
+    const d = geralDados.despesas.find(x => x.id === id);
+    if (!d) return;
+    despesaEmEdicao = id;
+    document.getElementById('dp-valor').value = d.valor;
+    document.getElementById('dp-data').value = d.data;
+    document.getElementById('dp-categoria').value = d.categoria;
+    document.getElementById('dp-descricao').value = d.descricao;
+    document.getElementById('dp-form-titulo').textContent = 'Editar despesa';
+    document.getElementById('dp-btn-salvar').textContent = 'Salvar';
+    document.getElementById('dp-btn-cancelar').style.display = '';
+    if (window.scrollTo) window.scrollTo(0, 0);
+}
+
+async function salvarDespesa() {
+    geralMostrarErro('dp-erro', '');
+    const corpo = {
+        valor: document.getElementById('dp-valor').value, data: document.getElementById('dp-data').value,
+        categoria: document.getElementById('dp-categoria').value, descricao: document.getElementById('dp-descricao').value,
+        plano: planoAtual || null
+    };
+    try {
+        if (despesaEmEdicao) await geralEnviar(`/api/despesas/${encodeURIComponent(despesaEmEdicao)}`, 'PUT', corpo);
+        else await geralEnviar('/api/despesas', 'POST', corpo);
+        if (corpo.data) despesaMes = corpo.data.slice(0, 7);
+        despesaCancelarEdicao();
+        await geralCarregarTudo();
+        renderizarDespesas();
+    } catch (err) { geralMostrarErro('dp-erro', err.message); }
+}
+async function despesaExcluir(id) {
+    if (!confirm('Excluir esta despesa?')) return;
+    try { await geralEnviar(`/api/despesas/${encodeURIComponent(id)}`, 'DELETE'); await geralCarregarTudo(); renderizarDespesas(); }
+    catch (err) { alert(err.message); }
+}
+
+// ---- Faixa de avisos no Resumo (contagem regressiva + lembretes do dia)
+async function carregarAgendaResumo() {
+    const el = document.getElementById('resumo-agenda');
+    if (!el) return;
+    await geralCarregarTudo();
+    const hoje = hojeStr();
+    const itens = [];
+    geralDados.lembretes.filter(l => !l.feito && diasAteData(l.data) <= 1).forEach(l => {
+        const dias = diasAteData(l.data);
+        itens.push({ ordem: dias, nivel: dias <= 0 ? 'urgente' : 'aviso', icone: '🔔', texto: l.texto, detalhe: dias < 0 ? 'Atrasado' : dias === 0 ? `Hoje${l.hora ? ' às ' + l.hora : ''}` : 'Amanhã' });
+    });
+    geralDados.eventos.filter(e => e.data >= hoje && (e.contagem || diasAteData(e.data) <= 7)).forEach(e => {
+        const dias = diasAteData(e.data);
+        itens.push({ ordem: dias + 0.5, nivel: dias <= 1 ? 'urgente' : dias <= 7 ? 'aviso' : 'normal', icone: e.tipo === 'prova' ? '🎯' : e.tipo === 'aula' ? '🎓' : '📌', texto: e.titulo, detalhe: textoFaltam(dias) + (e.hora && dias <= 1 ? ' às ' + e.hora : '') });
+    });
+    itens.sort((a, b) => a.ordem - b.ordem);
+    if (!itens.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'flex';
+    el.innerHTML = itens.slice(0, 6).map(i => `
+        <button type="button" class="resumo-agenda-item resumo-agenda-${i.nivel}" onclick="trocarView('geral')">
+            <span class="resumo-agenda-icone">${i.icone}</span>
+            <span class="resumo-agenda-texto"><strong>${escaparHtml(i.texto)}</strong><span>${escaparHtml(i.detalhe)}</span></span>
+        </button>`).join('');
+}
+
+// ==================================================================
+// LEIS: cronômetro de estudo por trecho (vira sessão "Lei Seca")
+// ==================================================================
+// Independente do cronômetro da aba Estudos (que é um só e global): aqui o tempo
+// fica ligado ao trecho aberto, sobrevive a recarregar a página (localStorage)
+// e, ao salvar, entra nos estudos como qualquer outra sessão.
+const LEI_CRON_CHAVE = 'lei_cron';
+function leiCronLer() {
+    try { const c = JSON.parse(localStorage.getItem(LEI_CRON_CHAVE)); return c && c.blocoId ? c : null; } catch (err) { return null; }
+}
+let leiCron = leiCronLer();
+function leiCronSalvar() {
+    try { if (leiCron) localStorage.setItem(LEI_CRON_CHAVE, JSON.stringify(leiCron)); else localStorage.removeItem(LEI_CRON_CHAVE); } catch (err) { /* sem storage: segue só em memória */ }
+}
+function leiCronMs() {
+    if (!leiCron) return 0;
+    return leiCron.acumuladoMs + (leiCron.status === 'rodando' ? Date.now() - leiCron.inicioSegmento : 0);
+}
+setInterval(() => {
+    if (!leiCron) return;
+    document.querySelectorAll('[data-lei-cron-tempo]').forEach(el => { el.textContent = formatarHMS(leiCronMs()); });
+}, 1000);
+
+function leiHtmlEstudo(b) {
+    if (leiCron && leiCron.blocoId === b.id) {
+        const rodando = leiCron.status === 'rodando';
+        return `
+            <div class="lei-estudo-linha lei-estudo-ativo">
+                <span class="lei-estudo-tempo">⏱ <span data-lei-cron-tempo>${formatarHMS(leiCronMs())}</span></span>
+                <button type="button" class="btn-secundario" onclick="leiCronPausarRetomar()">${rodando ? 'Pausar' : 'Retomar'}</button>
+                <button type="button" onclick="leiCronSalvarSessao()">Salvar nos estudos</button>
+                <button type="button" class="btn-perigo" onclick="leiCronDescartar()" title="Descartar sem salvar">✕</button>
+            </div>`;
+    }
+    if (leiCron) {
+        return `<div class="lei-estudo-linha"><span class="config-texto-ajuda">⏱ Há um cronômetro de leitura ativo em outro trecho (${escaparHtml(leiCron.rotulo)}).</span> <button type="button" class="btn-secundario" data-bloco="${escaparHtml(leiCron.blocoId)}" onclick="leiAbrirTrecho(this.dataset.bloco)">Ir até ele</button></div>`;
+    }
+    return `<div class="lei-estudo-linha"><button type="button" class="btn-secundario" onclick="leiCronIniciar()" title="Conta o tempo que você leva neste trecho e salva como sessão de estudo (Lei Seca)">⏱ Estudar este trecho</button></div>`;
+}
+
+function leiCronIniciar() {
+    if (!leiTrechoAberto || !leiIdx || !leiIdx.porId.has(leiTrechoAberto)) return;
+    if (cronometroEstado && cronometroEstado.status !== 'parado') {
+        return alert('O cronômetro da aba Estudos está ligado. Pare ou salve aquela sessão antes, para o mesmo tempo não ser contado duas vezes.');
+    }
+    const b = leiIdx.porId.get(leiTrechoAberto);
+    leiCron = {
+        status: 'rodando', inicioSegmento: Date.now(), acumuladoMs: 0,
+        leiSigla: leiDados.lei.sigla, blocoId: b.id, rotulo: `${leiDados.lei.sigla} — ${leiTituloTrecho(b)}`
+    };
+    leiCronSalvar();
+    leiRenderLeitura();
+}
+
+function leiCronPausarRetomar() {
+    if (!leiCron) return;
+    if (leiCron.status === 'rodando') { leiCron.acumuladoMs += Date.now() - leiCron.inicioSegmento; leiCron.status = 'pausado'; }
+    else { leiCron.status = 'rodando'; leiCron.inicioSegmento = Date.now(); }
+    leiCronSalvar();
+    leiRenderLeitura();
+}
+
+function leiCronDescartar() {
+    if (!leiCron) return;
+    if (!confirm(`Descartar ${formatarHMS(leiCronMs())} de leitura sem salvar?`)) return;
+    leiCron = null;
+    leiCronSalvar();
+    leiRenderLeitura();
+}
+
+async function leiCronSalvarSessao() {
+    if (!leiCron) return;
+    const duracaoSegundos = Math.round(leiCronMs() / 1000);
+    if (duracaoSegundos < 60) return alert('Menos de 1 minuto de leitura — continue estudando um pouco mais ou descarte o cronômetro.');
+    try {
+        const resTipos = await fetch('/api/tipos-estudo');
+        const tipos = await resTipos.json();
+        const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const tipo = (Array.isArray(tipos) ? tipos : []).find(t => norm(t.nome) === 'lei seca');
+        if (!tipo) return alert('Não encontrei o tipo de estudo "Lei Seca". Crie-o em Estudos e tente de novo.');
+        const fim = new Date();
+        const res = await fetch('/api/sessoes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                inicio: new Date(fim.getTime() - duracaoSegundos * 1000).toISOString(), fim: fim.toISOString(), duracaoSegundos,
+                plano: planoAtual, tipoEstudoId: tipo._id, tipoEstudoNome: tipo.nome, topicos: [],
+                acertos: null, erros: null, paginasLidas: null,
+                observacoes: `Leitura de lei — ${leiCron.rotulo}`, revisao: { agendada: false, dias: null }
+            })
+        });
+        const d = await res.json();
+        if (!res.ok || !d.success) throw new Error(d.error || 'Falha');
+        const minutos = Math.round(duracaoSegundos / 60);
+        leiCron = null;
+        leiCronSalvar();
+        try { await atualizarStreak(); } catch (err) { /* não impede o registro */ }
+        leiRenderLeitura();
+        alert(`Sessão salva nos seus estudos: ${minutos} min de Lei Seca.`);
+    } catch (err) {
+        console.error('Erro ao salvar sessão de lei:', err);
+        alert('Não foi possível salvar nos estudos agora. O cronômetro continua guardado — tente de novo.');
+    }
+}
+
 // --- Aba Admin: uso do app, tentativas barradas e sugestões ---
 const NOMES_PAGINAS = {
     resumo: 'Resumo', edital: 'Edital', estudos: 'Estudos', flashcards: 'Flashcards', questoes: 'Questões',
     leis: 'Leis', jogo: 'Jogo', estatisticas: 'Estatísticas', analise: 'Análise', conquistas: 'Conquistas',
-    configuracoes: 'Configurações', sugestoes: 'Sugestões', admin: 'Admin'
+    configuracoes: 'Configurações', geral: 'Geral', sugestoes: 'Sugestões', admin: 'Admin'
 };
 const NOMES_TIPO_SUGESTAO = { alterar: 'Alterar página', nova: 'Página nova', remover: 'Remover página', outra: 'Outra ideia' };
 const NOMES_STATUS_SUGESTAO = { nova: 'Nova', analise: 'Em análise', feita: 'Feita', recusada: 'Recusada' };
@@ -4373,7 +4864,7 @@ async function mudarStatusSugestao(id, status) {
 async function abrirSugestoes() {
     const sel = document.getElementById('sug-pagina');
     if (sel && !sel.options.length) {
-        const paginas = ['resumo', 'edital', 'estudos', 'flashcards', 'questoes', 'leis', 'jogo', 'estatisticas', 'analise', 'conquistas', 'configuracoes'];
+        const paginas = ['resumo', 'edital', 'estudos', 'flashcards', 'questoes', 'leis', 'jogo', 'estatisticas', 'analise', 'conquistas', 'geral', 'configuracoes'];
         sel.innerHTML = paginas.map(p => `<option value="${p}">${NOMES_PAGINAS[p]}</option>`).join('');
     }
     aoMudarTipoSugestao();
@@ -8312,6 +8803,7 @@ async function carregarResumo() {
     renderizarSeletorEscopoResumo();
     await Promise.all([carregarSessoesResumo(), carregarMateriasCores(), atualizarStreak()]);
     renderizarFraseDoDia();
+    carregarAgendaResumo();
     renderizarDashboardResumo();
     renderizarGraficoTrintaDias();
     renderizarConquistas();

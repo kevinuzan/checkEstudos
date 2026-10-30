@@ -596,6 +596,13 @@ async function startServer() {
         const acessosNegadosColl = db.collection('acessos_negados');
         await acessosNegadosColl.createIndex({ email: 1 }, { unique: true }).catch(() => {});
         const sugestoesColl = db.collection('sugestoes');
+        // Aba "Geral": despesas do concurso, agenda (provas/aulas) e lembretes.
+        const despesasColl = db.collection('despesas');
+        await despesasColl.createIndex({ userId: 1, data: -1 }).catch(() => {});
+        const eventosColl = db.collection('eventos');
+        await eventosColl.createIndex({ userId: 1, data: 1 }).catch(() => {});
+        const lembretesColl = db.collection('lembretes');
+        await lembretesColl.createIndex({ userId: 1, data: 1 }).catch(() => {});
         await sugestoesColl.createIndex({ userId: 1, criadoEm: -1 }).catch(() => {});
         const modeloMetaColl = db.collection('modelo_meta');
         const modeloEditalColl = db.collection('modelo_edital');
@@ -1195,13 +1202,16 @@ async function startServer() {
 
         async function coletarDadosDaConta(userId) {
             const filtro = { userId };
+            const [despesas, eventos, lembretes] = await Promise.all([
+                despesasColl.find(filtro).toArray(), eventosColl.find(filtro).toArray(), lembretesColl.find(filtro).toArray()
+            ]);
             const [edital, planos, tiposEstudo, sessoes, materiasCor, baralhos, cartoes, pontuacoes] = await Promise.all([
                 editalColl.find(filtro).toArray(), planosColl.find(filtro).toArray(),
                 tiposEstudoColl.find(filtro).toArray(), sessoesColl.find(filtro).toArray(),
                 materiasCorColl.find(filtro).toArray(), flashcardsBaralhosColl.find(filtro).toArray(),
                 flashcardsCartoesColl.find(filtro).toArray(), jogoPontuacoesColl.find(filtro).toArray()
             ]);
-            return { edital, planos, tiposEstudo, sessoes, materiasCor, baralhos, cartoes, pontuacoes };
+            return { edital, planos, tiposEstudo, sessoes, materiasCor, baralhos, cartoes, pontuacoes, despesas, eventos, lembretes };
         }
 
         app.get('/api/conta/exportar', requireAuth, async (req, res) => {
@@ -1230,7 +1240,8 @@ async function startServer() {
             return [editalColl, planosColl, tiposEstudoColl, sessoesColl, materiasCorColl,
                 jogoPontuacoesColl, jogoRodadasColl, flashcardsBaralhosColl, flashcardsCartoesColl,
                 analiseDesempenhoColl, questoesRespostasColl,
-                leisGrifosColl, leisNotasColl, leisLeiturasColl];
+                leisGrifosColl, leisNotasColl, leisLeiturasColl,
+                despesasColl, eventosColl, lembretesColl];
         }
 
         // Apaga todos os dados de estudo mas MANTÉM a conta, o login e a
@@ -1433,7 +1444,7 @@ async function startServer() {
         // --- USO DO APP (quem acessou, quantas vezes, quais abas) ---
         // Só contadores por pessoa e por dia; nada do conteúdo dos estudos.
         const PAGINAS_DO_APP = ['resumo', 'edital', 'estudos', 'flashcards', 'questoes', 'leis', 'jogo',
-            'estatisticas', 'analise', 'conquistas', 'configuracoes', 'sugestoes', 'admin'];
+            'estatisticas', 'analise', 'conquistas', 'configuracoes', 'sugestoes', 'geral', 'admin'];
         const diaLocal = (d = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d); // AAAA-MM-DD
 
         app.post('/api/uso/visita', requireAuth, async (req, res) => {
@@ -1577,6 +1588,153 @@ async function startServer() {
             } catch (err) {
                 res.status(400).json({ success: false, error: 'Sugestão não encontrada.' });
             }
+        });
+
+        // --- ABA GERAL: despesas, agenda e lembretes ---
+        // Tudo por usuário (filtra por userId) e com tetos de tamanho/quantidade
+        // pra ninguém encher o banco. Datas são texto AAAA-MM-DD (sem fuso: a
+        // pessoa digita "dia 15" e é dia 15 em qualquer lugar).
+        const LIMITE_ITENS_GERAL = 1000;
+        const RE_DATA = /^\d{4}-\d{2}-\d{2}$/;
+        const RE_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+        const dataValida = d => typeof d === 'string' && RE_DATA.test(d) && !isNaN(new Date(d + 'T12:00:00Z').getTime());
+        const textoLimpo = (t, max) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, max);
+        const CATEGORIAS_DESPESA = ['inscricao', 'curso', 'material', 'viagem', 'outros'];
+        const TIPOS_EVENTO = ['prova', 'aula', 'outro'];
+        const REPETICOES_LEMBRETE = ['nenhuma', 'diaria', 'semanal'];
+
+        async function atingiuLimiteGeral(coll, userId) {
+            return (await coll.countDocuments({ userId })) >= LIMITE_ITENS_GERAL;
+        }
+        function idValido(id) { return typeof id === 'string' && /^[a-f0-9]{24}$/i.test(id); }
+
+        // ---- Despesas
+        function lerDespesa(body) {
+            const valor = Math.round(Number(body?.valor) * 100) / 100;
+            if (!(valor > 0) || valor > 10000000) return { erro: 'Informe um valor maior que zero.' };
+            if (!dataValida(body?.data)) return { erro: 'Informe a data.' };
+            if (!CATEGORIAS_DESPESA.includes(body?.categoria)) return { erro: 'Escolha a categoria.' };
+            const descricao = textoLimpo(body?.descricao, 120);
+            if (!descricao) return { erro: 'Descreva a despesa.' };
+            return { doc: { valor, data: body.data, categoria: body.categoria, descricao, plano: textoLimpo(body?.plano, 80) || null } };
+        }
+        const paraDespesa = d => ({ id: String(d._id), valor: d.valor, data: d.data, categoria: d.categoria, descricao: d.descricao, plano: d.plano || null });
+
+        app.get('/api/despesas', requireAuth, async (req, res) => {
+            const lista = await despesasColl.find({ userId: req.userId }).sort({ data: -1, criadoEm: -1 }).limit(LIMITE_ITENS_GERAL).toArray();
+            res.json({ success: true, despesas: lista.map(paraDespesa) });
+        });
+        app.post('/api/despesas', requireAuth, async (req, res) => {
+            const { doc, erro } = lerDespesa(req.body);
+            if (erro) return res.status(400).json({ success: false, error: erro });
+            if (await atingiuLimiteGeral(despesasColl, req.userId)) return res.status(400).json({ success: false, error: 'Limite de despesas atingido.' });
+            const r = await despesasColl.insertOne({ ...doc, userId: req.userId, criadoEm: new Date() });
+            res.json({ success: true, id: String(r.insertedId) });
+        });
+        app.put('/api/despesas/:id', requireAuth, async (req, res) => {
+            if (!idValido(req.params.id)) return res.status(400).json({ success: false, error: 'Despesa inválida.' });
+            const { doc, erro } = lerDespesa(req.body);
+            if (erro) return res.status(400).json({ success: false, error: erro });
+            await despesasColl.updateOne({ _id: new ObjectId(req.params.id), userId: req.userId }, { $set: doc });
+            res.json({ success: true });
+        });
+        app.delete('/api/despesas/:id', requireAuth, async (req, res) => {
+            if (!idValido(req.params.id)) return res.status(400).json({ success: false, error: 'Despesa inválida.' });
+            await despesasColl.deleteOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            res.json({ success: true });
+        });
+
+        // ---- Agenda (provas, aulas, outros) com contagem regressiva opcional
+        function lerEvento(body) {
+            const titulo = textoLimpo(body?.titulo, 80);
+            if (!titulo) return { erro: 'Dê um título ao evento.' };
+            if (!dataValida(body?.data)) return { erro: 'Informe a data.' };
+            if (!TIPOS_EVENTO.includes(body?.tipo)) return { erro: 'Escolha o tipo.' };
+            const hora = body?.hora && RE_HORA.test(body.hora) ? body.hora : null;
+            return { doc: { titulo, data: body.data, hora, tipo: body.tipo, contagem: body.contagem === true, obs: textoLimpo(body?.obs, 200) } };
+        }
+        const paraEvento = e => ({ id: String(e._id), titulo: e.titulo, data: e.data, hora: e.hora || null, tipo: e.tipo, contagem: !!e.contagem, obs: e.obs || '' });
+
+        app.get('/api/eventos', requireAuth, async (req, res) => {
+            const lista = await eventosColl.find({ userId: req.userId }).sort({ data: 1 }).limit(LIMITE_ITENS_GERAL).toArray();
+            res.json({ success: true, eventos: lista.map(paraEvento) });
+        });
+        app.post('/api/eventos', requireAuth, async (req, res) => {
+            const { doc, erro } = lerEvento(req.body);
+            if (erro) return res.status(400).json({ success: false, error: erro });
+            if (await atingiuLimiteGeral(eventosColl, req.userId)) return res.status(400).json({ success: false, error: 'Limite de eventos atingido.' });
+            await eventosColl.insertOne({ ...doc, userId: req.userId, criadoEm: new Date() });
+            res.json({ success: true });
+        });
+        app.put('/api/eventos/:id', requireAuth, async (req, res) => {
+            if (!idValido(req.params.id)) return res.status(400).json({ success: false, error: 'Evento inválido.' });
+            const { doc, erro } = lerEvento(req.body);
+            if (erro) return res.status(400).json({ success: false, error: erro });
+            await eventosColl.updateOne({ _id: new ObjectId(req.params.id), userId: req.userId }, { $set: doc });
+            res.json({ success: true });
+        });
+        app.delete('/api/eventos/:id', requireAuth, async (req, res) => {
+            if (!idValido(req.params.id)) return res.status(400).json({ success: false, error: 'Evento inválido.' });
+            await eventosColl.deleteOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            res.json({ success: true });
+        });
+
+        // ---- Lembretes (aviso dentro do app)
+        function lerLembrete(body) {
+            const texto = textoLimpo(body?.texto, 140);
+            if (!texto) return { erro: 'Escreva o lembrete.' };
+            if (!dataValida(body?.data)) return { erro: 'Informe a data.' };
+            const hora = body?.hora && RE_HORA.test(body.hora) ? body.hora : null;
+            const repete = REPETICOES_LEMBRETE.includes(body?.repete) ? body.repete : 'nenhuma';
+            return { doc: { texto, data: body.data, hora, repete } };
+        }
+        const paraLembrete = l => ({ id: String(l._id), texto: l.texto, data: l.data, hora: l.hora || null, repete: l.repete || 'nenhuma', feito: !!l.feito });
+        function somarDiasData(dataStr, dias) {
+            const d = new Date(dataStr + 'T12:00:00Z');
+            d.setUTCDate(d.getUTCDate() + dias);
+            return d.toISOString().slice(0, 10);
+        }
+
+        app.get('/api/lembretes', requireAuth, async (req, res) => {
+            const lista = await lembretesColl.find({ userId: req.userId }).sort({ data: 1 }).limit(LIMITE_ITENS_GERAL).toArray();
+            res.json({ success: true, lembretes: lista.map(paraLembrete) });
+        });
+        app.post('/api/lembretes', requireAuth, async (req, res) => {
+            const { doc, erro } = lerLembrete(req.body);
+            if (erro) return res.status(400).json({ success: false, error: erro });
+            if (await atingiuLimiteGeral(lembretesColl, req.userId)) return res.status(400).json({ success: false, error: 'Limite de lembretes atingido.' });
+            await lembretesColl.insertOne({ ...doc, feito: false, userId: req.userId, criadoEm: new Date() });
+            res.json({ success: true });
+        });
+        app.put('/api/lembretes/:id', requireAuth, async (req, res) => {
+            if (!idValido(req.params.id)) return res.status(400).json({ success: false, error: 'Lembrete inválido.' });
+            const { doc, erro } = lerLembrete(req.body);
+            if (erro) return res.status(400).json({ success: false, error: erro });
+            await lembretesColl.updateOne({ _id: new ObjectId(req.params.id), userId: req.userId }, { $set: { ...doc, feito: false } });
+            res.json({ success: true });
+        });
+        // Concluir: lembrete que repete avança pra próxima data (nunca "some");
+        // o que não repete fica marcado como feito. feito:false reabre.
+        app.post('/api/lembretes/:id/concluir', requireAuth, async (req, res) => {
+            if (!idValido(req.params.id)) return res.status(400).json({ success: false, error: 'Lembrete inválido.' });
+            const filtro = { _id: new ObjectId(req.params.id), userId: req.userId };
+            const l = await lembretesColl.findOne(filtro);
+            if (!l) return res.status(404).json({ success: false, error: 'Lembrete não encontrado.' });
+            const desfazer = req.body?.feito === false;
+            if (desfazer) await lembretesColl.updateOne(filtro, { $set: { feito: false } });
+            else if (l.repete === 'diaria' || l.repete === 'semanal') {
+                // Avança a partir de HOJE se estava atrasado, pra não gerar uma fila de avisos velhos.
+                const hoje = diaLocal();
+                let prox = somarDiasData(l.data, l.repete === 'diaria' ? 1 : 7);
+                while (prox <= hoje) prox = somarDiasData(prox, l.repete === 'diaria' ? 1 : 7);
+                await lembretesColl.updateOne(filtro, { $set: { data: prox, feito: false } });
+            } else await lembretesColl.updateOne(filtro, { $set: { feito: true } });
+            res.json({ success: true });
+        });
+        app.delete('/api/lembretes/:id', requireAuth, async (req, res) => {
+            if (!idValido(req.params.id)) return res.status(400).json({ success: false, error: 'Lembrete inválido.' });
+            await lembretesColl.deleteOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            res.json({ success: true });
         });
 
         // --- PLANOS (metas de estudo, ex: TRT, ENAM) ---

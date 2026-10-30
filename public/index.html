@@ -133,6 +133,9 @@
                 <button class="view-tab" id="tab-conquistas" onclick="trocarView('conquistas')">
                     <span class="view-tab-icone">🏅</span> Conquistas
                 </button>
+                <button class="view-tab" id="tab-geral" onclick="trocarView('geral')">
+                    <span class="view-tab-icone">🗓️</span> Geral <span class="admin-badge" id="geral-badge" style="display:none;">0</span>
+                </button>
                 <button class="view-tab" id="tab-sugestoes" onclick="trocarView('sugestoes')">
                     <span class="view-tab-icone">💡</span> Sugestões
                 </button>
@@ -217,6 +220,8 @@
             <div id="view-resumo">
 
                 <p class="resumo-frase" id="resumo-frase"></p>
+
+                <section class="resumo-agenda" id="resumo-agenda" style="display:none;"></section>
 
                 <div class="resumo-escopo-row" id="resumo-escopo-row">
                     <!-- pills "Geral" + cada plano, inseridos via JS -->
@@ -713,6 +718,140 @@
                     </div>
                 </section>
 
+            </div>
+
+            <!-- ===================== VIEW: GERAL (calendário, despesas, lembretes) ===================== -->
+            <div id="view-geral" style="display:none;">
+                <div class="resumo-escopo-row" id="geral-secoes">
+                    <button type="button" class="escopo-pill ativo" data-secao="calendario" onclick="geralMostrarSecao('calendario')">📅 Calendário</button>
+                    <button type="button" class="escopo-pill" data-secao="lembretes" onclick="geralMostrarSecao('lembretes')">🔔 Lembretes</button>
+                    <button type="button" class="escopo-pill" data-secao="despesas" onclick="geralMostrarSecao('despesas')">💰 Despesas</button>
+                </div>
+
+                <!-- Calendário -->
+                <div id="geral-sec-calendario">
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header">
+                            <h2>📅 <span id="cal-titulo-mes"></span></h2>
+                            <div class="geral-nav-mes">
+                                <button type="button" class="btn-secundario" onclick="calMudarMes(-1)" aria-label="Mês anterior">‹</button>
+                                <button type="button" class="btn-secundario" onclick="calMudarMes(0)">Hoje</button>
+                                <button type="button" class="btn-secundario" onclick="calMudarMes(1)" aria-label="Próximo mês">›</button>
+                            </div>
+                        </div>
+                        <div class="cal-grade" id="cal-grade"></div>
+                        <div class="cal-legenda"><span class="cal-ponto cal-prova"></span> Prova <span class="cal-ponto cal-aula"></span> Aula <span class="cal-ponto cal-outro"></span> Outro</div>
+                    </section>
+
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header">
+                            <h2 id="cal-dia-titulo">Dia selecionado</h2>
+                            <button type="button" class="btn-secundario" onclick="eventoAbrirForm()">+ Novo evento</button>
+                        </div>
+                        <div class="config-card" id="ev-form" style="display:none;">
+                            <label class="modal-label" for="ev-titulo">Título</label>
+                            <input type="text" id="ev-titulo" maxlength="80" placeholder="Ex.: Prova do TRT-2">
+                            <div class="geral-linha-campos">
+                                <div><label class="modal-label" for="ev-data">Data</label><input type="date" id="ev-data"></div>
+                                <div><label class="modal-label" for="ev-hora">Hora (opcional)</label><input type="time" id="ev-hora"></div>
+                            </div>
+                            <label class="modal-label" for="ev-tipo">Tipo</label>
+                            <select id="ev-tipo">
+                                <option value="prova">Prova</option>
+                                <option value="aula">Aula</option>
+                                <option value="outro">Outro</option>
+                            </select>
+                            <label class="config-check"><input type="checkbox" id="ev-contagem"> Mostrar contagem regressiva no Resumo</label>
+                            <label class="modal-label" for="ev-obs">Observação (opcional)</label>
+                            <input type="text" id="ev-obs" maxlength="200">
+                            <p id="ev-erro" class="login-erro" style="display:none;"></p>
+                            <div class="assinatura-acoes">
+                                <button type="button" onclick="salvarEvento()">Salvar</button>
+                                <button type="button" class="btn-secundario" onclick="eventoFecharForm()">Cancelar</button>
+                            </div>
+                        </div>
+                        <div class="admin-acessos-lista" id="cal-dia-lista"></div>
+                    </section>
+
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header"><h2>Próximos eventos</h2></div>
+                        <div class="admin-acessos-lista" id="cal-proximos"></div>
+                    </section>
+                </div>
+
+                <!-- Lembretes -->
+                <div id="geral-sec-lembretes" style="display:none;">
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header"><h2>🔔 Novo lembrete</h2></div>
+                        <div class="config-card">
+                            <label class="modal-label" for="lb-texto">O que lembrar?</label>
+                            <input type="text" id="lb-texto" maxlength="140" placeholder="Ex.: Pagar a inscrição do concurso">
+                            <div class="geral-linha-campos">
+                                <div><label class="modal-label" for="lb-data">Data</label><input type="date" id="lb-data"></div>
+                                <div><label class="modal-label" for="lb-hora">Hora (opcional)</label><input type="time" id="lb-hora"></div>
+                            </div>
+                            <label class="modal-label" for="lb-repete">Repetir</label>
+                            <select id="lb-repete">
+                                <option value="nenhuma">Não repetir</option>
+                                <option value="diaria">Todos os dias</option>
+                                <option value="semanal">Toda semana</option>
+                            </select>
+                            <p id="lb-erro" class="login-erro" style="display:none;"></p>
+                            <div class="assinatura-acoes">
+                                <button type="button" onclick="salvarLembrete()">Adicionar</button>
+                            </div>
+                            <p class="config-texto-ajuda">Os lembretes aparecem no Resumo quando chegam o dia (avisos dentro do app, sem notificação no celular por enquanto).</p>
+                        </div>
+                    </section>
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header"><h2>Pendentes</h2></div>
+                        <div class="admin-acessos-lista" id="lb-pendentes"></div>
+                    </section>
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header"><h2>Concluídos</h2></div>
+                        <div class="admin-acessos-lista" id="lb-concluidos"></div>
+                    </section>
+                </div>
+
+                <!-- Despesas -->
+                <div id="geral-sec-despesas" style="display:none;">
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header"><h2>💰 <span id="dp-form-titulo">Nova despesa</span></h2></div>
+                        <div class="config-card">
+                            <div class="geral-linha-campos">
+                                <div><label class="modal-label" for="dp-valor">Valor (R$)</label><input type="number" id="dp-valor" min="0.01" step="0.01" inputmode="decimal" placeholder="0,00"></div>
+                                <div><label class="modal-label" for="dp-data">Data</label><input type="date" id="dp-data"></div>
+                            </div>
+                            <label class="modal-label" for="dp-categoria">Categoria</label>
+                            <select id="dp-categoria">
+                                <option value="inscricao">Inscrição</option>
+                                <option value="curso">Curso</option>
+                                <option value="material">Material</option>
+                                <option value="viagem">Viagem</option>
+                                <option value="outros">Outros</option>
+                            </select>
+                            <label class="modal-label" for="dp-descricao">Descrição</label>
+                            <input type="text" id="dp-descricao" maxlength="120" placeholder="Ex.: Inscrição TRT-2">
+                            <p id="dp-erro" class="login-erro" style="display:none;"></p>
+                            <div class="assinatura-acoes">
+                                <button type="button" id="dp-btn-salvar" onclick="salvarDespesa()">Adicionar</button>
+                                <button type="button" class="btn-secundario" id="dp-btn-cancelar" style="display:none;" onclick="despesaCancelarEdicao()">Cancelar edição</button>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="painel-bloco">
+                        <div class="painel-bloco-header">
+                            <h2>Despesas</h2>
+                            <div class="geral-nav-mes">
+                                <button type="button" class="btn-secundario" onclick="despesaMudarMes(-1)" aria-label="Mês anterior">‹</button>
+                                <span id="dp-mes-titulo" class="geral-mes-titulo"></span>
+                                <button type="button" class="btn-secundario" onclick="despesaMudarMes(1)" aria-label="Próximo mês">›</button>
+                            </div>
+                        </div>
+                        <div class="dp-totais" id="dp-totais"></div>
+                        <div class="admin-acessos-lista" id="dp-lista"></div>
+                    </section>
+                </div>
             </div>
 
             <!-- ===================== VIEW: SUGESTÕES ===================== -->
