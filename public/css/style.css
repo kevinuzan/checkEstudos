@@ -4271,7 +4271,9 @@ input[type="checkbox"] {
    barra lateral fixa e o conteúdo se distribui em mais colunas. --- */
 @media (min-width: 901px) {
     .layout {
-        max-width: 1200px;
+        /* Largura de sobra: com a barra lateral à mostra o conteúdo ocupa o resto da tela
+           (o mesmo espaço que tinha com o menu recolhido, só deslocado pela barra). */
+        max-width: 1950px;
         display: flex;
         align-items: flex-start;
         gap: 28px;
@@ -4373,7 +4375,7 @@ input[type="checkbox"] {
 
 @media (min-width: 1300px) {
     .layout {
-        max-width: 1360px;
+        max-width: 1950px;
     }
 
     .dashboard-grid {
@@ -4948,11 +4950,7 @@ input[type="checkbox"] {
     .btn-sidebar-recolher:hover { color: var(--text); border-color: var(--primary); }
     /* Recolhido: some o menu, o conteúdo ocupa a largura toda e aparece um botão fixo para reabrir. */
     html.sidebar-oculta .sidebar { display: none; }
-    html.sidebar-oculta .layout { max-width: 1400px; }
-    /* Sem a barra lateral o conteúdo se espalhava pela tela inteira e parecia pequeno.
-       Aqui escalamos tudo ~15% (soma com o tamanho de texto escolhido em Configurações)
-       e limitamos a largura, pra ficar com o mesmo "peso" visual de quando o menu está aberto. */
-    html.sidebar-oculta { zoom: calc(var(--fonte-escala, 1) * 1.15); }
+    html.sidebar-oculta .layout { max-width: 1680px; }
     html.sidebar-oculta .btn-sidebar-mostrar {
         display: inline-flex; align-items: center; justify-content: center;
         position: fixed; top: 14px; left: 14px; z-index: 90;
