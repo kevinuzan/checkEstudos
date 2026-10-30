@@ -3321,6 +3321,7 @@ input[type="checkbox"] {
 
     .baralho-arvore-excluir,
     .baralho-arvore-revisar-pasta,
+    .baralho-arvore-exportar,
     .baralho-arvore-add-sub {
         width: 22px;
         height: 22px;
@@ -3333,6 +3334,7 @@ input[type="checkbox"] {
     color: #fff;
 }
 
+.baralho-arvore-exportar,
 .baralho-arvore-add-sub {
     width: 26px;
     height: 24px;
@@ -3350,7 +3352,8 @@ input[type="checkbox"] {
     color: var(--text-muted);
 }
 
-.baralho-arvore-add-sub:hover {
+.baralho-arvore-add-sub:hover,
+.baralho-arvore-exportar:hover {
     border-color: var(--primary);
     color: var(--primary-dark);
     background: var(--surface-muted);
@@ -5162,4 +5165,9 @@ input[type="checkbox"] {
 .admin-acesso-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .admin-acesso-email { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .admin-acesso-meta { font-size: 12.5px; color: var(--text-muted); }
+.admin-badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 99px; background: var(--danger, #dc2626); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.sugestao-linha { align-items: flex-start; }
+.sugestao-texto { font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.sugestao-status { flex: none; max-width: 130px; }
+#sug-texto { width: 100%; resize: vertical; box-sizing: border-box; }
 .admin-acesso-tag { flex: none; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--primary-light); color: var(--primary-dark); }

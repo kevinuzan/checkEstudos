@@ -133,6 +133,12 @@
                 <button class="view-tab" id="tab-conquistas" onclick="trocarView('conquistas')">
                     <span class="view-tab-icone">🏅</span> Conquistas
                 </button>
+                <button class="view-tab" id="tab-sugestoes" onclick="trocarView('sugestoes')">
+                    <span class="view-tab-icone">💡</span> Sugestões
+                </button>
+                <button class="view-tab" id="tab-admin" onclick="trocarView('admin')" style="display:none;">
+                    <span class="view-tab-icone">🛡️</span> Admin <span class="admin-badge" id="admin-badge" style="display:none;">0</span>
+                </button>
                 <button class="view-tab" id="tab-configuracoes" onclick="trocarView('configuracoes')">
                     <span class="view-tab-icone">⚙️</span> Config.
                 </button>
@@ -356,6 +362,7 @@
                                 <button type="button" class="btn-secundario" onclick="abrirModalImportarAnki()">📥 Importar do Anki</button>
                                 <label class="btn-secundario" for="importar-baralho-json-input" title="Importar um baralho exportado do checkEstudos (arquivo .json)">📥 Importar arquivo</label>
                                 <input type="file" id="importar-baralho-json-input" class="arquivo-input-oculto" accept="application/json" onchange="importarArquivoBaralho(event)">
+                                <button type="button" class="btn-secundario" onclick="exportarPasta('')" title="Baixar todos os baralhos num arquivo .json (pode ser importado de volta)">📤 Exportar tudo</button>
                                 <button type="button" class="btn-secundario" onclick="abrirModalNovoBaralho()">+ Novo baralho</button>
                             </div>
                         </div>
@@ -708,6 +715,91 @@
 
             </div>
 
+            <!-- ===================== VIEW: SUGESTÕES ===================== -->
+            <div id="view-sugestoes" style="display:none;">
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>💡 Sugestões</h2>
+                    </div>
+                    <div class="config-card">
+                        <p class="config-card-sub">Conta pra gente o que você gostaria de ver no app. Lemos todas as sugestões!</p>
+                        <label class="modal-label" for="sug-tipo">O que você quer?</label>
+                        <select id="sug-tipo" onchange="aoMudarTipoSugestao()">
+                            <option value="alterar">Alterar uma página</option>
+                            <option value="nova">Criar uma página nova</option>
+                            <option value="remover">Remover uma página</option>
+                            <option value="outra">Outra ideia</option>
+                        </select>
+                        <div id="sug-pagina-bloco">
+                            <label class="modal-label" for="sug-pagina">Qual página?</label>
+                            <select id="sug-pagina"></select>
+                        </div>
+                        <label class="modal-label" for="sug-texto">Descreva sua sugestão</label>
+                        <textarea id="sug-texto" rows="5" maxlength="1000" placeholder="Ex.: Queria poder filtrar os baralhos por matéria…" oninput="contarTextoSugestao()"></textarea>
+                        <p class="config-texto-ajuda" id="sug-contador">0/1000</p>
+                        <p id="sug-erro" class="login-erro" style="display:none;"></p>
+                        <div class="assinatura-acoes">
+                            <button type="button" id="btn-enviar-sugestao" onclick="enviarSugestao()">Enviar sugestão</button>
+                        </div>
+                    </div>
+                </section>
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>Minhas sugestões</h2>
+                    </div>
+                    <div class="admin-acessos-lista" id="sug-minhas-lista"></div>
+                </section>
+            </div>
+
+            <!-- ===================== VIEW: ADMIN (só administradores) ===================== -->
+            <div id="view-admin" style="display:none;">
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>📈 Uso do app</h2>
+                        <span class="painel-bloco-sub">últimos 30 dias</span>
+                    </div>
+                    <div class="admin-acessos-lista" id="admin-uso-lista"><p class="config-texto-ajuda">Carregando…</p></div>
+                    <p class="config-texto-ajuda">Guardamos só contagens por dia (quantas vezes abriu o app e quais abas visitou) — nada do conteúdo dos estudos. Os dados somem sozinhos após ~6 meses.</p>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>🚪 Tentativas barradas</h2>
+                    </div>
+                    <div class="admin-acessos-lista" id="admin-negados-lista"></div>
+                </section>
+
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>💡 Sugestões recebidas</h2>
+                    </div>
+                    <div class="admin-acessos-lista" id="admin-sugestoes-lista"></div>
+                </section>
+
+                <section class="painel-bloco" id="config-bloco-admin">
+                    <div class="painel-bloco-header">
+                        <h2>Acessos (testes fechados)</h2>
+                    </div>
+                    <div class="config-card">
+                        <p class="config-card-sub" id="admin-acessos-sub">Só administradores e e-mails liberados conseguem entrar.</p>
+                        <div class="perfil-nome-row">
+                            <input type="email" id="admin-acesso-email" placeholder="email@gmail.com (conta Google da pessoa)" maxlength="254" autocomplete="off">
+                            <button type="button" onclick="liberarAcesso()">Liberar</button>
+                        </div>
+                        <p id="admin-acessos-erro" class="login-erro"></p>
+                        <div class="admin-acessos-lista" id="admin-acessos-lista"></div>
+
+                        <label class="modal-label">Modelo padrão (ENAM)</label>
+                        <p class="config-card-sub" id="admin-modelo-status">Carregando…</p>
+                        <div class="assinatura-acoes">
+                            <button type="button" class="btn-secundario" id="btn-publicar-modelo" onclick="publicarModeloPadrao()">Publicar meu ENAM como padrão</button>
+                        </div>
+                        <p class="config-texto-ajuda">Copia o plano ENAM e os baralhos ENAM da SUA conta para todo usuário novo (zerados). Quem já tem conta não é alterado.</p>
+                    </div>
+                </section>
+
+            </div>
+
             <!-- ===================== VIEW: CONFIGURAÇÕES ===================== -->
             <div id="view-configuracoes" style="display:none;">
 
@@ -790,28 +882,6 @@
                         <p class="config-card-sub" id="config-ia-texto">Carregando…</p>
                         <div class="progress-bar"><div class="config-ia-fill" id="config-ia-barra"></div></div>
                         <p class="config-texto-ajuda">A cota é mensal e zera todo mês. Ela é usada pela Análise de desempenho e pela sugestão de edital a partir de PDF.</p>
-                    </div>
-                </section>
-
-                <section class="painel-bloco" id="config-bloco-admin" style="display:none;">
-                    <div class="painel-bloco-header">
-                        <h2>Acessos (testes fechados)</h2>
-                    </div>
-                    <div class="config-card">
-                        <p class="config-card-sub" id="admin-acessos-sub">Só administradores e e-mails liberados conseguem entrar.</p>
-                        <div class="perfil-nome-row">
-                            <input type="email" id="admin-acesso-email" placeholder="email@gmail.com (conta Google da pessoa)" maxlength="254" autocomplete="off">
-                            <button type="button" onclick="liberarAcesso()">Liberar</button>
-                        </div>
-                        <p id="admin-acessos-erro" class="login-erro" style="display:none;"></p>
-                        <div class="admin-acessos-lista" id="admin-acessos-lista"></div>
-
-                        <label class="modal-label">Modelo padrão (ENAM)</label>
-                        <p class="config-card-sub" id="admin-modelo-status">Carregando…</p>
-                        <div class="assinatura-acoes">
-                            <button type="button" class="btn-secundario" id="btn-publicar-modelo" onclick="publicarModeloPadrao()">Publicar meu ENAM como padrão</button>
-                        </div>
-                        <p class="config-texto-ajuda">Copia o plano ENAM e os baralhos ENAM da SUA conta para todo usuário novo (zerados). Quem já tem conta não é alterado.</p>
                     </div>
                 </section>
 

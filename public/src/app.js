@@ -135,6 +135,10 @@ async function iniciarApp() {
             esconderTelaLogin();
             if (!appJaIniciado) {
                 appJaIniciado = true;
+                // Uma "abertura" por sessão do navegador (recarregar a página não conta de novo).
+                try {
+                    if (!sessionStorage.getItem('uso-aberto')) { sessionStorage.setItem('uso-aberto', '1'); registrarUso(null, true); }
+                } catch (err) { registrarUso(null, true); }
                 await iniciar();
                 await carregarAssinatura(true);
                 tratarRetornoDaStripe();
@@ -154,6 +158,9 @@ function mostrarUsuarioLogado(usuario) {
     if (!bloco || !usuario) return;
     bloco.style.display = 'flex';
     if (nomeEl) nomeEl.textContent = usuario.nome || usuario.email || '';
+    const tabAdmin = document.getElementById('tab-admin');
+    if (tabAdmin) tabAdmin.style.display = usuario.admin ? '' : 'none';
+    atualizarBadgeAdmin(usuario.sugestoesNovas || 0);
     if (fotoEl) {
         if (usuario.foto) { fotoEl.src = usuario.foto; fotoEl.style.display = 'block'; }
         else fotoEl.style.display = 'none';
@@ -1655,7 +1662,11 @@ async function trocarView(nome) {
     document.getElementById('view-estatisticas').style.display = nome === 'estatisticas' ? 'block' : 'none';
     document.getElementById('view-analise').style.display = nome === 'analise' ? 'block' : 'none';
     document.getElementById('view-conquistas').style.display = nome === 'conquistas' ? 'block' : 'none';
+    document.getElementById('view-sugestoes').style.display = nome === 'sugestoes' ? 'block' : 'none';
+    document.getElementById('view-admin').style.display = nome === 'admin' ? 'block' : 'none';
     document.getElementById('view-configuracoes').style.display = nome === 'configuracoes' ? 'block' : 'none';
+    document.getElementById('tab-sugestoes').classList.toggle('ativo', nome === 'sugestoes');
+    document.getElementById('tab-admin').classList.toggle('ativo', nome === 'admin');
     document.getElementById('tab-resumo').classList.toggle('ativo', nome === 'resumo');
     document.getElementById('tab-edital').classList.toggle('ativo', nome === 'edital');
     document.getElementById('tab-estudos').classList.toggle('ativo', nome === 'estudos');
@@ -1694,6 +1705,21 @@ async function trocarView(nome) {
     if (nome === 'analise') await carregarAnaliseDesempenho();
     if (nome === 'conquistas') await abrirConquistas();
     if (nome === 'configuracoes') await abrirConfiguracoes();
+    if (nome === 'sugestoes') await abrirSugestoes();
+    if (nome === 'admin') await abrirAdmin();
+    registrarUso(nome);
+}
+
+// Conta uma visita à aba (só o nome da aba, nunca conteúdo). Falha em silêncio:
+// estatística nunca pode atrapalhar o estudo.
+function registrarUso(pagina, abertura) {
+    try {
+        fetch('/api/uso/visita', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pagina, abertura: abertura === true })
+        }).catch(() => {});
+    } catch (err) { /* ignora */ }
 }
 
 // Atualiza o texto "Você está vendo: <plano>" do cabeçalho de Edital/Estudos.
@@ -4146,9 +4172,7 @@ function linhaAcesso(p, ehAdminLinha) {
 }
 
 async function carregarAdminAcessos() {
-    const bloco = document.getElementById('config-bloco-admin');
-    if (!bloco) return;
-    bloco.style.display = 'block';
+    if (!document.getElementById('config-bloco-admin')) return;
     try {
         const [resA, resM] = await Promise.all([fetch('/api/admin/acessos'), fetch('/api/admin/modelo-padrao')]);
         const dados = await resA.json();
@@ -4228,6 +4252,188 @@ async function publicarModeloPadrao() {
     }
 }
 
+// --- Aba Admin: uso do app, tentativas barradas e sugestões ---
+const NOMES_PAGINAS = {
+    resumo: 'Resumo', edital: 'Edital', estudos: 'Estudos', flashcards: 'Flashcards', questoes: 'Questões',
+    leis: 'Leis', jogo: 'Jogo', estatisticas: 'Estatísticas', analise: 'Análise', conquistas: 'Conquistas',
+    configuracoes: 'Configurações', sugestoes: 'Sugestões', admin: 'Admin'
+};
+const NOMES_TIPO_SUGESTAO = { alterar: 'Alterar página', nova: 'Página nova', remover: 'Remover página', outra: 'Outra ideia' };
+const NOMES_STATUS_SUGESTAO = { nova: 'Nova', analise: 'Em análise', feita: 'Feita', recusada: 'Recusada' };
+
+function atualizarBadgeAdmin(qtd) {
+    const el = document.getElementById('admin-badge');
+    if (!el) return;
+    el.textContent = qtd > 99 ? '99+' : String(qtd);
+    el.style.display = qtd > 0 ? 'inline-block' : 'none';
+}
+
+function formatarDuracaoCurta(segundos) {
+    const min = Math.round((segundos || 0) / 60);
+    if (min < 60) return `${min} min`;
+    return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`;
+}
+
+async function abrirAdmin() {
+    await Promise.all([carregarAdminUso(), carregarAdminSugestoes(), carregarAdminAcessos()]);
+}
+
+async function carregarAdminUso() {
+    const lista = document.getElementById('admin-uso-lista');
+    const negados = document.getElementById('admin-negados-lista');
+    if (!lista || !negados) return;
+    try {
+        const res = await fetch('/api/admin/uso');
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || 'Falha');
+        lista.innerHTML = d.pessoas.map(p => {
+            if (!p.jaEntrou) return `<div class="admin-acesso-linha"><div class="admin-acesso-info"><span class="admin-acesso-email">${escaparHtml(p.email)}</span><span class="admin-acesso-meta">Ainda não entrou</span></div></div>`;
+            const abas = p.abasTop.map(x => `${NOMES_PAGINAS[x.pagina] || x.pagina} (${x.vezes})`).join(', ') || '—';
+            const ultimo = p.ultimoAcesso ? new Date(p.ultimoAcesso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+            return `
+                <div class="admin-acesso-linha">
+                    <div class="admin-acesso-info">
+                        <span class="admin-acesso-email">${escaparHtml(p.nome || p.email)}${p.admin ? ' <span class="admin-acesso-tag">Admin</span>' : ''}</span>
+                        <span class="admin-acesso-meta">${escaparHtml(p.email)}</span>
+                        <span class="admin-acesso-meta">Acessos: ${p.acessos7} em 7 dias · ${p.acessos30} em 30 dias · ${p.diasAtivos30} dias ativos · último: ${ultimo}</span>
+                        <span class="admin-acesso-meta">Abas mais usadas: ${escaparHtml(abas)}</span>
+                        <span class="admin-acesso-meta">Estudo: ${p.sessoes30} sessões (${formatarDuracaoCurta(p.segundosEstudados30)}) · IA este mês: ${Number(p.tokensIa).toLocaleString('pt-BR')} tokens</span>
+                    </div>
+                </div>`;
+        }).join('') || '<p class="config-texto-ajuda">Nada por aqui ainda.</p>';
+
+        negados.innerHTML = d.negados.length ? d.negados.map(n => `
+            <div class="admin-acesso-linha">
+                <div class="admin-acesso-info">
+                    <span class="admin-acesso-email">${escaparHtml(n.email)}</span>
+                    <span class="admin-acesso-meta">${escaparHtml(n.nome)} · ${n.tentativas} tentativa(s) · última em ${new Date(n.ultimaEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <button type="button" data-email="${escaparHtml(n.email)}" onclick="liberarNegado(this.dataset.email)">Liberar</button>
+                <button type="button" class="btn-secundario" data-email="${escaparHtml(n.email)}" onclick="descartarNegado(this.dataset.email)">Descartar</button>
+            </div>`).join('') : '<p class="config-texto-ajuda">Ninguém tentou entrar sem estar na lista.</p>';
+    } catch (err) {
+        console.error('Erro ao carregar uso:', err);
+        lista.innerHTML = '<p class="config-texto-ajuda">Não foi possível carregar as estatísticas agora.</p>';
+    }
+}
+
+async function liberarNegado(email) {
+    if (!email) return;
+    try {
+        const res = await fetch('/api/admin/acessos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || 'Falha');
+        await abrirAdmin();
+    } catch (err) {
+        mostrarErroAdmin(err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível liberar agora.');
+    }
+}
+
+async function descartarNegado(email) {
+    if (!email) return;
+    await fetch('/api/admin/negados', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) }).catch(() => {});
+    await carregarAdminUso();
+}
+
+async function carregarAdminSugestoes() {
+    const lista = document.getElementById('admin-sugestoes-lista');
+    if (!lista) return;
+    try {
+        const res = await fetch('/api/admin/sugestoes');
+        const d = await res.json();
+        if (!d.success) throw new Error('Falha');
+        atualizarBadgeAdmin(d.sugestoes.filter(s => s.status === 'nova').length);
+        lista.innerHTML = d.sugestoes.length ? d.sugestoes.map(s => `
+            <div class="admin-acesso-linha sugestao-linha">
+                <div class="admin-acesso-info">
+                    <span class="admin-acesso-email">${NOMES_TIPO_SUGESTAO[s.tipo] || s.tipo}${s.pagina ? ' · ' + escaparHtml(NOMES_PAGINAS[s.pagina] || s.pagina) : ''}</span>
+                    <span class="sugestao-texto">${escaparHtml(s.texto)}</span>
+                    <span class="admin-acesso-meta">${escaparHtml(s.nome || s.email)} · ${new Date(s.criadoEm).toLocaleDateString('pt-BR')}</span>
+                </div>
+                <select class="sugestao-status" data-id="${escaparHtml(s.id)}" onchange="mudarStatusSugestao(this.dataset.id, this.value)">
+                    ${Object.entries(NOMES_STATUS_SUGESTAO).map(([k, v]) => `<option value="${k}"${k === s.status ? ' selected' : ''}>${v}</option>`).join('')}
+                </select>
+            </div>`).join('') : '<p class="config-texto-ajuda">Nenhuma sugestão ainda.</p>';
+    } catch (err) {
+        lista.innerHTML = '<p class="config-texto-ajuda">Não foi possível carregar as sugestões agora.</p>';
+    }
+}
+
+async function mudarStatusSugestao(id, status) {
+    try {
+        const res = await fetch(`/api/admin/sugestoes/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+        const d = await res.json();
+        if (d.success) atualizarBadgeAdmin(d.sugestoesNovas || 0);
+    } catch (err) {
+        console.error('Erro ao mudar status da sugestão:', err);
+    }
+}
+
+// --- Sugestões (todos os usuários) ---
+async function abrirSugestoes() {
+    const sel = document.getElementById('sug-pagina');
+    if (sel && !sel.options.length) {
+        const paginas = ['resumo', 'edital', 'estudos', 'flashcards', 'questoes', 'leis', 'jogo', 'estatisticas', 'analise', 'conquistas', 'configuracoes'];
+        sel.innerHTML = paginas.map(p => `<option value="${p}">${NOMES_PAGINAS[p]}</option>`).join('');
+    }
+    aoMudarTipoSugestao();
+    contarTextoSugestao();
+    const lista = document.getElementById('sug-minhas-lista');
+    if (!lista) return;
+    try {
+        const res = await fetch('/api/sugestoes');
+        const d = await res.json();
+        if (!d.success) throw new Error('Falha');
+        lista.innerHTML = d.sugestoes.length ? d.sugestoes.map(s => `
+            <div class="admin-acesso-linha sugestao-linha">
+                <div class="admin-acesso-info">
+                    <span class="admin-acesso-email">${NOMES_TIPO_SUGESTAO[s.tipo] || s.tipo}${s.pagina ? ' · ' + escaparHtml(NOMES_PAGINAS[s.pagina] || s.pagina) : ''}</span>
+                    <span class="sugestao-texto">${escaparHtml(s.texto)}</span>
+                </div>
+                <span class="admin-acesso-tag">${NOMES_STATUS_SUGESTAO[s.status] || s.status}</span>
+            </div>`).join('') : '<p class="config-texto-ajuda">Você ainda não enviou nenhuma sugestão.</p>';
+    } catch (err) {
+        lista.innerHTML = '<p class="config-texto-ajuda">Não foi possível carregar suas sugestões agora.</p>';
+    }
+}
+
+// "Página nova" e "Outra ideia" não se referem a uma página existente.
+function aoMudarTipoSugestao() {
+    const tipo = document.getElementById('sug-tipo')?.value;
+    const bloco = document.getElementById('sug-pagina-bloco');
+    if (bloco) bloco.style.display = (tipo === 'alterar' || tipo === 'remover') ? '' : 'none';
+}
+
+function contarTextoSugestao() {
+    const t = document.getElementById('sug-texto');
+    const c = document.getElementById('sug-contador');
+    if (t && c) c.textContent = `${t.value.length}/1000`;
+}
+
+async function enviarSugestao() {
+    const erro = document.getElementById('sug-erro');
+    const btn = document.getElementById('btn-enviar-sugestao');
+    const mostrar = msg => { erro.textContent = msg; erro.style.display = msg ? 'block' : 'none'; };
+    mostrar('');
+    const tipo = document.getElementById('sug-tipo').value;
+    const pagina = document.getElementById('sug-pagina').value;
+    const texto = document.getElementById('sug-texto').value.trim();
+    if (texto.length < 5) return mostrar('Descreva sua sugestão (mínimo de 5 caracteres).');
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/sugestoes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tipo, pagina, texto }) });
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || 'Falha');
+        document.getElementById('sug-texto').value = '';
+        await abrirSugestoes();
+        alert('Sugestão enviada! Obrigada pela ajuda 💙');
+    } catch (err) {
+        mostrar(err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível enviar agora.');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
 async function abrirConfiguracoes() {
     renderizarSeletorTema();
     renderizarSeletorFundo();
@@ -4240,7 +4446,6 @@ async function abrirConfiguracoes() {
         const res = await fetch('/api/auth/me');
         if (!res.ok) return;
         const dados = await res.json();
-        if (dados.usuario?.admin) carregarAdminAcessos();
         input.value = dados.usuario?.apelido || '';
         input.placeholder = dados.usuario?.nomeGoogle ? `Ex: ${dados.usuario.nomeGoogle.split(' ')[0]}` : 'Ex: Ana';
     } catch (err) {
@@ -5410,6 +5615,7 @@ function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
                         ${temPendente
                             ? `<button type="button" class="baralho-arvore-revisar-pasta" onclick="event.stopPropagation(); revisarPasta('${chaveEscapada}')" title="Revisar tudo em &quot;${nomeEscapado}&quot;">▶</button>`
                             : ''}
+                        <button type="button" class="baralho-arvore-exportar" onclick="event.stopPropagation(); exportarPasta('${chaveEscapada}')" title="Exportar &quot;${nomeEscapado}&quot; (arquivo .json)">⬇</button>
                         <button type="button" class="baralho-arvore-add-sub" onclick="event.stopPropagation(); abrirModalNovoBaralho('${chaveEscapada}')" title="Novo baralho dentro de &quot;${nomeEscapado}&quot;">+</button>
                         ${ehBaralhoDeVerdade ? `<button type="button" class="baralho-arvore-excluir" onclick="event.stopPropagation(); excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>` : ''}
                     </span>
@@ -6380,6 +6586,20 @@ async function exportarBaralhoAtual() {
     } catch (err) {
         console.error('Erro ao exportar baralho:', err);
         alert('Não foi possível exportar esse baralho agora.');
+    }
+}
+
+// Exporta uma pasta da árvore (e tudo que há dentro dela). chave vazia = todos os baralhos.
+async function exportarPasta(chave) {
+    try {
+        const res = await fetch(`/api/flashcards/exportar-pasta?caminho=${encodeURIComponent(chave || '')}`);
+        const dados = await res.json().catch(() => null);
+        if (!res.ok || !dados || !dados.baralhos) throw new Error((dados && dados.error) || 'Falha ao exportar');
+        const base = chave ? chave.split('::').pop() : 'todos-os-baralhos';
+        baixarArquivoJson(dados, `baralho-${base.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`);
+    } catch (err) {
+        console.error('Erro ao exportar pasta:', err);
+        alert(err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível exportar agora.');
     }
 }
 

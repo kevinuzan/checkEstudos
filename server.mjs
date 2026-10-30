@@ -585,6 +585,13 @@ async function startServer() {
         // --- ACESSO RESTRITO (lista de liberados) ---
         const acessosLiberadosColl = db.collection(ACESSOS_LIBERADOS_COLLECTION);
         await acessosLiberadosColl.createIndex({ email: 1 }, { unique: true }).catch(() => {});
+        const usoDiarioColl = db.collection('uso_diario');
+        await usoDiarioColl.createIndex({ userId: 1, dia: 1 }, { unique: true }).catch(() => {});
+        await usoDiarioColl.createIndex({ expiraEm: 1 }, { expireAfterSeconds: 0 }).catch(() => {}); // some sozinho após ~180 dias
+        const acessosNegadosColl = db.collection('acessos_negados');
+        await acessosNegadosColl.createIndex({ email: 1 }, { unique: true }).catch(() => {});
+        const sugestoesColl = db.collection('sugestoes');
+        await sugestoesColl.createIndex({ userId: 1, criadoEm: -1 }).catch(() => {});
         const modeloMetaColl = db.collection('modelo_meta');
         const modeloEditalColl = db.collection('modelo_edital');
         const modeloBaralhosColl = db.collection('modelo_baralhos');
@@ -690,6 +697,18 @@ async function startServer() {
 
                 // Testes fechados: quem não está liberado não entra e NEM tem conta criada.
                 if (!(await emailLiberado(email))) {
+                    // Guarda quem tentou entrar (pro admin poder liberar). Limite de
+                    // 500 e-mails diferentes pra ninguém encher o banco de propósito.
+                    try {
+                        const jaExiste = await acessosNegadosColl.findOne({ email });
+                        if (jaExiste || (await acessosNegadosColl.countDocuments({})) < 500) {
+                            await acessosNegadosColl.updateOne(
+                                { email },
+                                { $inc: { tentativas: 1 }, $set: { ultimaEm: new Date(), nome: String(nome).slice(0, 120) }, $setOnInsert: { primeiraEm: new Date() } },
+                                { upsert: true }
+                            );
+                        }
+                    } catch (err) { console.error('Erro ao registrar tentativa negada:', err); }
                     return res.status(403).json({ success: false, codigo: 'ACESSO_RESTRITO', error: MSG_ACESSO_RESTRITO });
                 }
 
@@ -781,9 +800,11 @@ async function startServer() {
         app.get('/api/auth/me', requireAuth, async (req, res) => {
             const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) });
             if (!usuario) return res.status(401).json({ success: false, error: 'Usuário não encontrado' });
+            const eAdmin = ehAdmin(usuario.email);
             res.json({
                 success: true,
                 usuario: {
+                    sugestoesNovas: eAdmin ? await sugestoesColl.countDocuments({ status: 'nova' }) : 0,
                     nome: usuario.apelido || usuario.nome,
                     apelido: usuario.apelido || '',
                     nomeGoogle: usuario.nome,
@@ -791,7 +812,7 @@ async function startServer() {
                     foto: usuario.foto,
                     // null = nunca escolheu na conta (o app então envia o do aparelho, se houver)
                     tema: temaDoUsuario(usuario),
-                    admin: ehAdmin(usuario.email)
+                    admin: eAdmin
                 }
             });
         });
@@ -1317,6 +1338,7 @@ async function startServer() {
                     { upsert: true }
                 );
                 await carregarLiberados(true);
+                await acessosNegadosColl.deleteOne({ email });
                 res.json({ success: true });
             } catch (err) {
                 console.error('Erro ao liberar acesso:', err);
@@ -1400,6 +1422,155 @@ async function startServer() {
             } catch (err) {
                 console.error('Erro ao publicar o modelo padrão:', err);
                 res.status(500).json({ success: false, error: 'Não foi possível publicar o modelo agora.' });
+            }
+        });
+
+        // --- USO DO APP (quem acessou, quantas vezes, quais abas) ---
+        // Só contadores por pessoa e por dia; nada do conteúdo dos estudos.
+        const PAGINAS_DO_APP = ['resumo', 'edital', 'estudos', 'flashcards', 'questoes', 'leis', 'jogo',
+            'estatisticas', 'analise', 'conquistas', 'configuracoes', 'sugestoes', 'admin'];
+        const diaLocal = (d = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d); // AAAA-MM-DD
+
+        app.post('/api/uso/visita', requireAuth, async (req, res) => {
+            try {
+                const pagina = PAGINAS_DO_APP.includes(req.body?.pagina) ? req.body.pagina : null;
+                const abertura = req.body?.abertura === true;
+                if (!pagina && !abertura) return res.json({ success: true });
+                const agora = new Date();
+                const inc = {};
+                if (abertura) inc.acessos = 1;
+                if (pagina) inc[`paginas.${pagina}`] = 1;
+                await usoDiarioColl.updateOne(
+                    { userId: req.userId, dia: diaLocal(agora) },
+                    {
+                        $inc: inc,
+                        $set: { ultimoEm: agora, expiraEm: new Date(agora.getTime() + 180 * 24 * 60 * 60 * 1000) },
+                        $setOnInsert: { primeiroEm: agora }
+                    },
+                    { upsert: true }
+                );
+                res.json({ success: true });
+            } catch (err) {
+                console.error('Erro ao registrar uso:', err);
+                res.status(500).json({ success: false });
+            }
+        });
+
+        app.get('/api/admin/uso', requireAdmin, async (req, res) => {
+            try {
+                const liberados = await acessosLiberadosColl.find({}).sort({ criadoEm: 1 }).toArray();
+                const emails = [...new Set([...ADMIN_EMAILS, ...liberados.map(l => l.email)])];
+                const usuarios = await usuariosColl.find({ email: { $in: emails } }, { projection: { email: 1, nome: 1, apelido: 1 } }).toArray();
+                const ids = usuarios.map(u => String(u._id));
+                const DIA = 24 * 60 * 60 * 1000;
+                const agora = Date.now();
+                const dia30 = diaLocal(new Date(agora - 29 * DIA));
+                const dia7 = diaLocal(new Date(agora - 6 * DIA));
+
+                const usos = await usoDiarioColl.find({ userId: { $in: ids }, dia: { $gte: dia30 } }).toArray();
+                const sessoes = await sessoesColl.find({ userId: { $in: ids } }, { projection: { userId: 1, fim: 1, duracaoSegundos: 1 } })
+                    .sort({ fim: -1 }).limit(8000).toArray();
+                const tokens = new Map((await iaUsoColl.find({ mesAno: mesAnoAtual() }).toArray()).map(u => [u.userId, u.tokensTotal || 0]));
+                const ultimos = await usoDiarioColl.aggregate([
+                    { $match: { userId: { $in: ids } } },
+                    { $group: { _id: '$userId', ultimoEm: { $max: '$ultimoEm' } } }
+                ]).toArray();
+                const ultimoPorUser = new Map(ultimos.map(u => [u._id, u.ultimoEm]));
+
+                const pessoas = emails.map(email => {
+                    const u = usuarios.find(x => x.email === email);
+                    if (!u) return { email, jaEntrou: false, admin: ehAdmin(email) };
+                    const id = String(u._id);
+                    const meus = usos.filter(x => x.userId === id);
+                    const paginas = {};
+                    meus.forEach(x => Object.entries(x.paginas || {}).forEach(([p, n]) => { paginas[p] = (paginas[p] || 0) + n; }));
+                    const minhasSessoes = sessoes.filter(x => x.userId === id && (agora - new Date(x.fim).getTime()) < 30 * DIA);
+                    return {
+                        email, jaEntrou: true, admin: ehAdmin(email), nome: u.apelido || u.nome || '',
+                        acessos7: meus.filter(x => x.dia >= dia7).reduce((t, x) => t + (x.acessos || 0), 0),
+                        acessos30: meus.reduce((t, x) => t + (x.acessos || 0), 0),
+                        diasAtivos30: meus.length,
+                        ultimoAcesso: ultimoPorUser.get(id) || null,
+                        abasTop: Object.entries(paginas).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([p, n]) => ({ pagina: p, vezes: n })),
+                        sessoes30: minhasSessoes.length,
+                        segundosEstudados30: minhasSessoes.reduce((t, x) => t + (x.duracaoSegundos || 0), 0),
+                        tokensIa: tokens.get(id) || 0
+                    };
+                });
+                const negados = await acessosNegadosColl.find({}).sort({ ultimaEm: -1 }).limit(50).toArray();
+                res.json({
+                    success: true, pessoas,
+                    negados: negados.map(n => ({ email: n.email, nome: n.nome || '', tentativas: n.tentativas || 1, ultimaEm: n.ultimaEm }))
+                });
+            } catch (err) {
+                console.error('Erro ao montar o uso do app:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível carregar as estatísticas agora.' });
+            }
+        });
+
+        // Descarta uma tentativa de entrada (sem liberar).
+        app.delete('/api/admin/negados', requireAdmin, async (req, res) => {
+            const email = String(req.body?.email || '').trim().toLowerCase();
+            if (!email) return res.status(400).json({ success: false, error: 'E-mail ausente.' });
+            await acessosNegadosColl.deleteOne({ email });
+            res.json({ success: true });
+        });
+
+        // --- SUGESTÕES ---
+        const TIPOS_SUGESTAO = ['alterar', 'nova', 'remover', 'outra'];
+        const STATUS_SUGESTAO = ['nova', 'analise', 'feita', 'recusada'];
+        const LIMITE_SUGESTOES_DIA = 10;
+
+        app.post('/api/sugestoes', requireAuth, async (req, res) => {
+            try {
+                const tipo = req.body?.tipo;
+                const texto = String(req.body?.texto || '').trim();
+                if (!TIPOS_SUGESTAO.includes(tipo)) return res.status(400).json({ success: false, error: 'Escolha o tipo da sugestão.' });
+                const precisaPagina = tipo === 'alterar' || tipo === 'remover';
+                const pagina = PAGINAS_DO_APP.includes(req.body?.pagina) ? req.body.pagina : null;
+                if (precisaPagina && !pagina) return res.status(400).json({ success: false, error: 'Escolha a página.' });
+                if (texto.length < 5) return res.status(400).json({ success: false, error: 'Descreva sua sugestão (mínimo de 5 caracteres).' });
+                if (texto.length > 1000) return res.status(400).json({ success: false, error: 'A sugestão pode ter até 1.000 caracteres.' });
+
+                const desde = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                if ((await sugestoesColl.countDocuments({ userId: req.userId, criadoEm: { $gte: desde } })) >= LIMITE_SUGESTOES_DIA) {
+                    return res.status(429).json({ success: false, error: `Você já enviou ${LIMITE_SUGESTOES_DIA} sugestões hoje. Tente de novo amanhã.` });
+                }
+                const usuario = await usuariosColl.findOne({ _id: new ObjectId(req.userId) }, { projection: { email: 1, nome: 1, apelido: 1 } });
+                const agora = new Date();
+                await sugestoesColl.insertOne({
+                    userId: req.userId, email: usuario?.email || '', nome: usuario?.apelido || usuario?.nome || '',
+                    tipo, pagina: precisaPagina || tipo === 'nova' || tipo === 'outra' ? (precisaPagina ? pagina : null) : null,
+                    texto, status: 'nova', criadoEm: agora, atualizadoEm: agora
+                });
+                res.json({ success: true });
+            } catch (err) {
+                console.error('Erro ao salvar sugestão:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível enviar sua sugestão agora.' });
+            }
+        });
+
+        app.get('/api/sugestoes', requireAuth, async (req, res) => {
+            const lista = await sugestoesColl.find({ userId: req.userId }).sort({ criadoEm: -1 }).limit(50).toArray();
+            res.json({ success: true, sugestoes: lista.map(x => ({ id: String(x._id), tipo: x.tipo, pagina: x.pagina, texto: x.texto, status: x.status, criadoEm: x.criadoEm })) });
+        });
+
+        app.get('/api/admin/sugestoes', requireAdmin, async (req, res) => {
+            const lista = await sugestoesColl.find({}).sort({ criadoEm: -1 }).limit(200).toArray();
+            res.json({
+                success: true,
+                sugestoes: lista.map(x => ({ id: String(x._id), email: x.email, nome: x.nome, tipo: x.tipo, pagina: x.pagina, texto: x.texto, status: x.status, criadoEm: x.criadoEm }))
+            });
+        });
+
+        app.put('/api/admin/sugestoes/:id', requireAdmin, async (req, res) => {
+            try {
+                const status = req.body?.status;
+                if (!STATUS_SUGESTAO.includes(status)) return res.status(400).json({ success: false, error: 'Status inválido.' });
+                await sugestoesColl.updateOne({ _id: new ObjectId(req.params.id) }, { $set: { status, atualizadoEm: new Date() } });
+                res.json({ success: true, sugestoesNovas: await sugestoesColl.countDocuments({ status: 'nova' }) });
+            } catch (err) {
+                res.status(400).json({ success: false, error: 'Sugestão não encontrada.' });
             }
         });
 
@@ -3252,27 +3423,23 @@ async function startServer() {
         // Exporta um baralho (e, se ele tiver subbaralhos na árvore, cada um
         // deles também — nome incluído, sem duplicar os que não são desse
         // baralho) como um arquivo pra baixar.
-        app.get('/api/flashcards/baralhos/:id/exportar', requireAuth, async (req, res) => {
-            const baralho = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
-            if (!baralho) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
-
-            // Inclui o próprio baralho + todo mundo que tem ele no caminho
-            // (subbaralhos), pra exportar a árvore inteira de uma vez.
-            const caminhoCompletoBase = [...(baralho.caminho || []), baralho.nome];
-            const todos = await flashcardsBaralhosColl.find({ userId: req.userId }).toArray();
+        // Monta o arquivo de exportação de tudo que está DENTRO de um caminho
+        // (o próprio baralho, se existir nesse nível, + todos os subbaralhos).
+        // Serve tanto pra um baralho quanto pra uma "pasta" que só existe como
+        // caminho (ex.: ENAM › Direito Administrativo). Caminho vazio = tudo.
+        async function montarExportacaoBaralhos(userId, segmentosBase) {
+            const todos = await flashcardsBaralhosColl.find({ userId }).toArray();
             const relacionados = todos.filter(b => {
                 const caminho = [...(b.caminho || []), b.nome];
-                if (String(b._id) === String(baralho._id)) return true;
-                return caminhoCompletoBase.every((parte, i) => caminho[i] === parte) && caminho.length > caminhoCompletoBase.length;
+                return caminho.length >= segmentosBase.length && segmentosBase.every((parte, i) => caminho[i] === parte);
             });
 
             const baralhosExportados = [];
             for (const b of relacionados) {
-                const cartoes = await flashcardsCartoesColl.find({ baralhoId: String(b._id), userId: req.userId }).sort({ criadoEm: 1 }).toArray();
-                // Caminho relativo ao baralho exportado (raiz do arquivo vira o
-                // próprio baralho escolhido), pra quem importar não herdar a
-                // organização de pastas de quem exportou.
-                const caminhoRelativo = [...(b.caminho || []), b.nome].slice(caminhoCompletoBase.length - 1);
+                const cartoes = await flashcardsCartoesColl.find({ baralhoId: String(b._id), userId }).sort({ criadoEm: 1 }).toArray();
+                // Caminho relativo: a raiz do arquivo vira o próprio nível escolhido,
+                // pra quem importar não herdar a organização de pastas de quem exportou.
+                const caminhoRelativo = [...(b.caminho || []), b.nome].slice(Math.max(segmentosBase.length - 1, 0));
                 baralhosExportados.push({
                     caminho: caminhoRelativo.slice(0, -1),
                     nome: caminhoRelativo[caminhoRelativo.length - 1],
@@ -3283,9 +3450,29 @@ async function startServer() {
                     }))
                 });
             }
+            return { formato: FORMATO_BARALHO_EXPORTADO, baralhos: baralhosExportados };
+        }
 
-            const dados = { formato: FORMATO_BARALHO_EXPORTADO, baralhos: baralhosExportados };
+        // Exporta um baralho (e seus subbaralhos) como arquivo pra baixar.
+        app.get('/api/flashcards/baralhos/:id/exportar', requireAuth, async (req, res) => {
+            const baralho = await flashcardsBaralhosColl.findOne({ _id: new ObjectId(req.params.id), userId: req.userId });
+            if (!baralho) return res.status(404).json({ success: false, error: 'Baralho não encontrado' });
+
+            const dados = await montarExportacaoBaralhos(req.userId, [...(baralho.caminho || []), baralho.nome]);
             const nomeArquivo = `baralho-${baralho.nome.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`;
+            res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo}"`);
+            res.json(dados);
+        });
+
+        // Exporta uma PASTA da árvore (nó que pode nem ter cartões próprios) ou,
+        // sem "caminho", todos os baralhos da conta. caminho = "A::B::C".
+        app.get('/api/flashcards/exportar-pasta', requireAuth, async (req, res) => {
+            const bruto = typeof req.query.caminho === 'string' ? req.query.caminho : '';
+            const segmentos = bruto.split('::').map(p => p.trim()).filter(Boolean).slice(0, 12);
+            const dados = await montarExportacaoBaralhos(req.userId, segmentos);
+            if (dados.baralhos.length === 0) return res.status(404).json({ success: false, error: 'Nenhum baralho encontrado nessa pasta.' });
+            const base = segmentos.length ? segmentos[segmentos.length - 1] : 'todos-os-baralhos';
+            const nomeArquivo = `baralho-${base.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`;
             res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivo}"`);
             res.json(dados);
         });
