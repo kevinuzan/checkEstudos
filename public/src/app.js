@@ -5617,7 +5617,7 @@ function renderizarNodoArvoreBaralhos(nodo, caminhoAtual, profundidade) {
                             : ''}
                         <button type="button" class="baralho-arvore-exportar" onclick="event.stopPropagation(); exportarPasta('${chaveEscapada}')" title="Exportar &quot;${nomeEscapado}&quot; (arquivo .json)">⬇</button>
                         <button type="button" class="baralho-arvore-add-sub" onclick="event.stopPropagation(); abrirModalNovoBaralho('${chaveEscapada}')" title="Novo baralho dentro de &quot;${nomeEscapado}&quot;">+</button>
-                        ${ehBaralhoDeVerdade ? `<button type="button" class="baralho-arvore-excluir" onclick="event.stopPropagation(); excluirBaralho('${b._id}')" title="Excluir baralho">🗑️</button>` : ''}
+                        <button type="button" class="baralho-arvore-excluir" onclick="event.stopPropagation(); excluirPasta('${chaveEscapada}')" title="Excluir &quot;${nomeEscapado}&quot; e tudo que está dentro">🗑️</button>
                     </span>
                 </div>
                 ${expandido ? renderizarNodoArvoreBaralhos(filho, caminhoFilho, profundidade + 1) : ''}
@@ -5817,6 +5817,27 @@ async function excluirBaralho(id) {
         await carregarFlashcards();
     } catch (err) {
         console.error('Erro ao excluir baralho:', err);
+    }
+}
+
+// Exclui uma pasta/baralho da árvore com tudo que há dentro (subbaralhos e cartões).
+async function excluirPasta(chave) {
+    const nome = chave.split('::').pop();
+    const baralhos = baralhosDaPasta(chave);
+    const totalCartoes = baralhos.reduce((t, b) => t + (b.totalCartoes || 0), 0);
+    const resumo = baralhos.length > 1
+        ? `${baralhos.length} baralhos e ${totalCartoes} cartões`
+        : `${totalCartoes} cartão(ões)`;
+    if (!confirm(`Excluir "${nome}" e TUDO que está dentro (${resumo})?\n\nEssa ação não pode ser desfeita. Se quiser guardar uma cópia, exporte antes (botão ⬇).`)) return;
+    try {
+        const res = await fetch(`/api/flashcards/pasta?caminho=${encodeURIComponent(chave)}`, { method: 'DELETE' });
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || 'Falha');
+        flashcardsPastasExpandidas.delete(chave);
+        await carregarFlashcards();
+    } catch (err) {
+        console.error('Erro ao excluir pasta:', err);
+        alert('Não foi possível excluir agora.');
     }
 }
 
@@ -6622,6 +6643,10 @@ async function importarArquivoBaralho(event) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ dados, pastaDestino })
         });
+        if (res.status === 413) {
+            alert('O arquivo é grande demais para importar de uma vez. Exporte por pastas menores (botão ⬇ de cada matéria) e importe uma a uma.');
+            return;
+        }
         const resultado = await res.json();
 
         if (!resultado.success) {

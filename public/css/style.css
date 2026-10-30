@@ -3214,7 +3214,7 @@ input[type="checkbox"] {
     justify-content: flex-end;
     gap: 4px;
     flex-shrink: 0;
-    width: 66px;
+    width: 120px; /* ▶ ⬇ + 🗑️ sem invadir as colunas de contagem */
 }
 
 .baralho-arvore-excluir,

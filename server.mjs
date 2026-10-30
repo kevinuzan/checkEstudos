@@ -207,6 +207,11 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req,
     if (!tratarWebhookStripe) return res.status(503).send('Servidor iniciando');
     return tratarWebhookStripe(req, res);
 });
+// A importação de baralho manda o arquivo inteiro no corpo da requisição. O limite
+// padrão do express (100kb) derrubava arquivos de verdade (ex.: ENAM com ~1.000
+// cartões = ~1,8MB) com erro 413. Esta rota vem ANTES do parser global, que
+// então pula a requisição já lida. As demais rotas seguem com o limite padrão.
+app.use('/api/flashcards/baralhos/importar-json', express.json({ limit: '25mb' }));
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
@@ -3090,6 +3095,25 @@ async function startServer() {
             await flashcardsCartoesColl.deleteMany({ baralhoId: String(baralho._id), userId: req.userId });
             await flashcardsBaralhosColl.deleteOne({ _id: baralho._id });
             res.json({ success: true });
+        });
+
+        // Exclui uma pasta inteira da árvore: o baralho daquele nível (se existir)
+        // + todos os subbaralhos e cartões. caminho = "A::B" e NUNCA vazio
+        // (apagar tudo é papel do "Limpar conta").
+        app.delete('/api/flashcards/pasta', requireAuth, async (req, res) => {
+            const bruto = typeof req.query.caminho === 'string' ? req.query.caminho : '';
+            const segmentos = bruto.split('::').map(p => p.trim()).filter(Boolean).slice(0, 12);
+            if (segmentos.length === 0) return res.status(400).json({ success: false, error: 'Escolha uma pasta para excluir.' });
+
+            const todos = await flashcardsBaralhosColl.find({ userId: req.userId }).toArray();
+            const alvo = todos.filter(b => {
+                const caminho = [...(b.caminho || []), b.nome];
+                return caminho.length >= segmentos.length && segmentos.every((p, i) => caminho[i] === p);
+            });
+            const ids = alvo.map(b => String(b._id));
+            const cartoes = ids.length ? await flashcardsCartoesColl.deleteMany({ baralhoId: { $in: ids }, userId: req.userId }) : { deletedCount: 0 };
+            if (ids.length) await flashcardsBaralhosColl.deleteMany({ _id: { $in: alvo.map(b => b._id) }, userId: req.userId });
+            res.json({ success: true, baralhos: alvo.length, cartoes: cartoes.deletedCount || 0 });
         });
 
         // Importa um arquivo .apkg do Anki como um novo baralho.
