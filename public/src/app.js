@@ -2371,6 +2371,7 @@ async function leiAbrir(id) {
         el.innerHTML = `<p class="questoes-vazio">${escaparHtml(err.message)}</p><button type="button" class="btn-secundario" onclick="leiVoltar()">← Voltar</button>`;
         return;
     }
+    if (leiAberta !== id) { leiBlocosAbertos = new Set(); leiAnotAbertas = new Set(); }   // ids de uma lei não valem na outra
     leiAberta = id;
     leiBusca = '';
     leiIndexar();
@@ -2383,17 +2384,44 @@ function leiVoltar() {
 }
 
 // Índices: blocos (Títulos/ADCT) e artigos com seus filhos.
+// Parte e Livro não viram bloco: são só o "contexto" mostrado acima dos Títulos (no Código Civil,
+// Parte Geral > Livro I > Título I). Título com muitos artigos (CLT, CPC) é dividido por Capítulo,
+// senão abrir um bloco montaria centenas de artigos de uma vez no celular.
+const LEI_BLOCO_MAX_ARTS = 120;
 function leiIndexar() {
     const blocos = [];
     const arts = new Map();          // artId -> itens do artigo (caput, §, incisos...)
-    let bloco = null;
-    for (const it of leiDados.itens) {
-        if (it.k === 'est' && ['parte', 'livro', 'titulo', 'adct'].includes(it.tipo)) {
-            bloco = { id: it.id, rot: it.rot, nome: it.nome, itens: [], artIds: [] };
-            blocos.push(bloco);
-            continue;
+    const itens = leiDados.itens;
+    const contagem = new Map();      // título -> nº de artigos
+    let tAtual = null;
+    for (const it of itens) {
+        if (it.k === 'est' && (it.tipo === 'titulo' || it.tipo === 'adct')) tAtual = it.id;
+        else if (it.k === 'est' && (it.tipo === 'parte' || it.tipo === 'livro')) tAtual = null;
+        else if (it.k === 'art' && tAtual) contagem.set(tAtual, (contagem.get(tAtual) || 0) + 1);
+    }
+    const rotulo = (e) => e ? e.rot + (e.nome ? ' — ' + e.nome : '') : '';
+    let parte = null, livro = null, titulo = null, bloco = null;
+    const ctxAtual = () => [rotulo(parte), rotulo(livro)].filter(Boolean).join(' · ');
+    const novoBloco = (id, rot, nome, ctx) => { bloco = { id, rot, nome, ctx, itens: [], artIds: [] }; blocos.push(bloco); };
+    for (const it of itens) {
+        if (it.k === 'est') {
+            if (it.tipo === 'parte') { parte = it; livro = null; titulo = null; bloco = null; continue; }
+            if (it.tipo === 'livro') { livro = it; titulo = null; bloco = null; continue; }
+            if (it.tipo === 'titulo' || it.tipo === 'adct') {
+                titulo = { it, grande: (contagem.get(it.id) || 0) > LEI_BLOCO_MAX_ARTS };
+                novoBloco(it.id, it.rot, it.nome, ctxAtual());
+                continue;
+            }
+            if (it.tipo === 'capitulo' && titulo && titulo.grande) {
+                novoBloco(it.id, it.rot, it.nome, [ctxAtual(), rotulo(titulo.it)].filter(Boolean).join(' · '));
+                continue;
+            }
         }
-        if (!bloco) { bloco = { id: 'bloco-inicial', rot: 'Texto', nome: '', itens: [], artIds: [] }; blocos.push(bloco); }
+        if (!bloco) {
+            // Artigos soltos (sem Título): usam o Livro/Parte como cabeçalho; na CF não ocorre.
+            const e = livro || parte;
+            novoBloco(e ? e.id : 'bloco-inicial', e ? e.rot : 'Texto', e ? e.nome : '', livro && parte ? rotulo(parte) : '');
+        }
         bloco.itens.push(it);
         if (it.k === 'art') {
             bloco.artIds.push(it.id);
@@ -2402,9 +2430,10 @@ function leiIndexar() {
             arts.get(it.art).push(it);
         }
     }
+    const uteis = blocos.filter(b => b.itens.length);
     const blocoDoArt = new Map();
-    blocos.forEach(b => b.artIds.forEach(a => blocoDoArt.set(a, b.id)));
-    leiIdx = { blocos, arts, blocoDoArt };
+    uteis.forEach(b => b.artIds.forEach(a => blocoDoArt.set(a, b.id)));
+    leiIdx = { blocos: uteis, arts, blocoDoArt };
 }
 
 function leiGrifosPorDisp() {
@@ -2482,14 +2511,20 @@ function leiRenderLeitura() {
             : '<p class="questoes-vazio">Você ainda não grifou nem anotou nada nesta lei. Selecione um trecho do texto para grifar.</p>';
         return;
     }
-    area.innerHTML = leiIdx.blocos.map(b => leiHtmlBloco(b)).join('');
+    let ultimoCtx = '';
+    area.innerHTML = leiIdx.blocos.map(b => {
+        const cab = (b.ctx && b.ctx !== ultimoCtx) ? `<div class="lei-contexto">${escaparHtml(b.ctx)}</div>` : '';
+        ultimoCtx = b.ctx || '';
+        return cab + leiHtmlBloco(b);
+    }).join('');
 }
 
 function leiBuscarArtigos(q) {
-    const m = q.match(/^(?:art(?:igo)?\.?\s*)?(\d+)\s*[º°o]?\s*(?:-?\s*([a-z]))?\s*$/i);
+    // Aceita "art. 1.045", "1045", "121-A", "359 M A" (CP).
+    const m = q.match(/^(?:art(?:igo)?\.?\s*)?(\d+(?:\.\d{3})*)\s*[º°o]?\s*(?:-?\s*([a-z](?:[\s-]?[a-z])?))?\s*$/i);
     const ids = [];
     if (m) {
-        const base = `art-${m[1]}${m[2] ? '-' + m[2].toUpperCase() : ''}`;
+        const base = `art-${m[1].replace(/\./g, '')}${m[2] ? '-' + m[2].toUpperCase().replace(/[\s-]+/g, '-') : ''}`;
         if (leiIdx.arts.has(base)) ids.push(base);
         if (leiIdx.arts.has('adct-' + base)) ids.push('adct-' + base);
         if (ids.length) return ids;
@@ -2586,6 +2621,7 @@ function leiHtmlArtigo(artId) {
     return `
         <div class="lei-art" id="lei-art-${escaparHtml(artId)}" data-art="${escaparHtml(artId)}">
             ${aviso}
+            ${caput.rubrica ? `<div class="lei-rubrica">${escaparHtml(caput.rubrica)}</div>` : ''}
             ${corpo}
             ${orfaos}
             ${painelNotas}

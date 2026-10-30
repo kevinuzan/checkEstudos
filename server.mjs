@@ -22,6 +22,7 @@ import { decompress as decompressZstd } from 'fzstd';
 import pdfParse from 'pdf-parse';
 import Stripe from 'stripe';
 import { createHash } from 'crypto';
+import zlib from 'zlib';
 import { LEIS, parseLeiHtml, validarLei, compararLeis } from './leisParser.mjs';
 
 // --- CONFIGURAÇÕES BÁSICAS ---
@@ -3476,7 +3477,7 @@ async function startServer() {
                 try {
                     const existente = await leisTextoColl.findOne({ _id: leiId }, { projection: { verificadoEm: 1 } });
                     if (!existente) {
-                        const arquivo = path.join(__dirname, 'ferramentas', 'dados', `${leiId === 'cf' ? 'constituicao' : leiId}.htm`);
+                        const arquivo = path.join(__dirname, 'ferramentas', 'dados', LEIS[leiId].arquivo);
                         if (fs.existsSync(arquivo)) {
                             try {
                                 const r = await atualizarLei(leiId, decodificarHtmlLei(fs.readFileSync(arquivo)));
@@ -3496,6 +3497,7 @@ async function startServer() {
         inicializarLeis();
         setInterval(inicializarLeis, 6 * 60 * 60 * 1000).unref();
 
+        const leisGzCache = new Map();   // leiId -> { chave, json, gz }
         const leiValida = (id) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(LEIS, id);
         const dispDoArtigo = (dispId) => String(dispId).split('.')[0];
 
@@ -3519,11 +3521,26 @@ async function startServer() {
             if (!d) return res.status(503).json({ success: false, error: 'O texto desta lei ainda está sendo carregado. Tente de novo em instantes.', detalhe: leisUltimoErro.get(req.params.lei) || null });
             // Revalida em segundo plano (sem segurar a resposta).
             if (!d.verificadoEm || Date.now() - d.verificadoEm.getTime() > LEIS_REVALIDAR_MS) atualizarLei(req.params.lei);
-            res.json({
-                success: true,
-                lei: { id: d._id, nome: d.nome, sigla: d.sigla, atualizadoEm: d.atualizadoEm, verificadoEm: d.verificadoEm },
-                itens: d.itens.map(({ hash, ...resto }) => resto)
-            });
+            // O texto das leis grandes (CLT, CC) passa de 1 MB em JSON: vai comprimido, e a compressão
+            // fica em memória até o texto mudar (senão cada abertura recomprimiria tudo).
+            const chave = `${d.atualizadoEm && d.atualizadoEm.getTime()}|${d.verificadoEm && d.verificadoEm.getTime()}`;
+            let cache = leisGzCache.get(d._id);
+            if (!cache || cache.chave !== chave) {
+                const json = JSON.stringify({
+                    success: true,
+                    lei: { id: d._id, nome: d.nome, sigla: d.sigla, atualizadoEm: d.atualizadoEm, verificadoEm: d.verificadoEm },
+                    itens: d.itens.map(({ hash, ...resto }) => resto)
+                });
+                cache = { chave, json, gz: zlib.gzipSync(json) };
+                leisGzCache.set(d._id, cache);
+            }
+            res.set('Content-Type', 'application/json; charset=utf-8');
+            res.set('Vary', 'Accept-Encoding');
+            if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+                res.set('Content-Encoding', 'gzip');
+                return res.send(cache.gz);
+            }
+            res.send(cache.json);
         });
 
         app.get('/api/leis/:lei/mudancas', requireAuth, async (req, res) => {

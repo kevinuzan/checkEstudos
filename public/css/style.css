@@ -4863,3 +4863,8 @@ input[type="checkbox"] {
 .lei-anot-toggle { background: var(--surface-muted); color: var(--text); padding: 6px 12px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; }
 .lei-anot-lista { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
 .lei-anot-lista .lei-nota { margin-top: 0; }
+
+/* Leis: contexto (Parte/Livro), rubrica do artigo (Código Penal) e pena */
+.lei-contexto { margin: 18px 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--text-muted); }
+.lei-rubrica { font-size: 13px; font-weight: 600; font-style: italic; color: var(--text-muted); margin-bottom: 2px; }
+.lei-k-pena { border-left: 3px solid var(--border); margin-left: 4px; }
