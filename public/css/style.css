@@ -4846,7 +4846,7 @@ input[type="checkbox"] {
 .lei-nivel-4 { padding-left: 56px; }
 .lei-revogado .lei-txt { text-decoration: line-through; color: var(--text-muted); }
 .lei-notas-leg { color: var(--text-faint); font-size: 12px; font-style: italic; }
-.lei-grifo { border-radius: 3px; padding: 0 1px; cursor: pointer; color: inherit; }
+.lei-grifo { border-radius: 3px; padding: 0 1px; cursor: pointer; color: inherit; background: transparent; }   /* <mark> vem amarelo do navegador: só a cor escolhida (lei-f-N) pode dar fundo */
 .lei-f-1 { background: var(--grifo-1); } .lei-f-2 { background: var(--grifo-2); } .lei-f-3 { background: var(--grifo-3); } .lei-f-4 { background: var(--grifo-4); }
 .lei-f-5 { background: var(--grifo-5); } .lei-f-6 { background: var(--grifo-6); } .lei-f-7 { background: var(--grifo-7); } .lei-f-8 { background: var(--grifo-8); }
 .lei-grifo[class*="lei-f-"] { color: var(--grifo-texto); }

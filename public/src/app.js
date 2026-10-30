@@ -2337,6 +2337,14 @@ async function carregarLeis() {
         document.addEventListener('contextmenu', (e) => {
             if (viewAtual === 'leis' && leiPrefs.semMenuNativo !== false && e.target && e.target.closest && e.target.closest('#lei-leitura')) e.preventDefault();
         });
+        // Tocou fora da barra / do balão / da faixa de ferramentas / de um grifo: fecha o editor (senão ficava para sempre).
+        // Não fecha enquanto a pessoa escreve um comentário ou personaliza a barra.
+        document.addEventListener('pointerdown', (e) => {
+            if (viewAtual !== 'leis' || !leiBarraVisivel() || leiNotaModo || leiBarraModo === 'config') return;
+            const t = e.target;
+            if (t && t.closest && t.closest('#lei-barra, #lei-balao, #lei-fita, .lei-grifo')) return;
+            leiEsconderBarra();
+        });
         leiOuvindoSelecao = true;
     }
     el.innerHTML = '<p class="questoes-vazio">Carregando leis...</p>';
