@@ -2301,7 +2301,12 @@ let leiDados = null;                  // { lei, itens }
 let leiIdx = null;                    // índices derivados dos itens
 let leiMeus = { grifos: [], notas: [], alteracoes: {} };
 let leiLeituras = new Map();          // blocoId -> { lidoEm, vezes } (capítulos marcados como lidos)
-let leiBlocosAbertos = new Set();
+let leiBlocosAbertos = new Set();      // (legado: a leitura agora é por trecho; fica só para não quebrar quem ainda cita)
+let leiTrechoAberto = null;           // id do trecho em leitura (null = lista de trechos da lei)
+let leiParei = null;                  // { artId, em }: onde a pessoa parou nesta lei
+let leiResumoLidos = {};              // lei -> quantos trechos lidos (tela inicial)
+let leiMateriasAbertas = new Set(['Direito Constitucional']);
+let leiTotaisBuscando = false;
 let leiAnotAbertas = new Set();       // artigos com o painel "Anotações" expandido
 let leiBusca = '';
 let leiPrefs = { revogados: true, notasLeg: false, soMeus: false, fita: true, rapida: null, semMenuNativo: true, fonte: 15 };
@@ -2340,29 +2345,90 @@ async function carregarLeis() {
         const dados = await res.json();
         if (!res.ok || !dados.success) throw new Error(dados.error || 'Falha');
         leisLista = dados.leis;
+        try {
+            const rr = await fetch('/api/leis/leituras/resumo');
+            const dr = await rr.json();
+            leiResumoLidos = (rr.ok && dr.success && dr.lidos) || {};
+        } catch (err) { leiResumoLidos = {}; }
     } catch (err) {
         el.innerHTML = '<p class="questoes-vazio">Não foi possível carregar as leis agora. Tente de novo em instantes.</p>';
         return;
     }
     if (leiAberta) return leiAbrir(leiAberta);
     renderizarLeisInicio();
+    leiCalcularTotaisFaltantes();
+}
+
+// Leis agrupadas por matéria (acordeão), cada uma com a barrinha de quanto já foi lido.
+const LEI_MATERIAS = [
+    { nome: 'Direito Constitucional', ids: ['cf'] },
+    { nome: 'Direito Penal', ids: ['cp'] },
+    { nome: 'Direito Civil', ids: ['cc'] },
+    { nome: 'Direito Processual Civil', ids: ['cpc'] },
+    { nome: 'Direito do Trabalho', ids: ['clt'] }
+];
+
+// Total de trechos de cada lei: só dá para saber depois de dividir o texto, então guarda no aparelho
+// (vale enquanto o nº de artigos da lei for o mesmo) e calcula uma vez em segundo plano.
+function leiLerTotais() { try { return JSON.parse(localStorage.getItem('leis_totais') || '{}') || {}; } catch (err) { return {}; } }
+function leiSalvarTotal(id, chave, n) {
+    try { const t = leiLerTotais(); t[id] = { k: chave, n }; localStorage.setItem('leis_totais', JSON.stringify(t)); } catch (err) { /* sem armazenamento: só não guarda */ }
+}
+function leiTotalDe(l) { const t = leiLerTotais()[l.id]; return t && t.k === l.totalArtigos ? t.n : 0; }
+
+async function leiCalcularTotaisFaltantes() {
+    if (leiTotaisBuscando) return;
+    const faltam = leisLista.filter(l => l.disponivel && !leiTotalDe(l));
+    if (!faltam.length) return;
+    leiTotaisBuscando = true;
+    try {
+        for (const l of faltam) {
+            try {
+                const r = await fetch(`/api/leis/${encodeURIComponent(l.id)}`);
+                const d = await r.json();
+                if (r.ok && d.success) leiSalvarTotal(l.id, l.totalArtigos, leiCalcTrechos(d.itens).trechos.length);
+            } catch (err) { /* tenta de novo na próxima visita */ }
+            if (viewAtual !== 'leis' || leiAberta) break;
+            renderizarLeisInicio();
+        }
+    } finally { leiTotaisBuscando = false; }
+}
+
+function leiAlternarMateria(nome) {
+    if (leiMateriasAbertas.has(nome)) leiMateriasAbertas.delete(nome); else leiMateriasAbertas.add(nome);
+    renderizarLeisInicio();
+}
+
+function leiHtmlLinhaLei(l) {
+    const total = leiTotalDe(l);
+    const lidos = Math.min(Number(leiResumoLidos[l.id]) || 0, total || Infinity);
+    const pct = total ? Math.round(100 * lidos / total) : 0;
+    const prog = total
+        ? `<div class="lei-mini-prog"><div class="lei-mini-barra" style="width:${pct}%"></div></div><div class="lei-lei-sub">${lidos} de ${total} trechos lidos · ${pct}%</div>`
+        : `<div class="lei-lei-sub">${l.disponivel ? `${Number(l.totalArtigos)} artigos${lidos ? ` · ${lidos} trecho(s) lido(s)` : ''}` : 'Texto ainda sendo carregado — tente de novo em instantes.'}</div>`;
+    return `<button type="button" class="lei-lei-linha" data-lei="${escaparHtml(l.id)}" onclick="leiAbrir(this.dataset.lei)" ${l.disponivel ? '' : 'disabled'}>
+        <span class="lei-lei-nome">${escaparHtml(l.nome)}</span>${prog}<span class="lei-lei-seta">›</span></button>`;
 }
 
 function renderizarLeisInicio() {
     const el = document.getElementById('leis-conteudo');
     leiEsconderBarra();
+    const usadas = new Set();
+    const grupos = LEI_MATERIAS.map(m => ({ nome: m.nome, leis: m.ids.map(id => leisLista.find(l => l.id === id)).filter(Boolean) }));
+    grupos.forEach(g => g.leis.forEach(l => usadas.add(l.id)));
+    const outras = leisLista.filter(l => !usadas.has(l.id));
+    if (outras.length) grupos.push({ nome: 'Outras leis', leis: outras });
     el.innerHTML = `
         <section class="painel-bloco">
-            <div class="painel-bloco-header"><h2>📖 Leis</h2></div>
-            <p class="questoes-topico-sub">Leia o texto atualizado, grife como num marca-texto e anote por artigo.</p>
-            ${leisLista.map(l => `
-                <div class="questoes-topico-card">
-                    <div class="questoes-topico-titulo">${escaparHtml(l.nome)}</div>
-                    <div class="questoes-topico-sub">${l.disponivel
-                        ? `${l.totalArtigos} artigos · conferida em ${leiFormatarData(l.verificadoEm)}`
-                        : `Texto ainda sendo carregado — tente de novo em instantes.${l.erro ? ' (' + escaparHtml(l.erro) + ')' : ''}`}</div>
-                    <button type="button" data-lei="${escaparHtml(l.id)}" onclick="leiAbrir(this.dataset.lei)" ${l.disponivel ? '' : 'disabled'}>Abrir</button>
-                </div>`).join('')}
+            <div class="painel-bloco-header"><h2>📖 Legislações disponíveis</h2></div>
+            <p class="questoes-topico-sub">Leia o texto atualizado por trechos, grife como num marca-texto, anote e marque o que já leu.</p>
+            ${grupos.filter(g => g.leis.length).map(g => {
+                const aberta = leiMateriasAbertas.has(g.nome);
+                return `<div class="lei-materia${aberta ? ' aberta' : ''}">
+                    <button type="button" class="lei-materia-cab" data-materia="${escaparHtml(g.nome)}" aria-expanded="${aberta}" onclick="leiAlternarMateria(this.dataset.materia)"><span>${escaparHtml(g.nome)}</span><span class="lei-seta">${aberta ? '▴' : '▾'}</span></button>
+                    ${aberta ? `<div class="lei-materia-corpo">${g.leis.map(leiHtmlLinhaLei).join('')}</div>` : ''}
+                </div>`;
+            }).join('')}
         </section>`;
 }
 
@@ -2382,14 +2448,17 @@ async function leiAbrir(id) {
         leiDados = d1;
         leiMeus = (r2.ok && d2.success) ? d2 : { grifos: [], notas: [], alteracoes: {} };
         leiLeituras = new Map(((r2.ok && d2.success && d2.leituras) || []).map(l => [l.blocoId, l]));
+        leiParei = (r2.ok && d2.success && d2.parei) || null;
     } catch (err) {
         el.innerHTML = `<p class="questoes-vazio">${escaparHtml(err.message)}</p><button type="button" class="btn-secundario" onclick="leiVoltar()">← Voltar</button>`;
         return;
     }
-    if (leiAberta !== id) { leiBlocosAbertos = new Set(); leiAnotAbertas = new Set(); leiResetEdicao(); }   // ids de uma lei não valem na outra
+    if (leiAberta !== id) { leiBlocosAbertos = new Set(); leiTrechoAberto = null; leiAnotAbertas = new Set(); leiResetEdicao(); }   // ids de uma lei não valem na outra
     leiAberta = id;
     leiBusca = '';
     leiIndexar();
+    const meta = leisLista.find(x => x.id === id);
+    if (meta) leiSalvarTotal(id, meta.totalArtigos, leiIdx.blocos.length);
     renderizarLei();
 }
 
@@ -2398,17 +2467,49 @@ function leiResetEdicao() {
 }
 
 function leiVoltar() {
-    leiAberta = null; leiDados = null; leiIdx = null;
+    leiAberta = null; leiDados = null; leiIdx = null; leiTrechoAberto = null; leiParei = null;
     leiResetEdicao();
     renderizarLeisInicio();
+    // atualiza os "X de Y lidos" com o que foi marcado enquanto a lei estava aberta
+    fetch('/api/leis/leituras/resumo').then(r => r.json()).then(d => { if (d.success && !leiAberta && viewAtual === 'leis') { leiResumoLidos = d.lidos || {}; renderizarLeisInicio(); } }).catch(() => {});
+    leiCalcularTotaisFaltantes();
 }
 
-// Índices: blocos (Capítulos; Título/ADCT quando não há Capítulo) e artigos com seus filhos.
-// Parte, Livro e Título aparecem só como cabeçalho (contexto) acima dos Capítulos.
-function leiIndexar() {
+// Índices: TRECHOS (a unidade de leitura) e artigos com seus filhos.
+// 1º o texto é separado por Capítulo (Parte/Livro/Título viram só cabeçalho acima); 2º cada capítulo é quebrado
+// em trechos curtos de até 5 artigos / ~7 mil letras (artigo gigante, como o art. 5º, fica sozinho) — e também
+// numa nova Seção, quando o trecho já tem 3 artigos. O 1º trecho do capítulo mantém o id do capítulo (o "lido"
+// marcado antes continua valendo); os seguintes ganham "~2", "~3"...
+function leiRotuloDe(it) {
+    const m = it && it.texto && it.texto.match(/^Art\.?\s*[\d.]+\s*[º°o]?(?:-[A-Z]+)?/);
+    return m ? m[0].replace(/^Art\.?\s*/, '').replace(/\s+/g, ' ').trim().replace(/\.$/, '') : '';
+}
+
+function leiDividirCapitulo(cap) {
+    const grupos = [];
+    let pend = [], atual = null;
+    for (const it of cap.itens) {
+        if (it.k === 'art') { atual = { est: pend, itens: [it], art: it.id, chars: (it.texto || '').length }; pend = []; grupos.push(atual); }
+        else if (it.k === 'est' || !atual) pend.push(it);
+        else { atual.itens.push(it); atual.chars += (it.texto || '').length; }
+    }
+    if (pend.length) { if (atual) atual.itens.push(...pend); else grupos.push({ est: pend, itens: [], art: null, chars: 0 }); }
+    const partes = [];
+    let cur = null;
+    for (const g of grupos) {
+        const quebra = cur && (cur.arts >= 5 || cur.chars + g.chars > 7000 || (g.est.length && cur.arts >= 3));
+        if (!cur || quebra) { cur = { itens: [], artIds: [], arts: 0, chars: 0 }; partes.push(cur); }
+        cur.itens.push(...g.est, ...g.itens);
+        if (g.art) { cur.artIds.push(g.art); cur.arts++; }
+        cur.chars += g.chars;
+    }
+    return partes.map((p, k) => ({ id: k === 0 ? cap.id : `${cap.id}~${k + 1}`, capId: cap.id, rot: cap.rot, nome: cap.nome, ctx: cap.ctx, itens: p.itens, artIds: p.artIds, parte: k + 1, partes: partes.length }));
+}
+
+// Pura (só depende dos itens): também serve para contar os trechos de uma lei sem abri-la.
+function leiCalcTrechos(itens) {
     const blocos = [];
     const arts = new Map();          // artId -> itens do artigo (caput, §, incisos...)
-    const itens = leiDados.itens;
     const rotulo = (e) => e ? e.rot + (e.nome ? ' — ' + e.nome : '') : '';
     let parte = null, livro = null, titulo = null, bloco = null;
     const ctxAtual = () => [rotulo(parte), rotulo(livro)].filter(Boolean).join(' · ');
@@ -2425,7 +2526,7 @@ function leiIndexar() {
                 continue;
             }
             if (it.tipo === 'capitulo') {
-                // A lista é separada por Capítulo; Parte/Livro/Título ficam como cabeçalho acima dele.
+                // Parte/Livro/Título ficam como cabeçalho acima do Capítulo.
                 novoBloco(it.id, it.rot, it.nome, [ctxAtual(), rotulo(titulo)].filter(Boolean).join(' · '));
                 continue;
             }
@@ -2443,10 +2544,24 @@ function leiIndexar() {
             arts.get(it.art).push(it);
         }
     }
-    const uteis = blocos.filter(b => b.itens.length);
+    const trechos = [];
+    for (const cap of blocos.filter(b => b.itens.length)) trechos.push(...leiDividirCapitulo(cap));
+    const largura = Math.max(2, String(trechos.length).length);
+    trechos.forEach((t, i) => {
+        t.n = i + 1;
+        t.num = String(i + 1).padStart(largura, '0');
+        const a = leiRotuloDe(arts.get(t.artIds[0]) && arts.get(t.artIds[0])[0]);
+        const z = leiRotuloDe(arts.get(t.artIds[t.artIds.length - 1]) && arts.get(t.artIds[t.artIds.length - 1])[0]);
+        t.intervalo = !a ? '' : (a === z || !z ? `Art. ${a}` : `Arts. ${a} a ${z}`);
+    });
     const blocoDoArt = new Map();
-    uteis.forEach(b => b.artIds.forEach(a => blocoDoArt.set(a, b.id)));
-    leiIdx = { blocos: uteis, arts, blocoDoArt };
+    trechos.forEach(b => b.artIds.forEach(a => blocoDoArt.set(a, b.id)));
+    return { trechos, arts, blocoDoArt };
+}
+
+function leiIndexar() {
+    const r = leiCalcTrechos(leiDados.itens);
+    leiIdx = { blocos: r.trechos, arts: r.arts, blocoDoArt: r.blocoDoArt, porId: new Map(r.trechos.map(t => [t.id, t])) };
 }
 
 function leiGrifosPorDisp() {
@@ -2469,7 +2584,30 @@ function leiNormalizar(s) {
 function renderizarLei() {
     const el = document.getElementById('leis-conteudo');
     const l = leiDados.lei;
-    el.innerHTML = `
+    const emTrecho = !!(leiTrechoAberto && leiIdx.porId.has(leiTrechoAberto));
+    if (!emTrecho) leiTrechoAberto = null;
+    const fonteCtl = `<span class="lei-fonte-ctl">Tamanho do texto
+                    <button type="button" class="btn-secundario" onclick="leiFonte(-1)" aria-label="Diminuir a letra">A−</button>
+                    <span id="lei-fonte-val">${Number(leiPrefs.fonte) || 15}</span>
+                    <button type="button" class="btn-secundario" onclick="leiFonte(1)" aria-label="Aumentar a letra">A+</button>
+                </span>`;
+    const checks = `${emTrecho ? '' : `<label><input type="checkbox" ${leiPrefs.soMeus ? 'checked' : ''} onchange="leiPref('soMeus', this.checked)"> Só meus grifos e anotações</label>`}
+                <label><input type="checkbox" ${leiPrefs.revogados ? 'checked' : ''} onchange="leiPref('revogados', this.checked)"> Mostrar revogados</label>
+                <label><input type="checkbox" ${leiPrefs.notasLeg ? 'checked' : ''} onchange="leiPref('notasLeg', this.checked)"> Mostrar "Redação dada…"</label>
+                <label><input type="checkbox" ${leiPrefs.semMenuNativo !== false ? 'checked' : ''} onchange="leiPref('semMenuNativo', this.checked)"> Esconder o menu de copiar do aparelho</label>`;
+    const opcoes = emTrecho
+        ? `<div class="lei-opcoes">${fonteCtl}<details class="lei-mais-opcoes"><summary>Mais opções</summary>${checks}</details></div>`
+        : `<div class="lei-opcoes">${fonteCtl}${checks}</div>`;
+    el.innerHTML = emTrecho ? `
+        <section class="painel-bloco">
+            <div class="painel-bloco-header">
+                <h2>📖 ${escaparHtml(l.nome)}</h2>
+                <button type="button" class="btn-secundario" onclick="leiFecharTrecho()">← Trechos</button>
+            </div>
+            ${opcoes}
+            ${leiHtmlFita()}
+            <div id="lei-leitura" class="lei-leitura"></div>
+        </section>` : `
         <section class="painel-bloco">
             <div class="painel-bloco-header">
                 <h2>📖 ${escaparHtml(l.nome)}</h2>
@@ -2481,18 +2619,7 @@ function renderizarLei() {
                 <button type="button" class="btn-secundario" onclick="leiAlternarMudancas()">🔔 O que mudou</button>
             </div>
             <p class="questoes-topico-sub" id="lei-progresso-geral">${escaparHtml(leiTextoProgressoGeral())}</p>
-            <div class="lei-opcoes">
-                <span class="lei-fonte-ctl">Tamanho do texto
-                    <button type="button" class="btn-secundario" onclick="leiFonte(-1)" aria-label="Diminuir a letra">A−</button>
-                    <span id="lei-fonte-val">${Number(leiPrefs.fonte) || 15}</span>
-                    <button type="button" class="btn-secundario" onclick="leiFonte(1)" aria-label="Aumentar a letra">A+</button>
-                </span>
-                <label><input type="checkbox" ${leiPrefs.soMeus ? 'checked' : ''} onchange="leiPref('soMeus', this.checked)"> Só meus grifos e anotações</label>
-                <label><input type="checkbox" ${leiPrefs.revogados ? 'checked' : ''} onchange="leiPref('revogados', this.checked)"> Mostrar revogados</label>
-                <label><input type="checkbox" ${leiPrefs.notasLeg ? 'checked' : ''} onchange="leiPref('notasLeg', this.checked)"> Mostrar "Redação dada…"</label>
-                <label><input type="checkbox" ${leiPrefs.semMenuNativo !== false ? 'checked' : ''} onchange="leiPref('semMenuNativo', this.checked)"> Esconder o menu de copiar do aparelho</label>
-            </div>
-            ${leiHtmlFita()}
+            ${opcoes}
             <div id="lei-mudancas" style="display:none;"></div>
             <div id="lei-leitura" class="lei-leitura"></div>
         </section>`;
@@ -2529,6 +2656,11 @@ function leiRenderLeitura() {
     const area = document.getElementById('lei-leitura');
     if (!area || !leiIdx) return;
     leiEsconderBarra();
+    if (leiTrechoAberto && leiIdx.porId.has(leiTrechoAberto)) {
+        area.innerHTML = leiHtmlBloco(leiIdx.porId.get(leiTrechoAberto));
+        leiAtualizarProgresso();
+        return;
+    }
     if (leiBusca) {
         const ids = leiBuscarArtigos(leiBusca);
         area.innerHTML = ids.length
@@ -2543,13 +2675,7 @@ function leiRenderLeitura() {
             : '<p class="questoes-vazio">Você ainda não grifou nem anotou nada nesta lei. Selecione um trecho do texto para grifar.</p>';
         return;
     }
-    let ultimoCtx = '';
-    area.innerHTML = leiIdx.blocos.map(b => {
-        const cab = (b.ctx && b.ctx !== ultimoCtx) ? `<div class="lei-contexto">${escaparHtml(b.ctx)}</div>` : '';
-        ultimoCtx = b.ctx || '';
-        return cab + leiHtmlBloco(b);
-    }).join('');
-    leiAtualizarProgresso();
+    area.innerHTML = leiHtmlListaTrechos();
 }
 
 function leiBuscarArtigos(q) {
@@ -2578,37 +2704,130 @@ const leiDataCurta = (v) => { const d = new Date(v); return isNaN(d) ? '' : d.to
 function leiTextoProgressoGeral() {
     const total = leiIdx ? leiIdx.blocos.length : 0;
     const lidos = leiIdx ? leiIdx.blocos.filter(b => leiLeituras.has(b.id)).length : 0;
-    return total ? `Lidos: ${lidos} de ${total} capítulos (${Math.round(100 * lidos / total)}%)` : '';
+    return total ? `Lidos: ${lidos} de ${total} trechos (${Math.round(100 * lidos / total)}%)` : '';
 }
 
-// Linha "Marcar como lido" / "Lido em ..." (aparece no começo e no fim do capítulo aberto).
+// Linha "Marcar como lido" / "Lido em ..." (fim do trecho aberto).
 function leiHtmlLido(b) {
     const l = leiLeituras.get(b.id);
     const id = escaparHtml(b.id);
-    if (!l) return `<div class="lei-lido-linha"><button type="button" class="lei-lido-btn" data-bloco="${id}" onclick="leiMarcarLido(this.dataset.bloco, true)">✓ Marcar como lido</button></div>`;
-    return `<div class="lei-lido-linha lei-lido-ok">✓ Lido em ${escaparHtml(leiFormatarData(l.lidoEm))}${l.vezes > 1 ? ` · ${Number(l.vezes)} leituras` : ''}
+    if (!l) return `<div class="lei-lido-linha"><button type="button" class="lei-lido-btn" data-bloco="${id}" onclick="leiMarcarLido(this.dataset.bloco, true)">★ Marcar como lido</button></div>`;
+    return `<div class="lei-lido-linha lei-lido-ok">★ Lido em ${escaparHtml(leiFormatarData(l.lidoEm))}${l.vezes > 1 ? ` · ${Number(l.vezes)} leituras` : ''}
         <button type="button" class="btn-secundario" data-bloco="${id}" onclick="leiMarcarLido(this.dataset.bloco, true)">Li de novo hoje</button>
         <button type="button" class="btn-secundario" data-bloco="${id}" onclick="leiMarcarLido(this.dataset.bloco, false)">Desmarcar</button></div>`;
 }
 
+function leiTituloTrecho(b) { return `${b.num} · ${b.intervalo || b.rot}`; }
+function leiSubTrecho(b) { return `${b.rot}${b.nome ? ' — ' + b.nome : ''}`; }
+
+// Texto "Parei em Art. X (trecho NN)" (vazio se não há marca ou se o artigo não existe mais).
+function leiTextoParei() {
+    if (!leiParei || !leiIdx || !leiIdx.arts.has(leiParei.artId)) return '';
+    const t = leiIdx.porId.get(leiIdx.blocoDoArt.get(leiParei.artId));
+    return `🔖 Parei em Art. ${leiRotuloDe(leiIdx.arts.get(leiParei.artId)[0]) || leiParei.artId}${t ? ` (trecho ${t.num})` : ''}`;
+}
+
+// Trecho aberto: cabeçalho fixo (voltar, nº, intervalo, % e barra), os artigos e, no fim, marcar como lido,
+// onde parei e anterior/próximo.
 function leiHtmlBloco(b) {
-    const aberto = leiBlocosAbertos.has(b.id);
     const marcas = b.artIds.filter(leiArtTemMarca).length;
     const l = leiLeituras.get(b.id);
+    const pos = leiIdx.blocos.indexOf(b);
+    const ant = leiIdx.blocos[pos - 1], prox = leiIdx.blocos[pos + 1];
     return `
-        <div class="lei-bloco${l ? ' lei-bloco-lido' : ''}" data-bloco="${escaparHtml(b.id)}">
-            <div class="lei-bloco-cab${aberto ? ' lei-cab-fixa' : ''}">
-                <button type="button" class="lei-bloco-titulo" onclick="leiAlternarBloco(this.closest('.lei-bloco').dataset.bloco)">
-                    <span class="lei-seta">${aberto ? '▾' : '▸'}</span>
-                    <span class="lei-bloco-nome"><strong>${escaparHtml(b.rot)}</strong>${b.nome ? ' — ' + escaparHtml(b.nome) : ''}</span>
-                    ${aberto ? '<span class="lei-pct" data-pct title="Onde você está neste capítulo"></span>' : ''}
-                    ${l ? `<span class="lei-lido-badge" title="Lido em ${escaparHtml(leiFormatarData(l.lidoEm))}">✓ ${escaparHtml(leiDataCurta(l.lidoEm))}</span>` : ''}
+        <div class="lei-bloco lei-trecho-aberto${l ? ' lei-bloco-lido' : ''}" data-bloco="${escaparHtml(b.id)}">
+            <div class="lei-bloco-cab lei-cab-fixa">
+                <button type="button" class="lei-bloco-titulo" onclick="leiFecharTrecho()" title="Voltar à lista de trechos">
+                    <span class="lei-seta">←</span>
+                    <span class="lei-bloco-nome"><strong>${escaparHtml(leiTituloTrecho(b))}</strong><span class="lei-bloco-sub">${escaparHtml(leiSubTrecho(b))}</span></span>
+                    <span class="lei-pct" data-pct title="Onde você está neste trecho"></span>
+                    ${l ? `<span class="lei-lido-badge" title="Lido em ${escaparHtml(leiFormatarData(l.lidoEm))}">★ ${escaparHtml(leiDataCurta(l.lidoEm))}</span>` : ''}
                     ${marcas ? `<span class="lei-contador" title="Artigos com grifo ou anotação seus">${marcas}</span>` : ''}
                 </button>
-                ${aberto ? '<div class="lei-prog"><div class="lei-prog-barra" data-prog></div></div>' : ''}
+                <div class="lei-prog"><div class="lei-prog-barra" data-prog></div></div>
             </div>
-            ${aberto ? `<div class="lei-bloco-corpo">${leiHtmlLido(b)}${leiHtmlItensBloco(b)}${leiHtmlLido(b)}</div>` : ''}
+            <div class="lei-bloco-corpo">
+                ${leiHtmlItensBloco(b)}
+                ${leiHtmlLido(b)}
+                <div class="lei-parei-linha">
+                    <button type="button" class="btn-secundario" onclick="leiMarcarParei()">🔖 Marcar onde parei</button>
+                    <span id="lei-parei-info">${escaparHtml(leiTextoParei())}</span>
+                </div>
+                <div class="lei-nav-trechos">
+                    <button type="button" class="btn-secundario" ${ant ? `data-bloco="${escaparHtml(ant.id)}" onclick="leiAbrirTrecho(this.dataset.bloco)"` : 'disabled'}>← Trecho anterior</button>
+                    <button type="button" ${prox ? `data-bloco="${escaparHtml(prox.id)}" onclick="leiAbrirTrecho(this.dataset.bloco)"` : 'disabled'}>Próximo trecho →</button>
+                </div>
+            </div>
         </div>`;
+}
+
+// ---- Lista de trechos (como no "índice" de um curso): nº, artigos, status, estrela de lido.
+function leiEstadoTrecho(b) {
+    if (leiLeituras.has(b.id)) return 'lido';
+    if ((leiParei && b.artIds.includes(leiParei.artId)) || b.artIds.some(leiArtTemMarca)) return 'andamento';
+    return 'novo';
+}
+
+function leiHtmlCartaoTrecho(b) {
+    const l = leiLeituras.get(b.id);
+    const est = leiEstadoTrecho(b);
+    const pareiAqui = leiParei && b.artIds.includes(leiParei.artId) && leiIdx.arts.has(leiParei.artId);
+    const status = est === 'lido'
+        ? `★ Lido em ${leiFormatarData(l.lidoEm)}${l.vezes > 1 ? ` · ${Number(l.vezes)} leituras` : ''}`
+        : est === 'andamento' ? `Em andamento${pareiAqui ? ' · 🔖 Art. ' + leiRotuloDe(leiIdx.arts.get(leiParei.artId)[0]) : ''}` : 'Não iniciado';
+    const botao = est === 'lido' ? 'Reler' : est === 'andamento' ? 'Continuar' : 'Começar';
+    return `<div class="lei-trecho lei-trecho-${est}" data-bloco="${escaparHtml(b.id)}">
+        <button type="button" class="lei-trecho-corpo" onclick="leiAbrirTrecho(this.closest('.lei-trecho').dataset.bloco)">
+            <span class="lei-trecho-n">${escaparHtml(b.num)}</span>
+            <span class="lei-trecho-txt">
+                <span class="lei-trecho-tit">${escaparHtml(b.intervalo || b.rot)}</span>
+                <span class="lei-trecho-st">${escaparHtml(status)}</span>
+            </span>
+            <span class="lei-pilula">${botao}</span>
+        </button>
+        <button type="button" class="lei-estrela${l ? ' on' : ''}" aria-pressed="${!!l}" title="${l ? 'Lido em ' + escaparHtml(leiFormatarData(l.lidoEm)) + ' (toque para desmarcar)' : 'Marcar como lido'}" aria-label="${l ? 'Desmarcar como lido' : 'Marcar como lido'}" onclick="leiEstrela(this.closest('.lei-trecho').dataset.bloco)">${l ? '★' : '☆'}</button>
+    </div>`;
+}
+
+function leiHtmlListaTrechos() {
+    let ultimoCtx = '', ultimoCap = '';
+    const topo = leiTextoParei()
+        ? `<button type="button" class="lei-continuar" onclick="leiIrParaParei()">${escaparHtml(leiTextoParei())} · continuar de onde parei →</button>` : '';
+    return topo + leiIdx.blocos.map(b => {
+        let cab = '';
+        if (b.ctx && b.ctx !== ultimoCtx) cab += `<div class="lei-contexto">${escaparHtml(b.ctx)}</div>`;
+        ultimoCtx = b.ctx || ultimoCtx;
+        if (b.capId !== ultimoCap) cab += `<div class="lei-cap-cab"><strong>${escaparHtml(b.rot)}</strong>${b.nome ? ' — ' + escaparHtml(b.nome) : ''}</div>`;
+        ultimoCap = b.capId;
+        return cab + leiHtmlCartaoTrecho(b);
+    }).join('');
+}
+
+function leiAbrirTrecho(id) {
+    if (!leiIdx || !leiIdx.porId.has(id)) return;
+    leiTrechoAberto = id;
+    leiBusca = '';
+    renderizarLei();
+    const b = leiIdx.porId.get(id);
+    const alvo = leiParei && b.artIds.includes(leiParei.artId) ? document.getElementById('lei-art-' + leiParei.artId) : null;
+    if (alvo) alvo.scrollIntoView({ block: 'center' });
+    else if (window.scrollTo) window.scrollTo(0, 0);
+}
+
+function leiFecharTrecho() {
+    const id = leiTrechoAberto;
+    leiTrechoAberto = null;
+    renderizarLei();
+    const card = id && document.querySelector ? document.querySelector(`.lei-trecho[data-bloco="${CSS.escape(id)}"]`) : null;
+    if (card && card.scrollIntoView) card.scrollIntoView({ block: 'center' });
+}
+
+function leiIrParaParei() { if (leiParei) leiIrParaArtigo(leiParei.artId); }
+
+// A estrela da lista: marca como lido na hora; para desmarcar pergunta antes (a data some).
+function leiEstrela(blocoId) {
+    if (leiLeituras.has(blocoId) && typeof confirm === 'function' && !confirm('Desmarcar este trecho como lido? A data da leitura será apagada.')) return;
+    return leiMarcarLido(blocoId, !leiLeituras.has(blocoId));
 }
 
 async function leiMarcarLido(blocoId, lido) {
@@ -2617,12 +2836,29 @@ async function leiMarcarLido(blocoId, lido) {
         if (dados.lido) leiLeituras.set(blocoId, { blocoId, lidoEm: dados.lidoEm, vezes: dados.vezes });
         else leiLeituras.delete(blocoId);
     } catch (err) { return leiAvisarErro(err); }
-    const b = leiIdx.blocos.find(x => x.id === blocoId);
-    const caixa = document.querySelector(`.lei-bloco[data-bloco="${CSS.escape(blocoId)}"]`);
-    if (b && caixa) caixa.outerHTML = leiHtmlBloco(b);
+    const b = leiIdx.porId.get(blocoId);
+    const aberto = document.querySelector(`.lei-bloco[data-bloco="${CSS.escape(blocoId)}"]`);
+    const cartao = document.querySelector(`.lei-trecho[data-bloco="${CSS.escape(blocoId)}"]`);
+    if (b && aberto) aberto.outerHTML = leiHtmlBloco(b);
+    if (b && cartao) cartao.outerHTML = leiHtmlCartaoTrecho(b);
     const g = document.getElementById('lei-progresso-geral');
     if (g) g.textContent = leiTextoProgressoGeral();
     leiAtualizarProgresso();
+}
+
+// "Marcar onde parei": guarda o artigo que está na linha de leitura (30% da altura da tela).
+async function leiMarcarParei() {
+    const corpo = document.querySelector('.lei-bloco-corpo');
+    const art = corpo ? leiArtNaLinha(corpo) || corpo.querySelector('.lei-art') : null;
+    if (!art) return;
+    try {
+        const dados = await leiApi(`/api/leis/${encodeURIComponent(leiAberta)}/parei`, 'PUT', { artId: art.dataset.art });
+        leiParei = dados.parei ? { artId: dados.parei.artId, em: dados.parei.em } : null;
+    } catch (err) { return leiAvisarErro(err); }
+    document.querySelectorAll('.lei-art-parei').forEach(e => e.classList.remove('lei-art-parei'));
+    art.classList.add('lei-art-parei');
+    const info = document.getElementById('lei-parei-info');
+    if (info) info.textContent = leiTextoParei();
 }
 
 // "Onde estou": para cada capítulo aberto, a % já percorrida (usando uma linha de leitura a 30% da altura
@@ -2630,7 +2866,16 @@ async function leiMarcarLido(blocoId, lido) {
 function leiRotuloArt(artId) {
     const it = leiIdx && leiIdx.arts.get(artId);
     const m = it && it[0] && it[0].texto.match(/^Art\.?\s*[\d.]+\s*[º°o]?(?:-[A-Z]+)?/);
-    return m ? m[0].replace(/\s+/g, ' ').trim() : '';
+    return m ? m[0].replace(/\s+/g, ' ').trim().replace(/\.$/, '') : '';
+}
+// O artigo que está na "linha de leitura" (30% da altura da tela), se houver.
+function leiArtNaLinha(corpo) {
+    const linha = (window.innerHeight || 640) * 0.3;
+    for (const art of corpo.querySelectorAll('.lei-art')) {
+        const ra = art.getBoundingClientRect();
+        if (ra.top <= linha && ra.bottom >= linha) return art;
+    }
+    return null;
 }
 function leiAtualizarProgresso() {
     if (viewAtual !== 'leis' || !leiIdx || !document.querySelectorAll) return;
@@ -2661,14 +2906,6 @@ function leiHtmlItensBloco(b) {
         }
         return it.k === 'art' ? leiHtmlArtigo(it.id) : '';
     }).join('');
-}
-
-function leiAlternarBloco(id) {
-    if (leiBlocosAbertos.has(id)) leiBlocosAbertos.delete(id); else leiBlocosAbertos.add(id);
-    const b = leiIdx.blocos.find(x => x.id === id);
-    const caixa = document.querySelector(`.lei-bloco[data-bloco="${CSS.escape(id)}"]`);
-    if (b && caixa) caixa.outerHTML = leiHtmlBloco(b);
-    leiAtualizarProgresso();
 }
 
 // ---------- Edição estilo Word: barra completa (no topo) + barra rápida (ao selecionar) ----------
@@ -2797,7 +3034,7 @@ function leiHtmlArtigo(artId) {
     const orfaos = leiMeus.grifos.filter(g => g.orfao && g.dispId.split('.')[0] === artId)
         .map(g => `<div class="lei-orfao">Grifo que não existe mais no texto: “${escaparHtml(g.trecho)}” <button type="button" class="btn-secundario" data-gid="${escaparHtml(g.id)}" onclick="leiRemoverGrifo(this.dataset.gid)">Remover</button></div>`).join('');
     return `
-        <div class="lei-art" id="lei-art-${escaparHtml(artId)}" data-art="${escaparHtml(artId)}">
+        <div class="lei-art${leiParei && leiParei.artId === artId ? ' lei-art-parei' : ''}" id="lei-art-${escaparHtml(artId)}" data-art="${escaparHtml(artId)}">
             ${aviso}
             ${caput.rubrica ? `<div class="lei-rubrica">${escaparHtml(caput.rubrica)}</div>` : ''}
             ${corpo}
@@ -2913,11 +3150,35 @@ function leiDicaAtual() {
     return 'Selecione um trecho do texto, ou toque num grifo, e use as ferramentas.';
 }
 
+// Prévia visual de uma ferramenta (mesmo desenho do botão real, mas sem ação) para a tela de personalizar.
+function leiPreviaFerr(id) {
+    const m = id.match(/^([fc])(\d)$/);
+    if (m) return m[1] === 'f' ? `<span class="lei-cfg-bolinha lei-f-${m[2]}"></span>` : `<span class="lei-cfg-letra lei-c-${m[2]}">A</span>`;
+    const mapa = { b: '<b>N</b>', i: '<i>I</i>', u: '<span class="lei-u1">S</span>', s: '<s>T</s>', a: '<span class="lei-ferr-aa">AA</span>', nota: '📝', limpar: '🧹', pincel: '🖌', desfazer: '↶', refazer: '↷', remover: '🗑' };
+    return mapa[id] || '';
+}
+// Nome curto para caber no cartão (tira o que vem entre parênteses e o prefixo repetido do grupo).
+function leiNomeCurtoFerr(id) {
+    const m = id.match(/^([fc])(\d)$/);
+    if (m) return m[1] === 'f' ? LEI_NOMES_FUNDO[+m[2]] : LEI_NOMES_LETRA[+m[2]];
+    return leiNomeFerr(id).replace(/\s*\(.*\)/, '').replace('Limpar formatação', 'Limpar').replace('Pincel de formatação', 'Pincel').replace('Remover grifo', 'Remover');
+}
+// Cada ferramenta é um cartão que liga/desliga ao toque (marcado = aparece na barra rápida).
+function leiRapidaToggle(id) {
+    leiRapidaAlternar(id, !leiRapida().includes(id));
+    leiRefazerConfig();
+}
+function leiRefazerConfig() {
+    if (leiBarraModo === 'config') leiMostrarBarra('config'); else leiAtualizarFerramentas();
+}
 function leiHtmlConfig() {
     const rapida = leiRapida();
     return `<div class="lei-config">
-        <div class="lei-config-titulo">Quais ferramentas aparecem na barra rápida (a que surge ao selecionar)?</div>
-        ${LEI_GRUPOS_FERR.map(g => `<div class="lei-config-grupo"><strong>${g.nome}</strong>${g.ids.map(id => `<label><input type="checkbox" value="${id}" ${rapida.includes(id) ? 'checked' : ''} onchange="leiRapidaAlternar(this.value, this.checked)"> ${escaparHtml(leiNomeFerr(id))}</label>`).join('')}</div>`).join('')}
+        <div class="lei-config-titulo"><strong>Barra rápida</strong><span>Toque nas ferramentas que você quer ver ao selecionar um trecho. Marcadas: <b>${rapida.length}</b>.</span></div>
+        ${LEI_GRUPOS_FERR.map(g => `<div class="lei-config-grupo"><div class="lei-config-rotulo">${g.nome}</div><div class="lei-cfg-grade">${g.ids.map(id => {
+            const on = rapida.includes(id);
+            return `<button type="button" class="lei-cfg-chip${on ? ' on' : ''}" data-ferr="${id}" role="switch" aria-checked="${on}" aria-label="${escaparHtml(leiNomeFerr(id))}" onmousedown="event.preventDefault()" onclick="leiRapidaToggle(this.dataset.ferr)"><span class="lei-cfg-previa">${leiPreviaFerr(id)}</span><span class="lei-cfg-nome">${escaparHtml(leiNomeCurtoFerr(id))}</span>${on ? '<span class="lei-cfg-ok">✓</span>' : ''}</button>`;
+        }).join('')}</div></div>`).join('')}
         <button type="button" class="btn-secundario" onclick="leiRapidaPadrao()">Restaurar padrão</button>
     </div>`;
 }
@@ -3473,7 +3734,7 @@ function leiIrParaArtigo(artId) {
     leiBusca = ''; leiPrefs.soMeus = false;
     const inp = document.getElementById('lei-busca'); if (inp) inp.value = '';
     const blocoId = leiIdx.blocoDoArt.get(artId);
-    if (blocoId) leiBlocosAbertos.add(blocoId);
+    if (blocoId) leiTrechoAberto = blocoId;
     renderizarLei();
     const alvo = document.getElementById('lei-art-' + artId);
     if (alvo) {

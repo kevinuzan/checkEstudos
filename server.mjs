@@ -395,6 +395,7 @@ const LEIS_TEXTO_COLLECTION = "leis_texto";
 const LEIS_MUDANCAS_COLLECTION = "leis_mudancas";
 const LEIS_GRIFOS_COLLECTION = "leis_grifos";
 const LEIS_NOTAS_COLLECTION = "leis_notas";
+const LEIS_BLOCO_PAREI = "__parei";   // documento especial em leis_leituras: o artigo onde a pessoa parou a leitura (1 por lei)
 const LEIS_LEITURAS_COLLECTION = "leis_leituras";   // capítulos/títulos que a pessoa marcou como lidos (e quando)
 const LEIS_MAX_LEITURAS_POR_USUARIO = 3000;
 
@@ -3582,9 +3583,38 @@ async function startServer() {
                 success: true,
                 grifos: grifos.map(grifoParaApi),
                 notas: notas.map(n => ({ dispId: n.dispId, texto: n.texto, atualizadoEm: n.atualizadoEm })),
-                leituras: leituras.map(l => ({ blocoId: l.blocoId, lidoEm: l.lidoEm, vezes: l.vezes || 1 })),
+                leituras: leituras.filter(l => l.blocoId !== LEIS_BLOCO_PAREI).map(l => ({ blocoId: l.blocoId, lidoEm: l.lidoEm, vezes: l.vezes || 1 })),
+                parei: (() => { const p = leituras.find(l => l.blocoId === LEIS_BLOCO_PAREI && l.artId); return p ? { artId: p.artId, em: p.pareiEm } : null; })(),
                 alteracoes
             });
+        });
+
+        // Resumo para a tela inicial das Leis: quantos trechos de cada lei a pessoa já leu.
+        app.get('/api/leis/leituras/resumo', requireAuth, async (req, res) => {
+            const r = await leisLeiturasColl.aggregate([
+                { $match: { userId: req.userId, blocoId: { $ne: LEIS_BLOCO_PAREI } } },
+                { $group: { _id: '$lei', lidos: { $sum: 1 } } }
+            ]).toArray();
+            res.json({ success: true, lidos: Object.fromEntries(r.map(x => [x._id, x.lidos])) });
+        });
+
+        // "Marcar onde parei": guarda o artigo em que a pessoa parou nesta lei (artId nulo apaga a marca).
+        app.put('/api/leis/:lei/parei', requireAuth, async (req, res) => {
+            if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
+            const filtro = { userId: req.userId, lei: req.params.lei, blocoId: LEIS_BLOCO_PAREI };
+            const artId = typeof req.body.artId === 'string' ? req.body.artId.trim() : '';
+            if (!artId) {
+                await leisLeiturasColl.deleteOne(filtro);
+                return res.json({ success: true, parei: null });
+            }
+            if (artId.length > 160 || !/^[\p{L}\p{N}_.~\-]+$/u.test(artId)) return res.status(400).json({ success: false, error: 'Artigo inválido' });
+            const existe = await leisLeiturasColl.findOne(filtro, { projection: { _id: 1 } });
+            if (!existe && await leisLeiturasColl.countDocuments({ userId: req.userId }) >= LEIS_MAX_LEITURAS_POR_USUARIO) {
+                return res.status(400).json({ success: false, error: 'Limite atingido' });
+            }
+            const agora = new Date();
+            await leisLeiturasColl.updateOne(filtro, { $set: { artId, pareiEm: agora } }, { upsert: true });
+            res.json({ success: true, parei: { artId, em: agora } });
         });
 
         // Marca (ou desmarca) um capítulo como lido. Ao marcar, guarda o dia; marcar de novo = "li outra vez"
@@ -3592,7 +3622,7 @@ async function startServer() {
         app.put('/api/leis/:lei/leituras', requireAuth, async (req, res) => {
             if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
             const blocoId = typeof req.body.blocoId === 'string' ? req.body.blocoId.trim() : '';
-            if (!blocoId || blocoId.length > 160 || !/^[\p{L}\p{N}_.~\-]+$/u.test(blocoId)) return res.status(400).json({ success: false, error: 'Capítulo inválido' });
+            if (!blocoId || blocoId === LEIS_BLOCO_PAREI || blocoId.length > 160 || !/^[\p{L}\p{N}_.~\-]+$/u.test(blocoId)) return res.status(400).json({ success: false, error: 'Capítulo inválido' });
             const filtro = { userId: req.userId, lei: req.params.lei, blocoId };
             if (!req.body.lido) {
                 await leisLeiturasColl.deleteOne(filtro);
