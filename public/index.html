@@ -50,7 +50,7 @@
                     stroke-linejoin="round" />
             </svg>
             <h1>Direto <span class="brand-acento">à Posse</span></h1>
-            <p class="login-sub">Entre com sua conta Google para ver seus estudos, de qualquer aparelho.</p>
+            <p class="login-sub">Entre com sua conta Google para ver seus estudos, de qualquer aparelho. O app está em testes fechados: só e-mails liberados conseguem entrar.</p>
             <div id="google-signin-btn" class="login-google-btn"></div>
             <p id="login-erro" class="login-erro" style="display:none;"></p>
         </div>
@@ -779,6 +779,39 @@
                         <label class="config-check"><input type="checkbox" id="config-mapa-sessoes" onchange="definirMapaPref('sessoes', this.checked)"> <span>🎯 Tópicos das minhas sessões de estudo</span></label>
                         <label class="config-check"><input type="checkbox" id="config-mapa-questoes" onchange="definirMapaPref('questoes', this.checked)"> <span>📝 Provas e súmulas (banco de questões)</span></label>
                         <label class="config-check"><input type="checkbox" id="config-mapa-flashcards" onchange="definirMapaPref('flashcards', this.checked)"> <span>🧠 Baralhos que mais pedem revisão (flashcards)</span></label>
+                    </div>
+                </section>
+
+                <section class="painel-bloco" id="config-bloco-ia">
+                    <div class="painel-bloco-header">
+                        <h2>Uso da IA</h2>
+                    </div>
+                    <div class="config-card">
+                        <p class="config-card-sub" id="config-ia-texto">Carregando…</p>
+                        <div class="progress-bar"><div class="config-ia-fill" id="config-ia-barra"></div></div>
+                        <p class="config-texto-ajuda">A cota é mensal e zera todo mês. Ela é usada pela Análise de desempenho e pela sugestão de edital a partir de PDF.</p>
+                    </div>
+                </section>
+
+                <section class="painel-bloco" id="config-bloco-admin" style="display:none;">
+                    <div class="painel-bloco-header">
+                        <h2>Acessos (testes fechados)</h2>
+                    </div>
+                    <div class="config-card">
+                        <p class="config-card-sub" id="admin-acessos-sub">Só administradores e e-mails liberados conseguem entrar.</p>
+                        <div class="perfil-nome-row">
+                            <input type="email" id="admin-acesso-email" placeholder="email@gmail.com (conta Google da pessoa)" maxlength="254" autocomplete="off">
+                            <button type="button" onclick="liberarAcesso()">Liberar</button>
+                        </div>
+                        <p id="admin-acessos-erro" class="login-erro" style="display:none;"></p>
+                        <div class="admin-acessos-lista" id="admin-acessos-lista"></div>
+
+                        <label class="modal-label">Modelo padrão (ENAM)</label>
+                        <p class="config-card-sub" id="admin-modelo-status">Carregando…</p>
+                        <div class="assinatura-acoes">
+                            <button type="button" class="btn-secundario" id="btn-publicar-modelo" onclick="publicarModeloPadrao()">Publicar meu ENAM como padrão</button>
+                        </div>
+                        <p class="config-texto-ajuda">Copia o plano ENAM e os baralhos ENAM da SUA conta para todo usuário novo (zerados). Quem já tem conta não é alterado.</p>
                     </div>
                 </section>
 

@@ -99,8 +99,31 @@ window.fetch = async function (...args) {
     if (resposta.status === 402) {
         carregarAssinatura(true);
     }
+    // 403 ACESSO_RESTRITO = e-mail fora da lista de liberados (testes fechados).
+    if (resposta.status === 403) {
+        resposta.clone().json().then(d => {
+            if (d && d.codigo === 'ACESSO_RESTRITO') mostrarAcessoRestrito(d.error);
+        }).catch(() => { /* corpo não era JSON: ignora */ });
+    }
     return resposta;
 };
+
+// Mostra o aviso na tela de login e encerra a sessão (o cookie some), pra a
+// pessoa poder tentar com outra conta Google.
+let avisandoAcessoRestrito = false;
+async function mostrarAcessoRestrito(mensagem) {
+    if (avisandoAcessoRestrito) return;
+    avisandoAcessoRestrito = true;
+    try { await fetchOriginal('/api/auth/logout', { method: 'POST' }); } catch (e) { /* sem rede: só mostra o aviso */ }
+    appJaIniciado = false;
+    await mostrarTelaLogin();
+    const erroEl = document.getElementById('login-erro');
+    if (erroEl) {
+        erroEl.textContent = mensagem || 'O app está em testes fechados.';
+        erroEl.style.display = 'block';
+    }
+    avisandoAcessoRestrito = false;
+}
 
 async function iniciarApp() {
     try {
@@ -208,6 +231,10 @@ async function aoReceberCredencialGoogle(resposta) {
             body: JSON.stringify({ credential: resposta.credential })
         });
         const dados = await res.json();
+        if (res.status === 403 && dados.codigo === 'ACESSO_RESTRITO') {
+            if (erroEl) { erroEl.textContent = dados.error; erroEl.style.display = 'block'; }
+            return;
+        }
         if (!dados.success) throw new Error(dados.error || 'Falha no login');
         if (erroEl) erroEl.style.display = 'none';
         await iniciarApp();
@@ -4075,10 +4102,137 @@ function leiIrParaArtigo(artId) {
 // VIEW: CONFIGURAÇÕES (tema, fundo, apelido, importar tópicos)
 // ==================================================================
 
+// --- Uso da IA (todos) ---
+async function carregarUsoIaConfig() {
+    const texto = document.getElementById('config-ia-texto');
+    const barra = document.getElementById('config-ia-barra');
+    if (!texto || !barra) return;
+    try {
+        const res = await fetch('/api/ia/uso');
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || 'Falha');
+        const perc = Math.min(100, Math.round((d.usados / d.limite) * 100));
+        barra.style.width = perc + '%';
+        barra.classList.toggle('cheio', perc >= 90);
+        texto.textContent = `Neste mês você usou ${d.usados.toLocaleString('pt-BR')} de ${d.limite.toLocaleString('pt-BR')} tokens (${perc}%).`;
+    } catch (err) {
+        console.error('Erro ao carregar o uso da IA:', err);
+        texto.textContent = 'Não foi possível carregar o uso da IA agora.';
+    }
+}
+
+// --- Administração de acessos (só administradores) ---
+function mostrarErroAdmin(msg) {
+    const el = document.getElementById('admin-acessos-erro');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.display = msg ? 'block' : 'none';
+}
+
+function linhaAcesso(p, ehAdminLinha) {
+    const meta = p.jaEntrou
+        ? `${escaparHtml(p.nome || 'Já entrou')} · IA este mês: ${Number(p.tokensIa || 0).toLocaleString('pt-BR')} tokens`
+        : 'Ainda não entrou';
+    return `
+        <div class="admin-acesso-linha">
+            <div class="admin-acesso-info">
+                <span class="admin-acesso-email">${escaparHtml(p.email)}</span>
+                <span class="admin-acesso-meta">${meta}</span>
+            </div>
+            ${ehAdminLinha
+                ? '<span class="admin-acesso-tag">Administrador</span>'
+                : `<button type="button" class="btn-perigo" data-email="${escaparHtml(p.email)}" onclick="removerAcesso(this.dataset.email)">Remover</button>`}
+        </div>`;
+}
+
+async function carregarAdminAcessos() {
+    const bloco = document.getElementById('config-bloco-admin');
+    if (!bloco) return;
+    bloco.style.display = 'block';
+    try {
+        const [resA, resM] = await Promise.all([fetch('/api/admin/acessos'), fetch('/api/admin/modelo-padrao')]);
+        const dados = await resA.json();
+        if (!dados.success) throw new Error(dados.error || 'Falha');
+        const sub = document.getElementById('admin-acessos-sub');
+        if (sub) sub.textContent = dados.restrito
+            ? 'Testes fechados LIGADOS: só administradores e os e-mails abaixo conseguem entrar (inclusive o teste grátis).'
+            : 'Atenção: o acesso está ABERTO a qualquer pessoa (variável ACESSO_ABERTO=1 no Railway). A lista abaixo não está sendo exigida.';
+        const lista = document.getElementById('admin-acessos-lista');
+        if (lista) lista.innerHTML = dados.admins.map(p => linhaAcesso(p, true)).join('')
+            + (dados.liberados.length ? dados.liberados.map(p => linhaAcesso(p, false)).join('') : '<p class="config-texto-ajuda">Ninguém liberado ainda. Digite um e-mail acima.</p>');
+
+        const modelo = await resM.json();
+        const st = document.getElementById('admin-modelo-status');
+        if (st) st.textContent = modelo.meta
+            ? `Publicado em ${new Date(modelo.meta.publicadoEm).toLocaleString('pt-BR')} por ${modelo.meta.publicadoPor}: ${modelo.meta.itens} tópicos, ${modelo.meta.baralhos} baralhos e ${modelo.meta.cartoes} cartões.`
+            : 'Ainda não publicado. Usuários novos entram sem edital nem flashcards.';
+    } catch (err) {
+        console.error('Erro ao carregar acessos:', err);
+        mostrarErroAdmin('Não foi possível carregar os acessos agora.');
+    }
+}
+
+async function liberarAcesso() {
+    const input = document.getElementById('admin-acesso-email');
+    if (!input) return;
+    const email = input.value.trim();
+    mostrarErroAdmin('');
+    if (!email) return;
+    try {
+        const res = await fetch('/api/admin/acessos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || 'Falha');
+        input.value = '';
+        await carregarAdminAcessos();
+    } catch (err) {
+        mostrarErroAdmin(err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível liberar agora.');
+    }
+}
+
+async function removerAcesso(email) {
+    if (!email) return;
+    if (!confirm(`Remover ${email}? A pessoa perde o acesso na hora (os dados dela ficam guardados).`)) return;
+    mostrarErroAdmin('');
+    try {
+        const res = await fetch('/api/admin/acessos', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+        });
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || 'Falha');
+        await carregarAdminAcessos();
+    } catch (err) {
+        mostrarErroAdmin(err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível remover agora.');
+    }
+}
+
+async function publicarModeloPadrao() {
+    if (!confirm('Publicar o plano ENAM e os baralhos ENAM da SUA conta como padrão para usuários novos? Isso substitui o modelo anterior (quem já tem conta não é alterado).')) return;
+    const btn = document.getElementById('btn-publicar-modelo');
+    if (btn) btn.disabled = true;
+    mostrarErroAdmin('');
+    try {
+        const res = await fetch('/api/admin/modelo-padrao/publicar', { method: 'POST' });
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || 'Falha');
+        await carregarAdminAcessos();
+    } catch (err) {
+        mostrarErroAdmin(err.message && err.message !== 'Failed to fetch' ? err.message : 'Não foi possível publicar agora.');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 async function abrirConfiguracoes() {
     renderizarSeletorTema();
     renderizarSeletorFundo();
     sincronizarMapasPrefsUI();
+    carregarUsoIaConfig();
     carregarAssinatura(false);
     const input = document.getElementById('config-apelido-input');
     if (!input) return;
@@ -4086,6 +4240,7 @@ async function abrirConfiguracoes() {
         const res = await fetch('/api/auth/me');
         if (!res.ok) return;
         const dados = await res.json();
+        if (dados.usuario?.admin) carregarAdminAcessos();
         input.value = dados.usuario?.apelido || '';
         input.placeholder = dados.usuario?.nomeGoogle ? `Ex: ${dados.usuario.nomeGoogle.split(' ')[0]}` : 'Ex: Ana';
     } catch (err) {

@@ -5153,3 +5153,13 @@ input[type="checkbox"] {
     accent-color: var(--primary);
     flex: none;
 }
+
+/* Uso da IA e administração de acessos (Configurações) */
+.config-ia-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--primary), #60a5fa); border-radius: 10px; transition: width 0.4s ease; }
+.config-ia-fill.cheio { background: var(--danger); }
+.admin-acessos-lista { display: flex; flex-direction: column; gap: 8px; }
+.admin-acesso-linha { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-muted); }
+.admin-acesso-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.admin-acesso-email { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.admin-acesso-meta { font-size: 12.5px; color: var(--text-muted); }
+.admin-acesso-tag { flex: none; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--primary-light); color: var(--primary-dark); }

@@ -158,6 +158,19 @@ const VERSAO_ASSETS = Date.now().toString(36);
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || "checkestudos-troque-este-segredo-em-producao";
 const EMAIL_MIGRACAO_INICIAL = "anasilvamarinheiro@gmail.com";
+
+// --- TESTES FECHADOS ---
+// Administradores: sempre têm acesso e gerenciam a lista de liberados.
+// Definidos na variável ADMIN_EMAILS do Railway (separados por ; , ou espaço);
+// se ela faltar, vale este padrão, pra ninguém ficar trancado pra fora.
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'uzankevin93@gmail.com;kevin.uzan@stone.com.br;anasilvamarinheiro@gmail.com')
+    .split(/[;,\s]+/).map(e => e.trim().toLowerCase()).filter(Boolean);
+// Enquanto ACESSO_ABERTO não for definida (=1) no Railway, SÓ entra quem é admin
+// ou está na lista de liberados (coleção acessos_liberados) — inclusive o teste grátis.
+const ACESSO_RESTRITO = process.env.ACESSO_ABERTO !== '1';
+const ACESSOS_LIBERADOS_COLLECTION = "acessos_liberados";
+const MODELO_PADRAO_PLANO = "ENAM"; // plano/baralhos copiados pra todo usuário novo
+const MSG_ACESSO_RESTRITO = 'O Direto à Posse está em testes fechados. Peça para ser liberado e tente de novo.';
 const oauthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // --- MIDDLEWARES ---
@@ -569,6 +582,95 @@ async function startServer() {
             }
         }
 
+        // --- ACESSO RESTRITO (lista de liberados) ---
+        const acessosLiberadosColl = db.collection(ACESSOS_LIBERADOS_COLLECTION);
+        await acessosLiberadosColl.createIndex({ email: 1 }, { unique: true }).catch(() => {});
+        const modeloMetaColl = db.collection('modelo_meta');
+        const modeloEditalColl = db.collection('modelo_edital');
+        const modeloBaralhosColl = db.collection('modelo_baralhos');
+        const modeloCartoesColl = db.collection('modelo_cartoes');
+
+        const ehAdmin = (email) => ADMIN_EMAILS.includes((email || '').toLowerCase());
+
+        // Cópia em memória da lista (30s), pra não ir ao banco a cada requisição.
+        // acessoDoUsuario() (síncrona) também lê daqui.
+        let liberadosCache = { set: new Set(), em: 0 };
+        async function carregarLiberados(forcar = false) {
+            if (!forcar && Date.now() - liberadosCache.em < 30000) return;
+            const docs = await acessosLiberadosColl.find({}).toArray();
+            liberadosCache = { set: new Set(docs.map(d => d.email)), em: Date.now() };
+        }
+        async function emailLiberado(email) {
+            if (!ACESSO_RESTRITO) return true;
+            const e = (email || '').toLowerCase();
+            if (!e) return false;
+            if (ehAdmin(e)) return true;
+            await carregarLiberados();
+            return liberadosCache.set.has(e);
+        }
+        const emailPorUserId = new Map(); // userId -> { email, em } (60s)
+        async function emailDoUserId(userId) {
+            const c = emailPorUserId.get(userId);
+            if (c && Date.now() - c.em < 60000) return c.email;
+            const u = await usuariosColl.findOne({ _id: new ObjectId(userId) }, { projection: { email: 1 } });
+            const email = (u?.email || '').toLowerCase();
+            emailPorUserId.set(userId, { email, em: Date.now() });
+            return email;
+        }
+
+        // Copia o ENAM "modelo" (edital + baralhos + cartões) pra conta de um
+        // usuário NOVO. Tudo começa zerado: nada concluído e todos os cartões como
+        // "novos". Os modelos são publicados por um administrador (rota abaixo).
+        async function aplicarModeloPadrao(userId) {
+            const agora = new Date();
+            const nExistentes = await planosColl.countDocuments({ userId });
+            if (!(await planosColl.findOne({ userId, nome: MODELO_PADRAO_PLANO }))) {
+                await planosColl.insertOne({ nome: MODELO_PADRAO_PLANO, ordem: nExistentes, userId });
+            }
+
+            const itens = await modeloEditalColl.find({}).sort({ ordem: 1 }).toArray();
+            for (let i = 0; i < itens.length; i += 500) {
+                await editalColl.insertMany(itens.slice(i, i + 500).map(it => ({
+                    materia: it.materia, topico: it.topico, concluido: false,
+                    planos: [MODELO_PADRAO_PLANO], userId, dataCriacao: agora,
+                    ...(it.subtopicos && it.subtopicos.length
+                        ? { subtopicos: it.subtopicos.map(sub => ({ id: crypto.randomUUID(), texto: sub.texto, concluido: false })) }
+                        : {})
+                })));
+            }
+
+            const baralhos = await modeloBaralhosColl.find({}).toArray();
+            const novoIdPorAntigo = new Map();
+            for (const b of baralhos) {
+                const r = await flashcardsBaralhosColl.insertOne({
+                    nome: b.nome, caminho: b.caminho || [], materia: b.materia || '',
+                    origem: 'modelo', userId, criadoEm: agora
+                });
+                novoIdPorAntigo.set(b.antigoId, String(r.insertedId));
+            }
+            const grupoCloze = new Map(); // origemClozeId antigo -> novo (cartões do mesmo texto seguem juntos)
+            const cursor = modeloCartoesColl.find({});
+            let lote = [];
+            const gravar = async () => { if (lote.length) { await flashcardsCartoesColl.insertMany(lote); lote = []; } };
+            for await (const c of cursor) {
+                const baralhoId = novoIdPorAntigo.get(c.antigoBaralhoId);
+                if (!baralhoId) continue;
+                const { _id, antigoBaralhoId, ...conteudo } = c;
+                if (conteudo.origemClozeId) {
+                    if (!grupoCloze.has(conteudo.origemClozeId)) grupoCloze.set(conteudo.origemClozeId, crypto.randomUUID());
+                    conteudo.origemClozeId = grupoCloze.get(conteudo.origemClozeId);
+                }
+                lote.push({
+                    ...conteudo, baralhoId, userId,
+                    facilidade: 2.5, intervalo: 0, repeticoes: 0, etapaAprendizado: 0,
+                    dataProximaRevisao: agora, estado: 'novo', criadoEm: agora
+                });
+                if (lote.length >= 1000) await gravar();
+            }
+            await gravar();
+            return { itens: itens.length, baralhos: baralhos.length };
+        }
+
         // Verifica o token do Google, encontra ou cria o usuário, roda a migração
         // inicial (se for o caso) e garante que ele tenha os dados padrão.
         app.post('/api/auth/google', async (req, res) => {
@@ -585,6 +687,11 @@ async function startServer() {
                 const nome = payload.name || email;
                 const foto = payload.picture || '';
                 if (!email) return res.status(400).json({ success: false, error: 'Não foi possível obter o e-mail da conta Google' });
+
+                // Testes fechados: quem não está liberado não entra e NEM tem conta criada.
+                if (!(await emailLiberado(email))) {
+                    return res.status(403).json({ success: false, codigo: 'ACESSO_RESTRITO', error: MSG_ACESSO_RESTRITO });
+                }
 
                 let usuario = await usuariosColl.findOne({ email });
                 if (!usuario) {
@@ -603,6 +710,23 @@ async function startServer() {
                 if (email === EMAIL_MIGRACAO_INICIAL && !usuario.migracaoInicialFeita) {
                     await migrarDadosSemDonoParaUsuario(userId);
                     await usuariosColl.updateOne({ _id: usuario._id }, { $set: { migracaoInicialFeita: true } });
+                }
+
+                // ENAM padrão: só pra conta que ainda está vazia e só uma vez (a flag
+                // evita que reapareça depois de "Limpar conta", que é recomeçar do zero).
+                try {
+                    if (!usuario.modeloPadraoAplicado && await modeloMetaColl.findOne({ _id: 'enam' })) {
+                        const r = await usuariosColl.updateOne(
+                            { _id: usuario._id, modeloPadraoAplicado: { $exists: false } },
+                            { $set: { modeloPadraoAplicado: true } }
+                        );
+                        const vazia = r.modifiedCount === 1
+                            && (await editalColl.countDocuments({ userId })) === 0
+                            && (await flashcardsBaralhosColl.countDocuments({ userId })) === 0;
+                        if (vazia) await aplicarModeloPadrao(userId);
+                    }
+                } catch (err) {
+                    console.error('Erro ao aplicar o modelo padrão (ENAM):', err);
                 }
 
                 await garantirDadosIniciaisDoUsuario(userId);
@@ -625,10 +749,27 @@ async function startServer() {
                 if (!token) return res.status(401).json({ success: false, error: 'Não autenticado' });
                 const dados = jwt.verify(token, SESSION_SECRET);
                 req.userId = dados.userId;
+                if (ACESSO_RESTRITO && !(await emailLiberado(await emailDoUserId(dados.userId)))) {
+                    return res.status(403).json({ success: false, codigo: 'ACESSO_RESTRITO', error: MSG_ACESSO_RESTRITO });
+                }
                 next();
             } catch (err) {
                 res.status(401).json({ success: false, error: 'Sessão inválida ou expirada' });
             }
+        }
+
+        // Só administradores (ADMIN_EMAILS).
+        async function requireAdmin(req, res, next) {
+            return requireAuth(req, res, async () => {
+                try {
+                    if (!ehAdmin(await emailDoUserId(req.userId))) {
+                        return res.status(403).json({ success: false, error: 'Apenas administradores.' });
+                    }
+                    next();
+                } catch (err) {
+                    res.status(500).json({ success: false, error: 'Erro ao verificar permissão.' });
+                }
+            });
         }
 
         // Temas aceitos (mesmos ids de TEMAS_DISPONIVEIS no front). '' = azul padrão.
@@ -649,7 +790,8 @@ async function startServer() {
                     email: usuario.email,
                     foto: usuario.foto,
                     // null = nunca escolheu na conta (o app então envia o do aparelho, se houver)
-                    tema: temaDoUsuario(usuario)
+                    tema: temaDoUsuario(usuario),
+                    admin: ehAdmin(usuario.email)
                 }
             });
         });
@@ -713,6 +855,8 @@ async function startServer() {
         function acessoDoUsuario(usuario) {
             if (!COBRANCA_ATIVA) return { permitido: true, motivo: 'cobranca_desligada' };
             if (usuario.email === EMAIL_MIGRACAO_INICIAL || usuario.cortesia) return { permitido: true, motivo: 'cortesia' };
+            // Liberados nos testes fechados usam sem cartão e sem trial (cota de IA normal).
+            if (ehAdmin(usuario.email) || liberadosCache.set.has((usuario.email || '').toLowerCase())) return { permitido: true, motivo: 'cortesia' };
             const a = usuario.assinatura || {};
             if (STATUS_COM_ACESSO.includes(a.status)) return { permitido: true, motivo: a.status };
             if (a.status === 'past_due' && a.pagamentoFalhouEm) {
@@ -740,6 +884,7 @@ async function startServer() {
                 try { dados = jwt.verify(token, SESSION_SECRET); } catch { return next(); }
                 const usuario = await usuariosColl.findOne({ _id: new ObjectId(dados.userId) });
                 if (!usuario) return next();
+                await carregarLiberados(); // acessoDoUsuario lê a lista de liberados da memória
                 if (acessoDoUsuario(usuario).permitido) return next();
                 return res.status(402).json({
                     success: false,
@@ -1117,6 +1262,144 @@ async function startServer() {
             } catch (err) {
                 console.error('Erro ao encerrar conta:', err);
                 res.status(500).json({ success: false, error: 'Erro ao encerrar a conta' });
+            }
+        });
+
+        // --- USO DA IA (mostrado em Configurações) ---
+        // Tokens gastos no mês pela própria pessoa e o limite mensal compartilhado.
+        app.get('/api/ia/uso', requireAuth, async (req, res) => {
+            try {
+                const usados = await tokensIaUsadosNoMes(req.userId);
+                res.json({ success: true, mesAno: mesAnoAtual(), usados, limite: LIMITE_TOKENS_IA_MENSAL });
+            } catch (err) {
+                console.error('Erro ao consultar uso da IA:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível consultar o uso da IA.' });
+            }
+        });
+
+        // --- ADMIN: LISTA DE ACESSOS LIBERADOS (testes fechados) ---
+        const EMAIL_VALIDO = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]+$/;
+
+        app.get('/api/admin/acessos', requireAdmin, async (req, res) => {
+            try {
+                const liberados = await acessosLiberadosColl.find({}).sort({ criadoEm: 1 }).toArray();
+                const emails = [...ADMIN_EMAILS, ...liberados.map(l => l.email)];
+                const usuarios = await usuariosColl.find({ email: { $in: emails } }, { projection: { email: 1, nome: 1 } }).toArray();
+                const usoPorUserId = new Map(
+                    (await iaUsoColl.find({ mesAno: mesAnoAtual() }).toArray()).map(u => [u.userId, u.tokensTotal || 0])
+                );
+                const info = (email) => {
+                    const u = usuarios.find(x => x.email === email);
+                    return { jaEntrou: !!u, nome: u?.nome || '', tokensIa: u ? (usoPorUserId.get(String(u._id)) || 0) : 0 };
+                };
+                res.json({
+                    success: true,
+                    restrito: ACESSO_RESTRITO,
+                    limiteIa: LIMITE_TOKENS_IA_MENSAL,
+                    admins: ADMIN_EMAILS.map(email => ({ email, ...info(email) })),
+                    liberados: liberados.map(l => ({ email: l.email, criadoEm: l.criadoEm, ...info(l.email) }))
+                });
+            } catch (err) {
+                console.error('Erro ao listar acessos:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível carregar os acessos.' });
+            }
+        });
+
+        app.post('/api/admin/acessos', requireAdmin, async (req, res) => {
+            try {
+                const email = String(req.body?.email || '').trim().toLowerCase();
+                if (email.length > 254 || !EMAIL_VALIDO.test(email)) {
+                    return res.status(400).json({ success: false, error: 'Digite um e-mail válido.' });
+                }
+                await acessosLiberadosColl.updateOne(
+                    { email },
+                    { $setOnInsert: { email, criadoEm: new Date(), adicionadoPor: await emailDoUserId(req.userId) } },
+                    { upsert: true }
+                );
+                await carregarLiberados(true);
+                res.json({ success: true });
+            } catch (err) {
+                console.error('Erro ao liberar acesso:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível liberar esse e-mail.' });
+            }
+        });
+
+        // Remove da lista: a pessoa perde o acesso na hora (os dados dela ficam guardados).
+        app.delete('/api/admin/acessos', requireAdmin, async (req, res) => {
+            try {
+                const email = String(req.body?.email || '').trim().toLowerCase();
+                if (!email) return res.status(400).json({ success: false, error: 'E-mail ausente.' });
+                if (ehAdmin(email)) return res.status(400).json({ success: false, error: 'Administradores não podem ser removidos.' });
+                await acessosLiberadosColl.deleteOne({ email });
+                await carregarLiberados(true);
+                res.json({ success: true });
+            } catch (err) {
+                console.error('Erro ao remover acesso:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível remover esse e-mail.' });
+            }
+        });
+
+        // --- ADMIN: MODELO PADRÃO (ENAM) ---
+        // O administrador "publica" o ENAM da PRÓPRIA conta (tópicos do plano ENAM e
+        // baralhos cujo caminho começa em ENAM). A partir daí todo usuário novo
+        // recebe uma cópia zerada. Publicar de novo substitui o modelo anterior
+        // (não mexe em quem já recebeu).
+        app.get('/api/admin/modelo-padrao', requireAdmin, async (req, res) => {
+            const meta = await modeloMetaColl.findOne({ _id: 'enam' });
+            res.json({ success: true, plano: MODELO_PADRAO_PLANO, meta: meta ? { publicadoEm: meta.publicadoEm, publicadoPor: meta.publicadoPor, itens: meta.itens, baralhos: meta.baralhos, cartoes: meta.cartoes } : null });
+        });
+
+        app.post('/api/admin/modelo-padrao/publicar', requireAdmin, async (req, res) => {
+            try {
+                const userId = req.userId;
+                const itens = await editalColl.find({ userId, planos: MODELO_PADRAO_PLANO }).sort({ _id: 1 }).toArray();
+                const baralhos = await flashcardsBaralhosColl.find({
+                    userId,
+                    $or: [
+                        { 'caminho.0': MODELO_PADRAO_PLANO },
+                        { nome: MODELO_PADRAO_PLANO, caminho: { $in: [[], null] } }
+                    ]
+                }).toArray();
+                if (itens.length === 0 && baralhos.length === 0) {
+                    return res.status(400).json({ success: false, error: `Sua conta não tem tópicos no plano "${MODELO_PADRAO_PLANO}" nem baralhos "${MODELO_PADRAO_PLANO}". Nada foi publicado.` });
+                }
+
+                await Promise.all([modeloEditalColl.deleteMany({}), modeloBaralhosColl.deleteMany({}), modeloCartoesColl.deleteMany({})]);
+
+                for (let i = 0; i < itens.length; i += 500) {
+                    await modeloEditalColl.insertMany(itens.slice(i, i + 500).map((it, j) => ({
+                        ordem: i + j, materia: it.materia, topico: it.topico,
+                        subtopicos: (it.subtopicos || []).map(sub => ({ texto: sub.texto }))
+                    })));
+                }
+                if (baralhos.length) {
+                    await modeloBaralhosColl.insertMany(baralhos.map(b => ({
+                        antigoId: String(b._id), nome: b.nome, caminho: b.caminho || [], materia: b.materia || ''
+                    })));
+                }
+
+                // Campos de agendamento/histórico NÃO entram no modelo (cada pessoa começa do zero).
+                const OMITIR = new Set(['_id', 'userId', 'baralhoId', 'facilidade', 'intervalo', 'repeticoes', 'etapaAprendizado',
+                    'dataProximaRevisao', 'estado', 'criadoEm', 'atualizadoEm', 'vezesErrei', 'vezesDificil', 'vezesBom', 'vezesFacil',
+                    'vezesRespondido', 'revisoesRespondidas', 'lapsos', 'ultimaRevisao', 'ultimaRevisaoEm']);
+                let totalCartoes = 0;
+                const cursor = flashcardsCartoesColl.find({ userId, baralhoId: { $in: baralhos.map(b => String(b._id)) } });
+                let lote = [];
+                for await (const c of cursor) {
+                    const doc = { antigoBaralhoId: c.baralhoId };
+                    for (const [k, v] of Object.entries(c)) if (!OMITIR.has(k)) doc[k] = v;
+                    lote.push(doc);
+                    totalCartoes++;
+                    if (lote.length >= 1000) { await modeloCartoesColl.insertMany(lote); lote = []; }
+                }
+                if (lote.length) await modeloCartoesColl.insertMany(lote);
+
+                const meta = { publicadoEm: new Date(), publicadoPor: await emailDoUserId(userId), itens: itens.length, baralhos: baralhos.length, cartoes: totalCartoes };
+                await modeloMetaColl.updateOne({ _id: 'enam' }, { $set: meta }, { upsert: true });
+                res.json({ success: true, ...meta });
+            } catch (err) {
+                console.error('Erro ao publicar o modelo padrão:', err);
+                res.status(500).json({ success: false, error: 'Não foi possível publicar o modelo agora.' });
             }
         });
 
