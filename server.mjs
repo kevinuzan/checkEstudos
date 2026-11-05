@@ -4212,7 +4212,7 @@ async function startServer() {
                     return decodificarHtmlLei(Buffer.from(await resp.arrayBuffer()));
                 } catch (err) {
                     ultimoErro = err;
-                    if (tentativa < 3) await new Promise(r => setTimeout(r, tentativa * 4000));
+                    if (tentativa < 3) await new Promise(r => setTimeout(r, tentativa * 8000));
                 }
             }
             throw ultimoErro;
@@ -4315,11 +4315,13 @@ async function startServer() {
                         await atualizarLei(leiId);
                     }
                 } catch (err) { console.error('[leis] inicialização:', err.message); }
-                // Pausa entre leis: 13 downloads colados parecem rajada ao Planalto.
-                await new Promise(r => setTimeout(r, 2000));
+                // Pausa entre leis: 13 downloads colados parecem rajada ao Planalto, que passa a
+                // derrubar a conexão (ECONNRESET). O Jogo faz 1 pedido por dia; aqui vamos devagar.
+                await new Promise(r => setTimeout(r, 15000));
             }
         }
-        inicializarLeis();
+        // Espera 1 min depois de subir: cada deploy reiniciava o servidor e disparava a rajada de downloads.
+        setTimeout(inicializarLeis, 60 * 1000).unref();
         setInterval(inicializarLeis, 6 * 60 * 60 * 1000).unref();
 
         const leisGzCache = new Map();   // leiId -> { chave, json, gz }
