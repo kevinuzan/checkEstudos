@@ -4199,12 +4199,23 @@ async function startServer() {
             // (Tentei imitar um Chrome completo e o Planalto passou a devolver uma página que NÃO é
             // a lei — 0 artigos —, então voltei ao simples.) O timeout evita a atualização da lei
             // ficar pendurada pra sempre: a trava "1 atualização por lei" nunca soltaria.
-            const resp = await fetch(cfg.url, {
-                headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' },
-                signal: AbortSignal.timeout(30000)
-            });
-            if (!resp.ok) throw new Error(`Planalto respondeu ${resp.status}`);
-            return decodificarHtmlLei(Buffer.from(await resp.arrayBuffer()));
+            // O Planalto às vezes derruba a conexão (ECONNRESET) quando recebe várias requisições
+            // seguidas; uma nova tentativa depois de alguns segundos costuma passar.
+            let ultimoErro;
+            for (let tentativa = 1; tentativa <= 3; tentativa++) {
+                try {
+                    const resp = await fetch(cfg.url, {
+                        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' },
+                        signal: AbortSignal.timeout(30000)
+                    });
+                    if (!resp.ok) throw new Error(`Planalto respondeu ${resp.status}`);
+                    return decodificarHtmlLei(Buffer.from(await resp.arrayBuffer()));
+                } catch (err) {
+                    ultimoErro = err;
+                    if (tentativa < 3) await new Promise(r => setTimeout(r, tentativa * 4000));
+                }
+            }
+            throw ultimoErro;
         }
 
         // Depois que o texto muda, cada grifo do aluno é "reencontrado" pelo trecho
@@ -4304,6 +4315,8 @@ async function startServer() {
                         await atualizarLei(leiId);
                     }
                 } catch (err) { console.error('[leis] inicialização:', err.message); }
+                // Pausa entre leis: 13 downloads colados parecem rajada ao Planalto.
+                await new Promise(r => setTimeout(r, 2000));
             }
         }
         inicializarLeis();
