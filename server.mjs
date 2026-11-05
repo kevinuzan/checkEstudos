@@ -4195,15 +4195,12 @@ async function startServer() {
         }
 
         async function baixarHtmlLei(cfg) {
-            // O Planalto costuma barrar clientes que não parecem um navegador: manda os cabeçalhos
-            // de um Chrome comum. O timeout evita a atualização da lei ficar pendurada pra sempre
-            // (a trava "1 atualização por lei" nunca soltaria).
+            // Mesmos cabeçalhos do download da Constituição do Jogo, que funciona no Railway.
+            // (Tentei imitar um Chrome completo e o Planalto passou a devolver uma página que NÃO é
+            // a lei — 0 artigos —, então voltei ao simples.) O timeout evita a atualização da lei
+            // ficar pendurada pra sempre: a trava "1 atualização por lei" nunca soltaria.
             const resp = await fetch(cfg.url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.5'
-                },
+                headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' },
                 signal: AbortSignal.timeout(30000)
             });
             if (!resp.ok) throw new Error(`Planalto respondeu ${resp.status}`);
@@ -4242,6 +4239,12 @@ async function startServer() {
                     const atual = await leisTextoColl.findOne({ _id: leiId });
                     const anterior = atual ? atual.itens : null;
                     const veredito = validarLei(itens, cfg, anterior);
+                    // Zero artigos quase sempre é "a página baixada não é a lei" (bloqueio, captcha, erro do site):
+                    // mostra o tamanho e o começo do texto pra dar pra entender o motivo sem olhar o log.
+                    if (!veredito.ok && !itens.some(i => i.k === 'art')) {
+                        const inicioTexto = String(html).replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+                        veredito.motivos.push(`a página baixada tem ${String(html).length} caracteres e começa com: "${inicioTexto}"`);
+                    }
                     if (!veredito.ok) {
                         console.error(`[leis] ${leiId}: atualização recusada —`, veredito.motivos.join('; '));
                         leisUltimoErro.set(leiId, `texto recusado pela verificação: ${veredito.motivos.join('; ')}`);
