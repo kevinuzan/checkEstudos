@@ -4207,11 +4207,16 @@ async function startServer() {
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'pt-BR,pt;q=0.9' } }
         ];
         let planaltoPreferida = 0;   // índice da última apresentação que funcionou
+        let leisPlanaltoBloqueadoEm = 0;   // quando todas as tentativas falharam pela última vez
 
         async function buscarPlanalto(url, apresentacao) {
             const resp = await fetch(url, { headers: apresentacao.headers, signal: AbortSignal.timeout(30000) });
             if (!resp.ok) throw new Error(`Planalto respondeu ${resp.status}`);
-            return Buffer.from(await resp.arrayBuffer());
+            const buf = Buffer.from(await resp.arrayBuffer());
+            // O bloqueio vem como página pequena com status 200 ("Acesso Negado! Esta requisição foi
+            // bloqueada"): sem esta checagem ela parecia um download "bem-sucedido".
+            if (buf.length < 3000 && /Acesso Negado/i.test(buf.toString('latin1'))) throw new Error('Acesso Negado (o Planalto bloqueou o servidor)');
+            return buf;
         }
 
         async function baixarHtmlLei(cfg) {
@@ -4233,7 +4238,8 @@ async function startServer() {
                     if (n < candidatas.length - 1) await new Promise(r => setTimeout(r, 3000));
                 }
             }
-            throw new Error(`o Planalto recusou todas as tentativas (${falhas.join(' | ')})`);
+            leisPlanaltoBloqueadoEm = Date.now();
+            throw new Error(`o Planalto bloqueou o acesso automático do servidor; o texto atual foi mantido. Use "Enviar HTML" para atualizar (${falhas.join(' | ')})`);
         }
 
         // Depois que o texto muda, cada grifo do aluno é "reencontrado" pelo trecho
@@ -4314,6 +4320,7 @@ async function startServer() {
         // Primeira carga: prefere o HTML salvo no repositório (não depende da rede);
         // depois confere o Planalto a cada 6h (só atualiza se passou 1 dia).
         async function inicializarLeis() {
+            const inicioRodada = Date.now();
             for (const leiId of Object.keys(LEIS)) {
                 try {
                     const existente = await leisTextoColl.findOne({ _id: leiId }, { projection: { verificadoEm: 1 } });
@@ -4333,6 +4340,8 @@ async function startServer() {
                         await atualizarLei(leiId);
                     }
                 } catch (err) { console.error('[leis] inicialização:', err.message); }
+                // Se o Planalto bloqueou nesta rodada, não adianta insistir nas demais leis (só aumenta a rajada).
+                if (leisPlanaltoBloqueadoEm >= inicioRodada) { console.warn('[leis] Planalto bloqueou o servidor; rodada interrompida.'); break; }
                 // Pausa entre leis: 13 downloads colados parecem rajada ao Planalto, que passa a
                 // derrubar a conexão (ECONNRESET). O Jogo faz 1 pedido por dia; aqui vamos devagar.
                 await new Promise(r => setTimeout(r, 15000));
