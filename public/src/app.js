@@ -2714,7 +2714,7 @@ function renderizarLei() {
         <section class="painel-bloco">
             <button type="button" class="lei-voltar" onclick="leiVoltar()">← Voltar</button>
             <div class="painel-bloco-header"><h2>📖 ${escaparHtml(l.nome)}</h2></div>
-            <p class="questoes-topico-sub">Texto do Planalto · conferido em ${leiFormatarData(l.verificadoEm)}${l.atualizadoEm ? ` · última alteração do texto em ${leiFormatarData(l.atualizadoEm)}` : ''}</p>
+            <p class="questoes-topico-sub">Texto do Planalto · conferido em ${leiFormatarData(l.verificadoEm)}${l.verificadoEm && Date.now() - new Date(l.verificadoEm).getTime() > 3 * 86400000 ? ' <span class="lei-aviso-desatualizada" title="O servidor não conseguiu conferir o Planalto nos últimos dias">⚠ sem conferência recente</span>' : ''}${l.atualizadoEm ? ` · última alteração do texto em ${leiFormatarData(l.atualizadoEm)}` : ''}</p>
             <div class="lei-ferramentas">
                 <input type="search" id="lei-busca" placeholder="Buscar: art. 5, ou uma palavra" value="${escaparHtml(leiBusca)}" oninput="leiBuscarDigitando()" autocomplete="off">
                 <button type="button" class="btn-secundario" onclick="leiAlternarMudancas()">🔔 O que mudou</button>
@@ -4970,7 +4970,74 @@ function formatarDuracaoCurta(segundos) {
 }
 
 async function abrirAdmin() {
-    await Promise.all([carregarAdminUso(), carregarAdminSugestoes(), carregarAdminAcessos()]);
+    await Promise.all([carregarAdminUso(), carregarAdminSugestoes(), carregarAdminAcessos(), carregarAdminLeis()]);
+}
+
+// ---- Admin: situação das leis (texto do Planalto)
+async function carregarAdminLeis() {
+    const lista = document.getElementById('admin-leis-lista');
+    if (!lista) return;
+    try {
+        const res = await fetch('/api/admin/leis');
+        const d = await res.json();
+        if (!d.success) throw new Error('Falha');
+        lista.innerHTML = d.leis.map(l => `
+            <div class="admin-acesso-linha sugestao-linha">
+                <div class="admin-acesso-info">
+                    <span class="admin-acesso-email">${escaparHtml(l.nome)}</span>
+                    <span class="admin-acesso-meta">${l.disponivel
+                        ? `${l.totalArtigos} artigos · conferida em ${leiFormatarData(l.verificadoEm)}${l.atualizadoEm ? ` · texto alterado em ${leiFormatarData(l.atualizadoEm)}` : ''}`
+                        : 'Sem texto carregado ainda'}</span>
+                    ${l.erro ? `<span class="admin-acesso-meta lei-erro-admin">⚠ ${escaparHtml(l.erro)}</span>` : ''}
+                </div>
+                <button type="button" class="btn-secundario" data-lei="${escaparHtml(l.id)}" onclick="adminLeiAtualizar(this)">Atualizar agora</button>
+                <label class="btn-secundario" for="admin-lei-arq-${escaparHtml(l.id)}" title="Salve a página do Planalto no navegador e envie o arquivo aqui">Enviar HTML</label>
+                <input type="file" id="admin-lei-arq-${escaparHtml(l.id)}" class="arquivo-input-oculto" accept=".htm,.html,text/html" data-lei="${escaparHtml(l.id)}" onchange="adminLeiEnviarHtml(this)">
+            </div>`).join('');
+    } catch (err) {
+        lista.innerHTML = '<p class="config-texto-ajuda">Não foi possível carregar a situação das leis agora.</p>';
+    }
+}
+
+function textoResultadoLei(r) {
+    if (r.ok) return r.mudancas ? `Atualizada! ${r.mudancas} artigo(s) com mudança.` : 'Conferida: o texto já está igual ao do Planalto.';
+    return `Não foi possível atualizar: ${(r.motivos || [r.error || 'erro desconhecido']).join('; ')}`;
+}
+
+async function adminLeiAtualizar(btn) {
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Baixando…';
+    try {
+        const res = await fetch(`/api/admin/leis/${encodeURIComponent(btn.dataset.lei)}/atualizar`, { method: 'POST' });
+        alert(textoResultadoLei(await res.json()));
+    } catch (err) {
+        alert('Não foi possível falar com o servidor agora.');
+    }
+    btn.disabled = false;
+    btn.textContent = original;
+    carregarAdminLeis();
+}
+
+async function adminLeiEnviarHtml(input) {
+    const arquivo = input.files && input.files[0];
+    if (!arquivo) return;
+    try {
+        // UTF-8 se for válido (salvo pelo navegador); senão Windows-1252 (original do Planalto).
+        const bytes = await arquivo.arrayBuffer();
+        let html;
+        try { html = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+        catch (err) { html = new TextDecoder('windows-1252').decode(bytes); }
+        const res = await fetch(`/api/admin/leis/${encodeURIComponent(input.dataset.lei)}/html`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html })
+        });
+        const d = await res.json();
+        alert(d.success === false ? (d.error || 'Não foi possível enviar.') : textoResultadoLei(d));
+    } catch (err) {
+        alert('Não foi possível enviar o arquivo agora.');
+    }
+    input.value = '';
+    carregarAdminLeis();
 }
 
 async function carregarAdminUso() {

@@ -5228,3 +5228,5 @@ input[type="checkbox"] {
 .geral-chip button { border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 0 6px; font-size: 13px; }
 .dp-retorno-card { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; padding: 12px; border: 1px solid var(--primary); border-radius: var(--radius-sm); background: var(--primary-light); font-size: 14px; }
 .dp-retorno-valor { font-size: 20px; color: var(--primary-dark); }
+.lei-erro-admin { color: var(--danger); }
+.lei-aviso-desatualizada { color: var(--danger); font-weight: 600; }

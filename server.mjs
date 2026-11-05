@@ -212,6 +212,8 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req,
 // cartões = ~1,8MB) com erro 413. Esta rota vem ANTES do parser global, que
 // então pula a requisição já lida. As demais rotas seguem com o limite padrão.
 app.use('/api/flashcards/baralhos/importar-json', express.json({ limit: '25mb' }));
+// Upload manual do HTML de uma lei (aba Admin): a CLT passa de 1MB, então precisa de limite maior.
+app.use('/api/admin/leis', express.json({ limit: '15mb' }));
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
@@ -4193,7 +4195,17 @@ async function startServer() {
         }
 
         async function baixarHtmlLei(cfg) {
-            const resp = await fetch(cfg.url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' } });
+            // O Planalto costuma barrar clientes que não parecem um navegador: manda os cabeçalhos
+            // de um Chrome comum. O timeout evita a atualização da lei ficar pendurada pra sempre
+            // (a trava "1 atualização por lei" nunca soltaria).
+            const resp = await fetch(cfg.url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.5'
+                },
+                signal: AbortSignal.timeout(30000)
+            });
             if (!resp.ok) throw new Error(`Planalto respondeu ${resp.status}`);
             return decodificarHtmlLei(Buffer.from(await resp.arrayBuffer()));
         }
@@ -4255,6 +4267,11 @@ async function startServer() {
                 } catch (err) {
                     console.error(`[leis] ${leiId}: falha ao atualizar —`, err.message);
                     leisUltimoErro.set(leiId, `falha ao obter o texto: ${err.message}`);
+                    // Guarda também no banco: sem isso a lei parecia "só desatualizada" e o motivo
+                    // se perdia a cada reinício do servidor.
+                    try {
+                        await leisTextoColl.updateOne({ _id: leiId }, { $set: { ultimoErro: { em: agora, motivos: [`falha ao obter o texto: ${err.message}`] } } });
+                    } catch (e) { /* lei ainda sem texto: nada a gravar */ }
                     return { ok: false, motivos: [err.message] };
                 }
             })().finally(() => leisAtualizando.delete(leiId));
@@ -4292,6 +4309,39 @@ async function startServer() {
         const leisGzCache = new Map();   // leiId -> { chave, json, gz }
         const leiValida = (id) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(LEIS, id);
         const dispDoArtigo = (dispId) => String(dispId).split('.')[0];
+
+        // --- ADMIN: situação e atualização manual das leis ---
+        app.get('/api/admin/leis', requireAdmin, async (req, res) => {
+            const docs = await leisTextoColl.find({}, { projection: { itens: 0 } }).toArray();
+            res.json({
+                success: true,
+                leis: Object.values(LEIS).map(cfg => {
+                    const d = docs.find(x => x._id === cfg.id);
+                    const erroBanco = d && d.ultimoErro && d.ultimoErro.motivos ? d.ultimoErro.motivos.join('; ') : null;
+                    return {
+                        id: cfg.id, nome: cfg.nome, disponivel: !!d, totalArtigos: d ? d.totalArtigos : 0,
+                        atualizadoEm: d ? d.atualizadoEm : null, verificadoEm: d ? d.verificadoEm : null,
+                        erro: leisUltimoErro.get(cfg.id) || erroBanco || null
+                    };
+                })
+            });
+        });
+        // Tenta baixar do Planalto agora e devolve o resultado (com o motivo, se falhar).
+        app.post('/api/admin/leis/:lei/atualizar', requireAdmin, async (req, res) => {
+            if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
+            const r = await atualizarLei(req.params.lei);
+            res.json({ success: true, ...r });
+        });
+        // Alternativa quando o servidor não consegue baixar: o admin salva a página do Planalto no
+        // navegador e envia aqui. Passa pela MESMA verificação (parse + trava de segurança).
+        app.post('/api/admin/leis/:lei/html', requireAdmin, async (req, res) => {
+            if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
+            const html = typeof req.body?.html === 'string' ? req.body.html : '';
+            if (html.length < 500) return res.status(400).json({ success: false, error: 'Arquivo vazio ou inválido.' });
+            if ((html.match(/\uFFFD/g) || []).length > 5) return res.status(400).json({ success: false, error: 'O arquivo está com acentos corrompidos. Salve a página de novo pelo navegador (Ctrl+S, "Página da Web, somente HTML").' });
+            const r = await atualizarLei(req.params.lei, html);
+            res.json({ success: true, ...r });
+        });
 
         app.get('/api/leis', requireAuth, async (req, res) => {
             const docs = await leisTextoColl.find({}, { projection: { itens: 0 } }).toArray();
