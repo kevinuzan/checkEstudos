@@ -26,6 +26,10 @@ import { createHash } from 'crypto';
 //   terminador   regex da linha de data/assinatura que encerra o texto
 //   fimAposArtigo id do último artigo, quando a lei não termina com data (ex.: CLT + anexos)
 //   rubricas     o Planalto traz o título de cada artigo em linha própria (Código Penal)
+// Linha de data/assinatura que encerra o texto das leis do Planalto ("Brasília, 7 de agosto de 2009;
+// 188º da Independência..."). Aceita "Brasília, em 24 de julho de 1985" (leis antigas) e "Rio de Janeiro".
+const TERMINADOR_DATA = /^(Rio de Janeiro|Bras[ií]lia),\s+(?:em\s+)?\d+\s*[º°o]?\s+de\s+\S+\s+de\s+\d{4}/i;
+
 export const LEIS = {
     cf: {
         id: 'cf', nome: 'Constituição Federal', sigla: 'CF/88',
@@ -64,6 +68,61 @@ export const LEIS = {
         // O HTML começa com o decreto que aprova a CLT (cujo "Art. 1º" não é o da CLT) e termina com anexos.
         inicio: /^CONSOLIDAÇÃO DAS LEIS DO TRABALHO$/,
         fimAposArtigo: 'art-922'
+    },
+
+    // ---- Leis esparsas de Direito Constitucional (ficam logo abaixo da CF na aba) ----
+    // Todas seguem o mesmo molde das leis do Planalto já suportadas (CPC/CC): HTML com
+    // cabeçalhos <h*>, redações antigas riscadas e linha de data ("Brasília, ...") encerrando
+    // o texto. minArtigos fica um pouco ABAIXO do total real e as sentinelas são artigos que
+    // sempre existem: se o Planalto mudar o HTML, a verificação recusa o texto em vez de
+    // publicar lixo (e a lei aparece como "ainda sendo carregada", sem quebrar as demais).
+    l11417: {
+        id: 'l11417', nome: 'Lei nº 11.417/2006 - Súmulas Vinculantes', sigla: 'Lei 11.417/2006',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2006/lei/l11417.htm',
+        arquivo: 'lei-11417.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 8, sentinelas: ['art-1'], terminador: TERMINADOR_DATA
+    },
+    l12016: {
+        id: 'l12016', nome: 'Lei nº 12.016/2009 - Lei do Mandado de Segurança', sigla: 'Lei 12.016/2009',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2009/lei/l12016.htm',
+        arquivo: 'lei-12016.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 25, sentinelas: ['art-1', 'art-7'], terminador: TERMINADOR_DATA
+    },
+    l13300: {
+        id: 'l13300', nome: 'Lei nº 13.300/2016 - Lei do Mandado de Injunção', sigla: 'Lei 13.300/2016',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2016/lei/l13300.htm',
+        arquivo: 'lei-13300.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 12, sentinelas: ['art-1'], terminador: TERMINADOR_DATA
+    },
+    l4717: {
+        id: 'l4717', nome: 'Lei nº 4.717/1965 - Lei da Ação Popular', sigla: 'Lei 4.717/1965',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l4717.htm',
+        arquivo: 'lei-4717.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 18, sentinelas: ['art-1', 'art-5'], terminador: TERMINADOR_DATA
+    },
+    l7347: {
+        id: 'l7347', nome: 'Lei nº 7.347/1985 - Lei da Ação Civil Pública', sigla: 'Lei 7.347/1985',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l7347compilada.htm',
+        arquivo: 'lei-7347.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 15, sentinelas: ['art-1', 'art-5'], terminador: TERMINADOR_DATA
+    },
+    l9507: {
+        id: 'l9507', nome: 'Lei nº 9.507/1997 - Lei do Habeas Data', sigla: 'Lei 9.507/1997',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l9507.htm',
+        arquivo: 'lei-9507.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 17, sentinelas: ['art-1', 'art-7'], terminador: TERMINADOR_DATA
+    },
+    l9868: {
+        id: 'l9868', nome: 'Lei nº 9.868/1999 - Da Ação Direta de Inconstitucionalidade (ADI) e da Ação Declaratória de Constitucionalidade (ADC)', sigla: 'Lei 9.868/1999',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l9868.htm',
+        arquivo: 'lei-9868.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 25, sentinelas: ['art-1', 'art-27'], terminador: TERMINADOR_DATA
+    },
+    l9882: {
+        id: 'l9882', nome: 'Lei nº 9.882/1999 - Arguição de Descumprimento de Preceito Fundamental (ADPF)', sigla: 'Lei 9.882/1999',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l9882.htm',
+        arquivo: 'lei-9882.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 10, sentinelas: ['art-1'], terminador: TERMINADOR_DATA
     }
 };
 

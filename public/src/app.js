@@ -2463,7 +2463,8 @@ async function carregarLeis() {
 
 // Leis agrupadas por matéria (acordeão), cada uma com a barrinha de quanto já foi lido.
 const LEI_MATERIAS = [
-    { nome: 'Direito Constitucional', ids: ['cf'] },
+    // As leis esparsas ficam logo abaixo da CF, na ordem em que a aluna pediu.
+    { nome: 'Direito Constitucional', ids: ['cf', 'l11417', 'l12016', 'l13300', 'l4717', 'l7347', 'l9507', 'l9868', 'l9882'] },
     { nome: 'Direito Penal', ids: ['cp'] },
     { nome: 'Direito Civil', ids: ['cc'] },
     { nome: 'Direito Processual Civil', ids: ['cpc'] },
