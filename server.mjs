@@ -4194,28 +4194,46 @@ async function startServer() {
             return texto;
         }
 
+        // O Planalto passou a derrubar (ECONNRESET) clientes que não "parecem" navegador/PowerShell.
+        // Um `Invoke-WebRequest` puro (User-Agent do PowerShell) funcionou na máquina do Kevin enquanto
+        // o "Mozilla/5.0" solto, usado antes, era cortado. Por isso o download tenta várias
+        // apresentações em ordem e lembra qual funcionou (a última boa vai primeiro na próxima vez).
+        const PLANALTO_APRESENTACOES = [
+            { nome: 'PowerShell', auto: true, headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Microsoft Windows 10.0.19045; pt-BR) WindowsPowerShell/5.1.19041.5486' } },
+            { nome: 'Sem User-Agent próprio', auto: true, headers: {} },
+            { nome: 'Mozilla/5.0 simples', auto: true, headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' } },
+            { nome: 'Chrome completo', auto: false, headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'pt-BR,pt;q=0.9' } }
+        ];
+        let planaltoPreferida = 0;   // índice da última apresentação que funcionou
+
+        async function buscarPlanalto(url, apresentacao) {
+            const resp = await fetch(url, { headers: apresentacao.headers, signal: AbortSignal.timeout(30000) });
+            if (!resp.ok) throw new Error(`Planalto respondeu ${resp.status}`);
+            return Buffer.from(await resp.arrayBuffer());
+        }
+
         async function baixarHtmlLei(cfg) {
-            // Mesmos cabeçalhos do download da Constituição do Jogo, que funciona no Railway.
-            // (Tentei imitar um Chrome completo e o Planalto passou a devolver uma página que NÃO é
-            // a lei — 0 artigos —, então voltei ao simples.) O timeout evita a atualização da lei
-            // ficar pendurada pra sempre: a trava "1 atualização por lei" nunca soltaria.
-            // O Planalto às vezes derruba a conexão (ECONNRESET) quando recebe várias requisições
-            // seguidas; uma nova tentativa depois de alguns segundos costuma passar.
-            let ultimoErro;
-            for (let tentativa = 1; tentativa <= 3; tentativa++) {
+            // O timeout evita a atualização ficar pendurada pra sempre (a trava "1 atualização por lei"
+            // nunca soltaria). Se TODAS falharem, o erro lista o que cada uma devolveu.
+            const candidatas = PLANALTO_APRESENTACOES
+                .map((a, i) => ({ a, i }))
+                .filter(x => x.a.auto)
+                .sort((x, y) => (x.i === planaltoPreferida ? -1 : 0) - (y.i === planaltoPreferida ? -1 : 0));
+            const falhas = [];
+            for (let n = 0; n < candidatas.length; n++) {
+                const { a, i } = candidatas[n];
                 try {
-                    const resp = await fetch(cfg.url, {
-                        headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' },
-                        signal: AbortSignal.timeout(30000)
-                    });
-                    if (!resp.ok) throw new Error(`Planalto respondeu ${resp.status}`);
-                    return decodificarHtmlLei(Buffer.from(await resp.arrayBuffer()));
+                    const html = decodificarHtmlLei(await buscarPlanalto(cfg.url, a));
+                    planaltoPreferida = i;
+                    return html;
                 } catch (err) {
-                    ultimoErro = err;
-                    if (tentativa < 3) await new Promise(r => setTimeout(r, tentativa * 8000));
+                    falhas.push(`${a.nome}: ${err.message.replace(/^request to \S+ failed, reason: /, '')}`);
+                    if (n < candidatas.length - 1) await new Promise(r => setTimeout(r, 3000));
                 }
             }
-            throw ultimoErro;
+            throw new Error(`o Planalto recusou todas as tentativas (${falhas.join(' | ')})`);
         }
 
         // Depois que o texto muda, cada grifo do aluno é "reencontrado" pelo trecho
@@ -4343,6 +4361,24 @@ async function startServer() {
                     };
                 })
             });
+        });
+        // Diagnóstico: pede a MESMA lei pequena ao Planalto de cada jeito possível e mostra o que voltou,
+        // pra descobrir qual apresentação ele aceita sem ficar chutando no escuro.
+        app.post('/api/admin/leis-testar-conexao', requireAdmin, async (req, res) => {
+            const cfg = LEIS.l9882 || Object.values(LEIS)[0];
+            const resultados = [];
+            for (let i = 0; i < PLANALTO_APRESENTACOES.length; i++) {
+                const a = PLANALTO_APRESENTACOES[i];
+                try {
+                    const buf = await buscarPlanalto(cfg.url, a);
+                    const texto = buf.toString('latin1').replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
+                    resultados.push({ nome: a.nome, ok: true, bytes: buf.length, inicio: texto });
+                } catch (err) {
+                    resultados.push({ nome: a.nome, ok: false, erro: String(err.cause?.code || err.message).slice(0, 120) });
+                }
+                if (i < PLANALTO_APRESENTACOES.length - 1) await new Promise(r => setTimeout(r, 3000));
+            }
+            res.json({ success: true, url: cfg.url, resultados });
         });
         // Tenta baixar do Planalto agora e devolve o resultado (com o motivo, se falhar).
         app.post('/api/admin/leis/:lei/atualizar', requireAdmin, async (req, res) => {

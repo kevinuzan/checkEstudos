@@ -5019,6 +5019,24 @@ async function adminLeiAtualizar(btn) {
     carregarAdminLeis();
 }
 
+// Testa de quais jeitos o servidor consegue falar com o Planalto (leva ~15 s, pausa entre os testes).
+async function adminTestarPlanalto(btn) {
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Testando… (uns 15 s)';
+    try {
+        const res = await fetch('/api/admin/leis-testar-conexao', { method: 'POST' });
+        const d = await res.json();
+        if (d.success === false) throw new Error(d.error || 'erro');
+        alert('Teste de conexão com o Planalto:\n\n' + d.resultados.map(r =>
+            r.ok ? `✅ ${r.nome}: ${r.bytes} bytes — "${r.inicio}"` : `❌ ${r.nome}: ${r.erro}`).join('\n'));
+    } catch (err) {
+        alert('Não foi possível rodar o teste agora.');
+    }
+    btn.disabled = false;
+    btn.textContent = original;
+}
+
 async function adminLeiEnviarHtml(input) {
     const arquivo = input.files && input.files[0];
     if (!arquivo) return;
