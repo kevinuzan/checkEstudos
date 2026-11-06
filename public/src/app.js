@@ -2945,9 +2945,13 @@ function leiHtmlListaTrechos() {
         if (!c || c.id !== b.capId) { c = { id: b.capId, rot: b.rot, nome: b.nome, ctx: b.ctx, trechos: [] }; caps.push(c); }
         c.trechos.push(b);
     }
-    const todosAbertos = caps.length && caps.every(c => leiCapsAbertos.has(c.id));
-    const barra = caps.length > 1 ? `<div class="lei-caps-barra"><button type="button" class="btn-secundario" onclick="leiCapsTodos(${todosAbertos ? 'false' : 'true'})">${todosAbertos ? '▴ Recolher todos' : '▾ Expandir todos'}</button></div>` : '';
+    // Artigos sem capítulo/título caem num bloco "Texto" artificial ('bloco-inicial'): um toggle chamado
+    // "Texto" não diz nada ao aluno, então esses trechos aparecem direto, sem agrupamento.
+    const capsReais = caps.filter(c => c.id !== 'bloco-inicial');
+    const todosAbertos = capsReais.length && capsReais.every(c => leiCapsAbertos.has(c.id));
+    const barra = capsReais.length > 1 ? `<div class="lei-caps-barra"><button type="button" class="btn-secundario" onclick="leiCapsTodos(${todosAbertos ? 'false' : 'true'})">${todosAbertos ? '▴ Recolher todos' : '▾ Expandir todos'}</button></div>` : '';
     return topo + barra + caps.map(c => {
+        if (c.id === 'bloco-inicial') return c.trechos.map(leiHtmlCartaoTrecho).join('');
         let cab = '';
         if (c.ctx && c.ctx !== ultimoCtx) cab += `<div class="lei-contexto">${escaparHtml(c.ctx)}</div>`;
         ultimoCtx = c.ctx || ultimoCtx;
@@ -3504,9 +3508,9 @@ function leiAlternarLimpar() {
 function leiHtmlLimpar() {
     const t = leiTrechoAberto && leiIdx.porId.get(leiTrechoAberto);
     const caps = [];
-    for (const b of leiIdx.blocos) if (!caps.some(c => c.id === b.capId)) caps.push({ id: b.capId, rot: b.rot, nome: b.nome });
+    for (const b of leiIdx.blocos) if (b.capId !== 'bloco-inicial' && !caps.some(c => c.id === b.capId)) caps.push({ id: b.capId, rot: b.rot, nome: b.nome });
     const opcoes = [];
-    if (t) { opcoes.push(['trecho', `Só este trecho (${leiTituloTrecho(t)})`]); opcoes.push([`cap:${t.capId}`, `Este capítulo (${t.rot})`]); }
+    if (t) { opcoes.push(['trecho', `Só este trecho (${leiTituloTrecho(t)})`]); if (t.capId !== 'bloco-inicial') opcoes.push([`cap:${t.capId}`, `Este capítulo (${t.rot})`]); }
     else caps.forEach(c => opcoes.push([`cap:${c.id}`, `Capítulo: ${c.rot}${c.nome ? ' — ' + c.nome : ''}`]));
     opcoes.push(['lei', 'A lei inteira']);
     return `<div class="lei-limpar">
