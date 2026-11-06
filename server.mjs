@@ -4181,6 +4181,28 @@ async function startServer() {
         const LEIS_REVALIDAR_MS = 24 * 60 * 60 * 1000;   // confere o Planalto no máx. 1x por dia
         const LEIS_MAX_GRIFOS_POR_USUARIO = 5000;
         const LEIS_MAX_NOTA = 5000;
+        // Anotações agora podem ter formatação simples (negrito, itálico, listas...), guardada como HTML.
+        // Defesa em profundidade: só sobram as tags da lista abaixo, SEM atributos (nada de style/onclick/href);
+        // o resto vira texto. O navegador sanitiza de novo ao exibir. Texto puro antigo segue como está.
+        const NOTA_TAGS = { b: 'b', strong: 'b', i: 'i', em: 'i', u: 'u', s: 's', strike: 's', del: 's', br: 'br', p: 'p', div: 'div', ul: 'ul', ol: 'ol', li: 'li' };
+        function limparNotaLeis(valor, maxTexto) {
+            if (typeof valor !== 'string') return '';
+            const bruto = valor.trim();
+            if (!/<\/?(?:b|strong|i|em|u|s|strike|del|p|div|ul|ol|li)>|<br\s*\/?>/i.test(bruto)) return bruto.slice(0, maxTexto);   // texto puro (sem tag completa)
+            // Só é "tag" o que começa com < e uma letra (ou /letra); um "<" solto, como em "1 < 2", é texto.
+            const limpo = bruto.split(/(<\/?[a-zA-Z][^<>]*>)/).map(parte => {
+                if (/^<\/?[a-zA-Z][^<>]*>$/.test(parte)) {
+                    const m = /^<(\/?)\s*([a-z0-9]+)/i.exec(parte);
+                    const tag = m && NOTA_TAGS[m[2].toLowerCase()];
+                    if (!tag) return '';
+                    return tag === 'br' ? (m[1] ? '' : '<br>') : `<${m[1]}${tag}>`;
+                }
+                return parte.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }).join('');
+            const soTexto = limpo.replace(/<[^>]*>/g, '').replace(/&[a-z#0-9]+;/gi, ' ');
+            // Cortar HTML no meio quebraria as tags: passou do limite, recusa (o app avisa antes).
+            return soTexto.length > maxTexto || limpo.length > maxTexto * 4 ? null : limpo;
+        }
         const leisAtualizando = new Map();               // trava: 1 atualização por lei por vez
         const leisUltimoErro = new Map();                // motivo da última falha (aparece na tela se não há texto)
 
@@ -4638,7 +4660,8 @@ async function startServer() {
             }
             if (!docs.length) return res.status(400).json({ success: false, error: 'Seleção inválida' });
             // Anotação sobre o trecho: fica no próprio grifo (um grifo pode ter nota).
-            const nota = typeof req.body.nota === 'string' ? req.body.nota.trim().slice(0, LEIS_MAX_NOTA) : '';
+            const nota = limparNotaLeis(req.body.nota, LEIS_MAX_NOTA);
+            if (nota === null) return res.status(400).json({ success: false, error: 'Anotação grande demais (máximo de 5.000 caracteres).' });
             if (!Object.keys(est).length && !nota) return res.status(400).json({ success: false, error: 'Escolha uma formatação ou escreva uma anotação' });
             if (nota) docs[0].nota = nota;
             await leisGrifosColl.insertMany(docs);
@@ -4651,12 +4674,14 @@ async function startServer() {
             if (!leiValida(req.params.lei) || !ObjectId.isValid(req.params.id)) return res.status(400).json({ success: false, error: 'Pedido inválido' });
             const set = {}, unset = {};
             if (req.body.nota !== undefined) {
-                const nota = typeof req.body.nota === 'string' ? req.body.nota.trim().slice(0, LEIS_MAX_NOTA) : '';
+                const nota = limparNotaLeis(req.body.nota, LEIS_MAX_NOTA);
+                if (nota === null) return res.status(400).json({ success: false, error: 'Anotação grande demais (máximo de 5.000 caracteres).' });
                 if (nota) set.nota = nota; else unset.nota = '';
             }
             // Anotação do marcador (ex.: em qual prova caiu): separada do comentário comum do trecho.
             if (req.body.notaM !== undefined) {
-                const notaM = typeof req.body.notaM === 'string' ? req.body.notaM.trim().slice(0, 1000) : '';
+                const notaM = limparNotaLeis(req.body.notaM, 1000);
+                if (notaM === null) return res.status(400).json({ success: false, error: 'Anotação do marcador grande demais (máximo de 1.000 caracteres).' });
                 if (notaM) set.notaM = notaM; else unset.notaM = '';
             }
             if (req.body.est !== undefined) {
@@ -4684,7 +4709,8 @@ async function startServer() {
         app.put('/api/leis/:lei/notas', requireAuth, async (req, res) => {
             if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
             const dispId = typeof req.body.dispId === 'string' ? req.body.dispId : '';
-            const texto = typeof req.body.texto === 'string' ? req.body.texto.trim().slice(0, LEIS_MAX_NOTA) : '';
+            const texto = limparNotaLeis(req.body.texto, LEIS_MAX_NOTA);
+            if (texto === null) return res.status(400).json({ success: false, error: 'Anotação grande demais (máximo de 5.000 caracteres).' });
             const d = await leisTextoColl.findOne({ _id: req.params.lei, 'itens.id': dispId }, { projection: { _id: 1 } });
             if (!d) return res.status(400).json({ success: false, error: 'Dispositivo inválido' });
             const filtro = { userId: req.userId, lei: req.params.lei, dispId };

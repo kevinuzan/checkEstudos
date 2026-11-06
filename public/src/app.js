@@ -2410,7 +2410,7 @@ async function carregarLeis() {
         // Menu nativo do aparelho (copiar, pesquisar...) ao segurar o texto: some, para só aparecer o nosso.
         // Opção desligável, porque em alguns navegadores isso pode atrapalhar a seleção.
         document.addEventListener('contextmenu', (e) => {
-            if (viewAtual === 'leis' && e.target && e.target.closest && e.target.closest('#lei-leitura')) e.preventDefault();
+            if (viewAtual === 'leis' && e.target && e.target.closest && e.target.closest('#lei-leitura') && !e.target.closest('.lei-nota-editor')) e.preventDefault();
         });
         // Tocou fora da barra / do balão / da faixa de ferramentas / de um grifo: fecha o editor (senão ficava para sempre).
         // Não fecha enquanto a pessoa escreve um comentário ou personaliza a barra.
@@ -2817,8 +2817,8 @@ function leiHtmlMarcados(n) {
         return `<div class="lei-marc-item">
             <div class="lei-marc-meta">${mc ? escaparHtml(mc.e) : ''} ${rot ? 'Art. ' + escaparHtml(rot) : escaparHtml(artId)}${t ? ` · trecho ${escaparHtml(t.num)}` : ''}</div>
             <div class="lei-marc-texto">“${escaparHtml(g.trecho)}”</div>
-            ${g.notaM ? `<div class="lei-marc-anot">✍️ ${escaparHtml(g.notaM)}</div>` : ''}
-            ${g.nota ? `<div class="lei-nota-texto">📝 ${escaparHtml(g.nota)}</div>` : ''}
+            ${g.notaM ? `<div class="lei-marc-anot">✍️ ${leiNotaParaHtml(g.notaM)}</div>` : ''}
+            ${g.nota ? `<div class="lei-nota-texto">📝 ${leiNotaParaHtml(g.nota)}</div>` : ''}
             <button type="button" class="btn-secundario" data-art="${escaparHtml(artId)}" onclick="leiIrParaArtigo(this.dataset.art)">Ir para o artigo</button>
         </div>`;
     }).join('');
@@ -3302,12 +3302,74 @@ function leiHtmlArtigo(artId) {
 function leiHtmlNotaArtigo(artId) {
     const n = leiNotaDoArt(artId);
     if (!n) return '';
-    return `<div class="lei-nota"><div class="lei-nota-titulo">📝 Sobre o artigo todo</div><div class="lei-nota-texto">${escaparHtml(n.texto)}</div></div>`;
+    return `<div class="lei-nota"><div class="lei-nota-titulo">📝 Sobre o artigo todo</div><div class="lei-nota-texto">${leiNotaParaHtml(n.texto)}</div></div>`;
 }
 
 function leiAlternarAnotacoes(artId) {
     if (leiAnotAbertas.has(artId)) leiAnotAbertas.delete(artId); else leiAnotAbertas.add(artId);
     leiAtualizarArtigosDe([artId]);
+}
+
+// ---------- Editor de texto das anotações (negrito, itálico, listas...) ----------
+// As anotações (do artigo, do trecho e do marcador) guardam HTML simples. Só estas tags sobrevivem, sem
+// atributos; o que vier de fora (colar, dado antigo, servidor) passa por aqui antes de ir à tela.
+const LEI_NOTA_TAGS = { B: 'b', STRONG: 'b', I: 'i', EM: 'i', U: 'u', S: 's', STRIKE: 's', DEL: 's', P: 'p', DIV: 'div', UL: 'ul', OL: 'ol', LI: 'li' };
+function leiNotaSanitizar(html) {
+    // DOMParser cria um documento "morto": nada executa enquanto lemos o conteúdo.
+    const corpo = new DOMParser().parseFromString('<body>' + String(html || '') + '</body>', 'text/html').body;
+    const sai = (no) => {
+        let out = '';
+        no.childNodes.forEach(f => {
+            if (f.nodeType === 3) { out += escaparHtml(f.nodeValue); return; }
+            if (f.nodeType !== 1 || f.tagName === 'SCRIPT' || f.tagName === 'STYLE') return;
+            if (f.tagName === 'BR') { out += '<br>'; return; }
+            const t = LEI_NOTA_TAGS[f.tagName];
+            const dentro = sai(f);
+            out += t ? `<${t}>${dentro}</${t}>` : dentro;
+        });
+        return out;
+    };
+    return sai(corpo);
+}
+// Anotação antiga era texto puro: mostra com as quebras de linha. A nova é HTML (tem alguma tag permitida).
+function leiNotaParaHtml(valor) {
+    const s = String(valor || '');
+    if (/<\/?(?:b|strong|i|em|u|s|strike|del|p|div|ul|ol|li)>|<br\s*\/?>/i.test(s)) return leiNotaSanitizar(s);
+    return escaparHtml(s).replace(/\n/g, '<br>');
+}
+// Barra de formatação + campo editável. Os botões usam mousedown com preventDefault para o campo NÃO perder
+// o foco (nem a seleção) ao tocar neles — é o mesmo cuidado do editor de flashcards.
+function leiHtmlEditorNota(id, valor, placeholder) {
+    const bt = (cmd, rot, dica) => `<button type="button" data-cmd="${cmd}" title="${dica}" aria-label="${dica}" onmousedown="event.preventDefault()" onclick="leiNotaFormatar(this.dataset.cmd)">${rot}</button>`;
+    return `<div class="lei-nota-ferr">
+            ${bt('bold', '<b>N</b>', 'Negrito (Ctrl+B)')}${bt('italic', '<i>I</i>', 'Itálico (Ctrl+I)')}${bt('underline', '<u>S</u>', 'Sublinhado (Ctrl+U)')}${bt('strikeThrough', '<s>T</s>', 'Tachado')}
+            ${bt('insertUnorderedList', '• Lista', 'Lista com marcadores')}${bt('insertOrderedList', '1. Lista', 'Lista numerada')}${bt('removeFormat', '✕ Limpar', 'Tirar a formatação do trecho selecionado')}
+        </div>
+        <div id="${id}" class="lei-nota-editor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="${escaparHtml(placeholder)}">${leiNotaParaHtml(valor)}</div>`;
+}
+function leiNotaFormatar(cmd) {
+    document.execCommand(cmd, false, null);
+}
+// Colar sempre como texto simples: não traz fonte, cor e fundo de outro site/documento.
+function leiNotaPrepararEditor(id) {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.pronto) return el;
+    el.dataset.pronto = '1';
+    el.addEventListener('paste', (e) => {
+        e.preventDefault();
+        const t = (e.clipboardData || window.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, t);
+    });
+    return el;
+}
+// Conteúdo do editor já limpo; '' se estiver vazio. Devolve null se passar do limite de caracteres.
+function leiNotaLer(id, max) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    const limpo = leiNotaSanitizar(el.innerHTML).replace(/^(?:<br>|\s)+|(?:<br>|\s)+$/g, '');
+    if (!el.textContent.trim() && !/<li>/.test(limpo)) return '';
+    if (el.textContent.length > max) { alert(`A anotação passou de ${max} caracteres. Encurte um pouco.`); return null; }
+    return limpo;
 }
 
 // ---------- Anotações ----------
@@ -3319,15 +3381,18 @@ function leiAbrirNota(artId) {
     const n = leiNotaDoArt(artId);
     area.innerHTML = `
         <div class="lei-nota lei-nota-edicao">
-            <textarea id="lei-nota-texto" rows="4" maxlength="5000" placeholder="Escreva sua anotação para este artigo...">${escaparHtml(n ? n.texto : '')}</textarea>
+            ${leiHtmlEditorNota('lei-nota-texto', n ? n.texto : '', 'Escreva sua anotação para este artigo...')}
             <div class="modal-actions">
                 <button type="button" class="btn-cancelar" onclick="leiCancelarNota(this.closest('.lei-art').dataset.art)">Cancelar</button>
                 <button type="button" onclick="leiSalvarNota(this.closest('.lei-art').dataset.art)">Salvar</button>
             </div>
         </div>`;
     leiEsconderBarra();
-    const ta = document.getElementById('lei-nota-texto');
+    const ta = leiNotaPrepararEditor('lei-nota-texto');
     if (ta) ta.focus();
+    // Leva o editor (com a barra de formatação em cima) para o alto da tela, antes de o teclado ocupar a metade de baixo.
+    const caixaEd = area.querySelector('.lei-nota-edicao');
+    if (caixaEd && caixaEd.scrollIntoView) caixaEd.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 function leiCancelarNota(artId) {
@@ -3336,9 +3401,9 @@ function leiCancelarNota(artId) {
 }
 
 async function leiSalvarNota(artId) {
-    const ta = document.getElementById('lei-nota-texto');
-    if (!ta) return;
-    const texto = ta.value.trim();
+    if (!document.getElementById('lei-nota-texto')) return;
+    const texto = leiNotaLer('lei-nota-texto', 5000);
+    if (texto === null) return;
     try {
         const res = await fetch(`/api/leis/${encodeURIComponent(leiAberta)}/notas`, {
             method: 'PUT',
@@ -3657,7 +3722,7 @@ function leiMostrarBarra(modo) {
         b.innerHTML = `<div class="lei-barra-nota">
             ${marc ? `<div class="lei-barra-titulo">${escaparHtml(marc.e)} Anotação do marcador “${escaparHtml(marc.n)}”</div>` : ''}
             <div class="lei-barra-citacao">“${escaparHtml(citado.length > 140 ? citado.slice(0, 140) + '…' : citado)}”</div>
-            <textarea id="lei-barra-nota-texto" rows="4" maxlength="5000" placeholder="${marc ? 'Ex.: caiu na prova da banca X, ano Y...' : 'Seu comentário sobre este trecho...'}">${escaparHtml(g ? (marc ? (g.notaM || '') : (g.nota || '')) : '')}</textarea>
+            ${leiHtmlEditorNota('lei-barra-nota-texto', g ? (marc ? (g.notaM || '') : (g.nota || '')) : '', marc ? 'Ex.: caiu na prova da banca X, ano Y...' : 'Seu comentário sobre este trecho...')}
             <div class="modal-actions">
                 <button type="button" class="btn-cancelar" onclick="leiBarraVoltar()">${marc ? 'Pular' : 'Cancelar'}</button>
                 <button type="button" onclick="leiSalvarNotaTrecho()">Salvar</button>
@@ -3704,6 +3769,9 @@ function leiPosicionarBarra() {
         top = a.bottom + (toque ? 40 : 12);
         if (top + h > H - 8) top = a.top - h - (toque ? 8 : 12);                // sem espaço embaixo: em cima
     }
+    // Escrevendo uma anotação: o painel fica sempre no TOPO da parte visível da tela (a citação do trecho
+    // continua nele). Embaixo, o teclado do celular cobria a barra de formatação e os botões Salvar/Cancelar.
+    if (leiBarraModo === 'nota') { top = ((window.visualViewport && window.visualViewport.offsetTop) || 0) + 8; left = (W - w) / 2; }
     b.style.left = Math.max(8, Math.min(left, W - w - 8)) + 'px';
     b.style.top = Math.max(8, top) + 'px';
     leiPosicionarBalao();
@@ -3736,10 +3804,10 @@ function leiMostrarBalao(grifos, rectHover) {
     }
     el.innerHTML = com.map(g => `<div class="lei-balao-item">
             ${com.length > 1 ? `<div class="lei-balao-trecho">“${escaparHtml(g.trecho.length > 60 ? g.trecho.slice(0, 60) + '…' : g.trecho)}”</div>` : ''}
-            ${g.nota ? `<div class="lei-balao-texto">${escaparHtml(g.nota)}</div>
+            ${g.nota ? `<div class="lei-balao-texto">${leiNotaParaHtml(g.nota)}</div>
             <button type="button" class="lei-balao-editar" data-gid="${escaparHtml(g.id)}" onclick="leiEditarNotaDoGrifo(this.dataset.gid)">Editar</button>` : ''}
             ${!g.notaM && leiTemMarc(g) ? `<button type="button" class="lei-balao-editar" data-gid="${escaparHtml(g.id)}" onclick="leiEditarNotaMarcDoGrifo(this.dataset.gid)">✍️ Anotar em ${escaparHtml(leiMarc(leiEstiloDe(g).m).e + ' ' + leiMarc(leiEstiloDe(g).m).n)}</button>` : ''}
-            ${g.notaM ? `<div class="lei-balao-marc"><strong>${leiMarc(leiEstiloDe(g).m) ? escaparHtml(leiMarc(leiEstiloDe(g).m).e + ' ' + leiMarc(leiEstiloDe(g).m).n) : 'Marcador'}:</strong> ${escaparHtml(g.notaM)}</div>
+            ${g.notaM ? `<div class="lei-balao-marc"><strong>${leiMarc(leiEstiloDe(g).m) ? escaparHtml(leiMarc(leiEstiloDe(g).m).e + ' ' + leiMarc(leiEstiloDe(g).m).n) : 'Marcador'}:</strong> ${leiNotaParaHtml(g.notaM)}</div>
             <button type="button" class="lei-balao-editar" data-gid="${escaparHtml(g.id)}" onclick="leiEditarNotaMarcDoGrifo(this.dataset.gid)">Editar</button>` : ''}
         </div>`).join('') + '<button type="button" class="lei-balao-fechar" onclick="leiEsconderBalao()" aria-label="Fechar">✕</button>';
     el.style.display = 'block';
@@ -4002,7 +4070,7 @@ function leiAbrirEditorNota() {
     else if (leiSelecaoPendente) leiNotaModo = { tipo: 'nova' };
     else return leiDica('Selecione um trecho do texto, ou toque num grifo, para comentar.');
     leiMostrarBarra('nota');
-    const ta = document.getElementById('lei-barra-nota-texto');
+    const ta = leiNotaPrepararEditor('lei-barra-nota-texto');
     if (ta) ta.focus();
 }
 
@@ -4012,15 +4080,15 @@ function leiAbrirEditorNotaMarc() {
     if (!g) return leiDica('Primeiro aplique um marcador no trecho (🔥 🎯 ⚠️...), depois escreva a anotação dele.');
     leiNotaModo = { tipo: 'editar', gid: g.id, campo: 'marc' };
     leiMostrarBarra('nota');
-    const ta = document.getElementById('lei-barra-nota-texto');
+    const ta = leiNotaPrepararEditor('lei-barra-nota-texto');
     if (ta) ta.focus();
 }
 
 // Salva o comentário do editor: cria o grifo (trecho novo, sem formatação) ou troca a nota de um grifo.
 async function leiSalvarNotaTrecho() {
-    const ta = document.getElementById('lei-barra-nota-texto');
-    if (!ta || !leiNotaModo) return;
-    const texto = ta.value.trim();
+    if (!document.getElementById('lei-barra-nota-texto') || !leiNotaModo) return;
+    const texto = leiNotaLer('lei-barra-nota-texto', leiNotaModo.campo === 'marc' ? 1000 : 5000);
+    if (texto === null) return;
     if (leiNotaModo.tipo === 'nova') {
         if (!texto) return alert('Escreva o comentário (ou use as ferramentas para só formatar).');
         return leiAplicarNovo({}, texto);

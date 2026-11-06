@@ -5239,3 +5239,16 @@ input[type="checkbox"] {
 .admin-nav-badge { min-width: 18px; padding: 0 6px; border-radius: 99px; background: var(--danger); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
 .admin-diagnostico { margin-top: 10px; }
 .admin-diagnostico summary { cursor: pointer; font-size: 13px; color: var(--text-muted); padding: 6px 0; }
+
+/* Editor de texto das anotações (negrito, itálico, listas...) */
+.lei-nota-ferr { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.lei-nota-ferr button { min-width: 34px; height: 32px; padding: 0 9px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: 13.5px; line-height: 1; cursor: pointer; }
+.lei-nota-editor { min-height: 96px; max-height: 40vh; overflow-y: auto; box-sizing: border-box; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); color: var(--text); font-size: 14px; line-height: 1.45; outline: none; user-select: text; -webkit-user-select: text; }
+.lei-nota-editor:focus { border-color: var(--primary); }
+.lei-nota-editor:empty::before { content: attr(data-placeholder); color: var(--text-faint); pointer-events: none; }
+.lei-nota-editor ul, .lei-nota-editor ol, .lei-nota-texto ul, .lei-nota-texto ol, .lei-balao-texto ul, .lei-balao-texto ol, .lei-marc-anot ul, .lei-marc-anot ol { margin: 4px 0; padding-left: 22px; }
+.lei-barra-nota .lei-nota-editor { min-height: 72px; max-height: 26vh; }
+
+/* A barra de formatação acompanha o campo de cima: fica visível mesmo com anotação longa rolando. */
+.lei-nota-edicao { scroll-margin-top: 72px; }
+.lei-nota-edicao .lei-nota-ferr { position: sticky; top: 0; z-index: 2; background: var(--surface-muted); padding: 4px 0; margin-top: 0; }
