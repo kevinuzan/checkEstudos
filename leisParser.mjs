@@ -123,6 +123,14 @@ export const LEIS = {
         url: 'https://www.planalto.gov.br/ccivil_03/leis/l9882.htm',
         arquivo: 'lei-9882.htm', cabecalhosH: true, descartarSuperados: true,
         minArtigos: 10, sentinelas: ['art-1'], terminador: TERMINADOR_DATA
+    },
+    // Endereço com "L" maiúsculo é o do Planalto (o servidor de lá diferencia). 194 artigos na origem;
+    // sentinelas pegam começo, meio (art. 75, dispensa) e fim (art. 194, vigência).
+    l14133: {
+        id: 'l14133', nome: 'Lei nº 14.133/2021 - Licitações e Contratos Administrativos', sigla: 'Lei 14.133/2021',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/L14133.htm',
+        arquivo: 'lei-14133.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 150, sentinelas: ['art-1', 'art-75', 'art-194'], terminador: TERMINADOR_DATA
     }
 };
 

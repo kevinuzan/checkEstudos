@@ -2465,6 +2465,7 @@ async function carregarLeis() {
 const LEI_MATERIAS = [
     // As leis esparsas ficam logo abaixo da CF, na ordem em que a aluna pediu.
     { nome: 'Direito Constitucional', ids: ['cf', 'l11417', 'l12016', 'l13300', 'l4717', 'l7347', 'l9507', 'l9868', 'l9882'] },
+    { nome: 'Direito Administrativo', ids: ['l14133'] },
     { nome: 'Direito Penal', ids: ['cp'] },
     { nome: 'Direito Civil', ids: ['cc'] },
     { nome: 'Direito Processual Civil', ids: ['cpc'] },
@@ -3278,18 +3279,10 @@ function leiHtmlArtigo(artId) {
     }).join('');
     const alt = leiMeus.alteracoes && leiMeus.alteracoes[artId];
     const aviso = alt ? `<div class="lei-alerta">⚠ Este artigo foi ${escaparHtml(({ alterado: 'alterado', incluido: 'incluído', revogado: 'revogado', removido: 'removido' })[alt.tipo] || 'alterado')} em ${leiFormatarData(alt.em)}, depois dos seus grifos/anotações. Confira se ainda fazem sentido.</div>` : '';
-    // Todas as anotações do artigo (do artigo inteiro e dos trechos) ficam num painel
-    // recolhido — com muitas notas a leitura não vira uma pilha de cartões.
-    const itensTrecho = leiMeus.grifos.filter(g => g.nota && !g.orfao && g.dispId.split('.')[0] === artId)
-        .map(g => `<div class="lei-nota lei-nota-trecho"><div class="lei-nota-titulo">📝 Sobre “${escaparHtml(g.trecho.length > 90 ? g.trecho.slice(0, 90) + '…' : g.trecho)}”</div><div class="lei-nota-texto">${escaparHtml(g.nota)}</div><button type="button" class="btn-secundario" data-gid="${escaparHtml(g.id)}" onclick="leiEditarNotaDoGrifo(this.dataset.gid)">Editar</button></div>`);
+    // Embaixo do artigo aparece SÓ a anotação do artigo inteiro. As anotações de trechos do texto
+    // ficam no próprio grifo: aparecem no balão ao passar o mouse (ou tocar) em cima do trecho.
     const notaArt = leiHtmlNotaArtigo(artId);
-    const totalNotas = itensTrecho.length + (notaArt ? 1 : 0);
-    const abertas = leiAnotAbertas.has(artId);
-    const painelNotas = totalNotas ? `
-            <div class="lei-anotacoes">
-                <button type="button" class="lei-anot-toggle" onclick="leiAlternarAnotacoes(this.closest('.lei-art').dataset.art)">${abertas ? '▾' : '▸'} 📝 Anotações (${totalNotas})</button>
-                ${abertas ? `<div class="lei-anot-lista">${notaArt}${itensTrecho.join('')}</div>` : ''}
-            </div>` : '';
+    const painelNotas = notaArt ? `<div class="lei-anotacoes">${notaArt}</div>` : '';
     const orfaos = leiMeus.grifos.filter(g => g.orfao && g.dispId.split('.')[0] === artId)
         .map(g => `<div class="lei-orfao">Grifo que não existe mais no texto: “${escaparHtml(g.trecho)}” <button type="button" class="btn-secundario" data-gid="${escaparHtml(g.id)}" onclick="leiRemoverGrifo(this.dataset.gid)">Remover</button></div>`).join('');
     return `
