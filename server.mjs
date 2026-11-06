@@ -21,7 +21,7 @@ import initSqlJs from 'sql.js';
 import { decompress as decompressZstd } from 'fzstd';
 import pdfParse from 'pdf-parse';
 import Stripe from 'stripe';
-import { createHash } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import zlib from 'zlib';
 import { LEIS, parseLeiHtml, validarLei, compararLeis } from './leisParser.mjs';
 
@@ -214,6 +214,8 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req,
 app.use('/api/flashcards/baralhos/importar-json', express.json({ limit: '25mb' }));
 // Upload manual do HTML de uma lei (aba Admin): a CLT passa de 1MB, então precisa de limite maior.
 app.use('/api/admin/leis', express.json({ limit: '15mb' }));
+// Importação das leis pelo computador do admin (script PowerShell): HTML em base64, CLT passa de 4MB.
+app.use('/api/leis-importar', express.json({ limit: '15mb' }));
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
@@ -4388,6 +4390,46 @@ async function startServer() {
                 if (i < PLANALTO_APRESENTACOES.length - 1) await new Promise(r => setTimeout(r, 3000));
             }
             res.json({ success: true, url: cfg.url, resultados });
+        });
+        // --- IMPORTAÇÃO PELO COMPUTADOR DO ADMIN ---
+        // O Planalto bloqueia o IP do servidor, mas aceita o computador do admin. Um script lá baixa as
+        // leis e envia pra cá. Não é login de usuário: é uma chave secreta (LEIS_UPLOAD_KEY, só no Railway
+        // e na máquina do admin). O texto passa pela MESMA verificação do "Enviar HTML" — se vier
+        // estranho, é recusado e o texto bom é mantido. Sem a variável, a rota fica desligada.
+        const falhasChaveLeis = new Map();   // ip -> { n, ate } : segura tentativa de adivinhar a chave
+        function conferirChaveLeis(req, res) {
+            const esperada = process.env.LEIS_UPLOAD_KEY || '';
+            if (esperada.length < 16) { res.status(503).json({ success: false, error: 'Importação desligada (LEIS_UPLOAD_KEY ausente ou curta demais).' }); return false; }
+            const reg = falhasChaveLeis.get(req.ip);
+            if (reg && reg.n >= 10 && Date.now() < reg.ate) { res.status(429).json({ success: false, error: 'Muitas tentativas. Aguarde alguns minutos.' }); return false; }
+            const hash = (v) => createHash('sha256').update(String(v)).digest();
+            if (!timingSafeEqual(hash(req.get('x-leis-chave') || ''), hash(esperada))) {
+                const n = (reg && Date.now() < reg.ate ? reg.n : 0) + 1;
+                falhasChaveLeis.set(req.ip, { n, ate: Date.now() + 10 * 60 * 1000 });
+                res.status(401).json({ success: false, error: 'Chave inválida.' });
+                return false;
+            }
+            falhasChaveLeis.delete(req.ip);
+            return true;
+        }
+        // O script pergunta quais leis existem e onde baixar: lei nova no app entra sem mexer no script.
+        app.get('/api/leis-importar/catalogo', (req, res) => {
+            if (!conferirChaveLeis(req, res)) return;
+            res.json({ success: true, leis: Object.values(LEIS).map(c => ({ id: c.id, nome: c.nome, url: c.url })) });
+        });
+        app.post('/api/leis-importar/:lei', async (req, res) => {
+            if (!conferirChaveLeis(req, res)) return;
+            if (!leiValida(req.params.lei)) return res.status(404).json({ success: false, error: 'Lei não encontrada' });
+            try {
+                const b64 = typeof req.body?.htmlBase64 === 'string' ? req.body.htmlBase64 : '';
+                const bytes = Buffer.from(b64, 'base64');
+                if (bytes.length < 500) return res.status(400).json({ success: false, error: 'Arquivo vazio ou inválido.' });
+                // Bytes originais do Planalto (Windows-1252): a decodificação é a mesma do download antigo.
+                const r = await atualizarLei(req.params.lei, decodificarHtmlLei(bytes));
+                res.json({ success: true, ...r });
+            } catch (err) {
+                res.status(400).json({ success: false, error: err.message });
+            }
         });
         // Tenta baixar do Planalto agora e devolve o resultado (com o motivo, se falhar).
         app.post('/api/admin/leis/:lei/atualizar', requireAdmin, async (req, res) => {

@@ -912,6 +912,15 @@
 
             <!-- ===================== VIEW: ADMIN (só administradores) ===================== -->
             <div id="view-admin" style="display:none;">
+                <!-- Blocos de acesso: uma seção por vez, em vez de tudo empilhado numa tela só -->
+                <nav class="admin-nav" aria-label="Seções do Admin">
+                    <button type="button" class="admin-nav-btn ativo" data-sub="visao" onclick="adminSub(this.dataset.sub)">📈 Visão geral</button>
+                    <button type="button" class="admin-nav-btn" data-sub="acessos" onclick="adminSub(this.dataset.sub)">🔑 Acessos</button>
+                    <button type="button" class="admin-nav-btn" data-sub="leis" onclick="adminSub(this.dataset.sub)">📚 Leis</button>
+                    <button type="button" class="admin-nav-btn" data-sub="sugestoes" onclick="adminSub(this.dataset.sub)">💡 Sugestões <span class="admin-nav-badge" id="admin-sub-badge" style="display:none;"></span></button>
+                </nav>
+
+                <div class="admin-sub" data-sub="visao">
                 <section class="painel-bloco">
                     <div class="painel-bloco-header">
                         <h2>📈 Uso do app</h2>
@@ -927,23 +936,9 @@
                     </div>
                     <div class="admin-acessos-lista" id="admin-negados-lista"></div>
                 </section>
+                </div>
 
-                <section class="painel-bloco">
-                    <div class="painel-bloco-header">
-                        <h2>📚 Leis (texto do Planalto)</h2>
-                    </div>
-                    <div class="admin-acessos-lista" id="admin-leis-lista"></div>
-                    <button type="button" class="btn-secundario" id="btn-testar-planalto" onclick="adminTestarPlanalto(this)">Testar conexão com o Planalto</button>
-                    <p class="config-texto-ajuda">O servidor confere o Planalto sozinho a cada poucas horas. Se aparecer um aviso vermelho, "Atualizar agora" mostra o motivo; se o servidor não conseguir baixar, salve a página da lei no navegador e use "Enviar HTML".</p>
-                </section>
-
-                <section class="painel-bloco">
-                    <div class="painel-bloco-header">
-                        <h2>💡 Sugestões recebidas</h2>
-                    </div>
-                    <div class="admin-acessos-lista" id="admin-sugestoes-lista"></div>
-                </section>
-
+                <div class="admin-sub" data-sub="acessos" style="display:none;">
                 <section class="painel-bloco" id="config-bloco-admin">
                     <div class="painel-bloco-header">
                         <h2>Acessos (testes fechados)</h2>
@@ -965,6 +960,30 @@
                         <p class="config-texto-ajuda">Copia o plano ENAM e os baralhos ENAM da SUA conta para todo usuário novo (zerados). Quem já tem conta não é alterado.</p>
                     </div>
                 </section>
+                </div>
+
+                <div class="admin-sub" data-sub="leis" style="display:none;">
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>📚 Leis (texto do Planalto)</h2>
+                    </div>
+                    <div class="admin-acessos-lista" id="admin-leis-lista"></div>
+                    <p class="config-texto-ajuda">O Planalto bloqueia o servidor do app, então as leis são atualizadas pelo script <strong>atualizar-leis.ps1</strong> no computador do admin (roda ao ligar o PC, 1 vez por dia). Se uma lei vier estranha, ela é recusada e o texto atual é mantido. "Atualizar agora" tenta baixar pelo servidor (hoje costuma ser barrado); "Enviar HTML" serve de plano B.</p>
+                    <details class="admin-diagnostico">
+                        <summary>Diagnóstico da conexão do servidor</summary>
+                        <button type="button" class="btn-secundario" id="btn-testar-planalto" onclick="adminTestarPlanalto(this)">Testar conexão com o Planalto</button>
+                    </details>
+                </section>
+                </div>
+
+                <div class="admin-sub" data-sub="sugestoes" style="display:none;">
+                <section class="painel-bloco">
+                    <div class="painel-bloco-header">
+                        <h2>💡 Sugestões recebidas</h2>
+                    </div>
+                    <div class="admin-acessos-lista" id="admin-sugestoes-lista"></div>
+                </section>
+                </div>
 
             </div>
 

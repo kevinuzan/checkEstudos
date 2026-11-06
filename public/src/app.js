@@ -4965,6 +4965,18 @@ function atualizarBadgeAdmin(qtd) {
     if (!el) return;
     el.textContent = qtd > 99 ? '99+' : String(qtd);
     el.style.display = qtd > 0 ? 'inline-block' : 'none';
+    // O mesmo número aparece no bloco "Sugestões" dentro do Admin.
+    const sub = document.getElementById('admin-sub-badge');
+    if (sub) { sub.textContent = el.textContent; sub.style.display = el.style.display; }
+}
+
+// Blocos do Admin: mostra uma seção por vez e lembra a última (só conveniência: se o storage falhar, abre "Visão geral").
+const ADMIN_SUBS = ['visao', 'acessos', 'leis', 'sugestoes'];
+function adminSub(nome) {
+    if (!ADMIN_SUBS.includes(nome)) nome = 'visao';
+    document.querySelectorAll('#view-admin .admin-sub').forEach(el => { el.style.display = el.dataset.sub === nome ? 'block' : 'none'; });
+    document.querySelectorAll('#view-admin .admin-nav-btn').forEach(b => b.classList.toggle('ativo', b.dataset.sub === nome));
+    try { localStorage.setItem('adminSub', nome); } catch (e) { /* sem storage: tudo bem */ }
 }
 
 function formatarDuracaoCurta(segundos) {
@@ -4974,6 +4986,9 @@ function formatarDuracaoCurta(segundos) {
 }
 
 async function abrirAdmin() {
+    let ultima = 'visao';
+    try { ultima = localStorage.getItem('adminSub') || 'visao'; } catch (e) { /* ignora */ }
+    adminSub(ultima);
     await Promise.all([carregarAdminUso(), carregarAdminSugestoes(), carregarAdminAcessos(), carregarAdminLeis()]);
 }
 
