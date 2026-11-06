@@ -4323,30 +4323,38 @@ async function startServer() {
         // depois confere o Planalto a cada 6h (só atualiza se passou 1 dia).
         async function inicializarLeis() {
             const inicioRodada = Date.now();
-            for (const leiId of Object.keys(LEIS)) {
+            const docs = await leisTextoColl.find({}, { projection: { verificadoEm: 1 } }).toArray();
+            const porId = new Map(docs.map(d => [d._id, d]));
+            const ids = Object.keys(LEIS);
+            const semTexto = ids.filter(id => !porId.has(id));
+            const vencidas = ids.filter(id => porId.has(id) && (!porId.get(id).verificadoEm || Date.now() - porId.get(id).verificadoEm.getTime() > LEIS_REVALIDAR_MS));
+            const pausa = () => new Promise(r => setTimeout(r, 15000));
+
+            // 1) Leis SEM texto primeiro, direto do arquivo local (ferramentas/dados): não usa rede, então
+            //    não depende do Planalto. Antes, a lei nova ficava esperando na fila atrás da revalidação
+            //    das outras — que esbarra no bloqueio do Planalto e interrompia a rodada antes de chegar nela.
+            const semArquivo = [];
+            for (const leiId of semTexto) {
                 try {
-                    const existente = await leisTextoColl.findOne({ _id: leiId }, { projection: { verificadoEm: 1 } });
-                    if (!existente) {
-                        const arquivo = path.join(__dirname, 'ferramentas', 'dados', LEIS[leiId].arquivo);
-                        if (fs.existsSync(arquivo)) {
-                            try {
-                                const r = await atualizarLei(leiId, decodificarHtmlLei(fs.readFileSync(arquivo)));
-                                if (r.ok) continue;
-                            } catch (err) {
-                                console.error('[leis] arquivo local ignorado:', err.message);
-                                leisUltimoErro.set(leiId, `arquivo local ignorado: ${err.message}`);
-                            }
-                        }
-                        await atualizarLei(leiId);
-                    } else if (!existente.verificadoEm || Date.now() - existente.verificadoEm.getTime() > LEIS_REVALIDAR_MS) {
-                        await atualizarLei(leiId);
+                    const arquivo = path.join(__dirname, 'ferramentas', 'dados', LEIS[leiId].arquivo);
+                    if (fs.existsSync(arquivo)) {
+                        const r = await atualizarLei(leiId, decodificarHtmlLei(fs.readFileSync(arquivo)));
+                        if (r.ok) continue;
                     }
-                } catch (err) { console.error('[leis] inicialização:', err.message); }
-                // Se o Planalto bloqueou nesta rodada, não adianta insistir nas demais leis (só aumenta a rajada).
+                } catch (err) {
+                    console.error('[leis] arquivo local ignorado:', err.message);
+                    leisUltimoErro.set(leiId, `arquivo local ignorado: ${err.message}`);
+                }
+                semArquivo.push(leiId);
+            }
+
+            // 2) Só então vai ao Planalto (leis sem arquivo local e revalidação diária). Se ele bloquear
+            //    nesta rodada, para: insistir nas demais só aumenta a rajada.
+            for (const leiId of [...semArquivo, ...vencidas]) {
+                try { await atualizarLei(leiId); } catch (err) { console.error('[leis] inicialização:', err.message); }
                 if (leisPlanaltoBloqueadoEm >= inicioRodada) { console.warn('[leis] Planalto bloqueou o servidor; rodada interrompida.'); break; }
-                // Pausa entre leis: 13 downloads colados parecem rajada ao Planalto, que passa a
-                // derrubar a conexão (ECONNRESET). O Jogo faz 1 pedido por dia; aqui vamos devagar.
-                await new Promise(r => setTimeout(r, 15000));
+                // Pausa entre leis: downloads colados parecem rajada ao Planalto (ECONNRESET).
+                await pausa();
             }
         }
         // Espera 1 min depois de subir: cada deploy reiniciava o servidor e disparava a rajada de downloads.
