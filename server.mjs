@@ -2272,7 +2272,7 @@ async function startServer() {
                 // Limita o tamanho do PDF aceito (em páginas) antes de gastar
                 // qualquer chamada de IA — controla custo e evita mandar
                 // editais gigantes pro modelo de uma vez só.
-                const LIMITE_PAGINAS = 50;
+                const LIMITE_PAGINAS = 75;
                 if (dadosPdf.numpages && dadosPdf.numpages > LIMITE_PAGINAS) {
                     return res.status(400).json({
                         success: false,
@@ -2293,7 +2293,7 @@ async function startServer() {
                 // rede de segurança, caso um PDF dentro do limite de páginas
                 // ainda tenha um volume de texto incomum): controla custo e
                 // garante folga de sobra no contexto do modelo.
-                const LIMITE_CARACTERES = 220000;
+                const LIMITE_CARACTERES = 300000;
                 if (texto.length > LIMITE_CARACTERES) texto = texto.slice(0, LIMITE_CARACTERES);
 
                 const ferramenta = {
