@@ -2465,11 +2465,11 @@ async function carregarLeis() {
 const LEI_MATERIAS = [
     // As leis esparsas ficam logo abaixo da CF, na ordem em que a aluna pediu.
     { nome: 'Direito Constitucional', ids: ['cf', 'l11417', 'l12016', 'l13300', 'l4717', 'l7347', 'l9507', 'l9868', 'l9882'] },
-    { nome: 'Direito Administrativo', ids: ['l14133'] },
+    { nome: 'Direito Administrativo', ids: ['l14133', 'l8429', 'l8112', 'l8987', 'l9637', 'l11079', 'l13019', 'l13460', 'l9784', 'l13709', 'l12527', 'l13869'] },
     { nome: 'Direito Penal', ids: ['cp'] },
-    { nome: 'Direito Civil', ids: ['cc'] },
-    { nome: 'Direito Processual Civil', ids: ['cpc'] },
-    { nome: 'Direito do Trabalho', ids: ['clt'] }
+    { nome: 'Direito Civil', ids: ['cc', 'lindb'] },
+    { nome: 'Direito Processual Civil', ids: ['cpc', 'l13140', 'l9099'] },
+    { nome: 'Direito e Processo do Trabalho', ids: ['clt', 'lc150', 'l14457', 'l12506', 'l12023', 'l11419', 'l10101', 'l9029', 'l8036', 'l7783', 'l6019', 'l4090', 'l605'] }
 ];
 
 // Total de trechos de cada lei: só dá para saber depois de dividir o texto, então guarda no aparelho

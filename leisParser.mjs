@@ -131,6 +131,164 @@ export const LEIS = {
         url: 'https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/L14133.htm',
         arquivo: 'lei-14133.htm', cabecalhosH: true, descartarSuperados: true,
         minArtigos: 150, sentinelas: ['art-1', 'art-75', 'art-194'], terminador: TERMINADOR_DATA
+    },
+    // Leis esparsas de Direito Administrativo, Civil, Processual Civil e do Trabalho (nov/2026). minArtigos
+    // (~80% do total real) e sentinelas (início, meio e fim) foram calibrados com os HTMLs baixados do Planalto.
+    l8429: {
+        id: 'l8429', nome: 'Lei nº 8.429/1992 - Improbidade Administrativa', sigla: 'Lei 8.429/1992',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l8429compilada.htm',
+        arquivo: 'lei-8429.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 28, sentinelas: ['art-1', 'art-13', 'art-25'], terminador: TERMINADOR_DATA
+    },
+    l8112: {
+        id: 'l8112', nome: 'Lei nº 8.112/1990 - Regime Jurídico dos Servidores Públicos Federais', sigla: 'Lei 8.112/1990',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l8112cons.htm',
+        arquivo: 'lei-8112.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 214, sentinelas: ['art-1', 'art-128', 'art-253'], terminador: TERMINADOR_DATA
+    },
+    l8987: {
+        id: 'l8987', nome: 'Lei nº 8.987/1995 - Concessões e Permissões de Serviços Públicos', sigla: 'Lei 8.987/1995',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l8987cons.htm',
+        arquivo: 'lei-8987.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 41, sentinelas: ['art-1', 'art-24', 'art-47'], terminador: TERMINADOR_DATA
+    },
+    l9637: {
+        id: 'l9637', nome: 'Lei nº 9.637/1998 - Organizações Sociais', sigla: 'Lei 9.637/1998',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l9637.htm',
+        arquivo: 'lei-9637.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 20, sentinelas: ['art-1', 'art-13', 'art-25'], terminador: TERMINADOR_DATA
+    },
+    l11079: {
+        id: 'l11079', nome: 'Lei nº 11.079/2004 - Parcerias Público-Privadas (PPP)', sigla: 'Lei 11.079/2004',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2004/lei/l11079.htm',
+        arquivo: 'lei-11079.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 27, sentinelas: ['art-1', 'art-16', 'art-30'], terminador: TERMINADOR_DATA
+    },
+    l13019: {
+        id: 'l13019', nome: 'Lei nº 13.019/2014 - Parcerias com Organizações da Sociedade Civil', sigla: 'Lei 13.019/2014',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2014/lei/l13019.htm',
+        arquivo: 'lei-13019.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 113, sentinelas: ['art-1', 'art-45', 'art-88'], terminador: TERMINADOR_DATA
+    },
+    l13460: {
+        id: 'l13460', nome: 'Lei nº 13.460/2017 - Direitos do Usuário dos Serviços Públicos', sigla: 'Lei 13.460/2017',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2017/lei/l13460.htm',
+        arquivo: 'lei-13460.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 20, sentinelas: ['art-1', 'art-13', 'art-25'], terminador: TERMINADOR_DATA
+    },
+    l9784: {
+        id: 'l9784', nome: 'Lei nº 9.784/1999 - Processo Administrativo Federal', sigla: 'Lei 9.784/1999',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l9784.htm',
+        arquivo: 'lei-9784.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 64, sentinelas: ['art-1', 'art-36', 'art-70'], terminador: TERMINADOR_DATA
+    },
+    l13709: {
+        id: 'l13709', nome: 'Lei nº 13.709/2018 - Lei Geral de Proteção de Dados (LGPD)', sigla: 'LGPD',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm',
+        arquivo: 'lei-13709.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 72, sentinelas: ['art-1', 'art-33', 'art-65'], terminador: TERMINADOR_DATA
+    },
+    l12527: {
+        id: 'l12527', nome: 'Lei nº 12.527/2011 - Lei de Acesso à Informação', sigla: 'LAI',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12527.htm',
+        arquivo: 'lei-12527.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 39, sentinelas: ['art-1', 'art-24', 'art-47'], terminador: TERMINADOR_DATA
+    },
+    l13869: {
+        id: 'l13869', nome: 'Lei nº 13.869/2019 - Abuso de Autoridade', sigla: 'Lei 13.869/2019',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2019/lei/L13869.htm',
+        arquivo: 'lei-13869.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 43, sentinelas: ['art-1', 'art-23', 'art-45'], terminador: TERMINADOR_DATA
+    },
+    lindb: {
+        id: 'lindb', nome: 'Decreto-Lei nº 4.657/1942 - Lei de Introdução às Normas do Direito Brasileiro (LINDB)', sigla: 'LINDB',
+        url: 'https://www.planalto.gov.br/ccivil_03/decreto-lei/del4657compilado.htm',
+        arquivo: 'lei-lindb.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 24, sentinelas: ['art-1', 'art-16', 'art-30'], terminador: TERMINADOR_DATA
+    },
+    l13140: {
+        id: 'l13140', nome: 'Lei nº 13.140/2015 - Mediação', sigla: 'Lei 13.140/2015',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13140.htm',
+        arquivo: 'lei-13140.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 38, sentinelas: ['art-1', 'art-25', 'art-48'], terminador: TERMINADOR_DATA
+    },
+    l9099: {
+        id: 'l9099', nome: 'Lei nº 9.099/1995 - Juizados Especiais Cíveis e Criminais', sigla: 'Lei 9.099/1995',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l9099.htm',
+        arquivo: 'lei-9099.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 79, sentinelas: ['art-1', 'art-49', 'art-97'], terminador: TERMINADOR_DATA
+    },
+    lc150: {
+        id: 'lc150', nome: 'Lei Complementar nº 150/2015 - Trabalho Doméstico', sigla: 'LC 150/2015',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp150.htm',
+        arquivo: 'lei-lc150.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 38, sentinelas: ['art-1', 'art-24', 'art-47'], terminador: TERMINADOR_DATA
+    },
+    l14457: {
+        id: 'l14457', nome: 'Lei nº 14.457/2022 - Programa Emprega + Mulheres', sigla: 'Lei 14.457/2022',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2022/lei/L14457.htm',
+        arquivo: 'lei-14457.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 28, sentinelas: ['art-1', 'art-18', 'art-35'], terminador: TERMINADOR_DATA
+    },
+    l12506: {
+        id: 'l12506', nome: 'Lei nº 12.506/2011 - Aviso Prévio Proporcional', sigla: 'Lei 12.506/2011',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12506.htm',
+        arquivo: 'lei-12506.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 1, sentinelas: ['art-1', 'art-2'], terminador: TERMINADOR_DATA
+    },
+    l12023: {
+        id: 'l12023', nome: 'Lei nº 12.023/2009 - Trabalho Avulso', sigla: 'Lei 12.023/2009',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2009/lei/l12023.htm',
+        arquivo: 'lei-12023.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 11, sentinelas: ['art-1', 'art-7', 'art-12'], terminador: TERMINADOR_DATA
+    },
+    l11419: {
+        id: 'l11419', nome: 'Lei nº 11.419/2006 - Processo Judicial Eletrônico', sigla: 'Lei 11.419/2006',
+        url: 'https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2006/lei/l11419.htm',
+        arquivo: 'lei-11419.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 17, sentinelas: ['art-1', 'art-12', 'art-22'], terminador: TERMINADOR_DATA
+    },
+    l10101: {
+        id: 'l10101', nome: 'Lei nº 10.101/2000 - Participação nos Lucros e Resultados (PLR)', sigla: 'Lei 10.101/2000',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l10101.htm',
+        arquivo: 'lei-10101.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 12, sentinelas: ['art-1', 'art-5', 'art-8'], terminador: TERMINADOR_DATA
+    },
+    l9029: {
+        id: 'l9029', nome: 'Lei nº 9.029/1995 - Proibição de Atestado de Gravidez e Esterilização', sigla: 'Lei 9.029/1995',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l9029.htm',
+        arquivo: 'lei-9029.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 4, sentinelas: ['art-1', 'art-6'], terminador: TERMINADOR_DATA
+    },
+    l8036: {
+        id: 'l8036', nome: 'Lei nº 8.036/1990 - FGTS', sigla: 'Lei 8.036/1990',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l8036consol.htm',
+        arquivo: 'lei-8036.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 45, sentinelas: ['art-1', 'art-17', 'art-32'], terminador: TERMINADOR_DATA
+    },
+    l7783: {
+        id: 'l7783', nome: 'Lei nº 7.783/1989 - Greve', sigla: 'Lei 7.783/1989',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l7783.htm',
+        arquivo: 'lei-7783.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 15, sentinelas: ['art-1', 'art-10', 'art-19'], terminador: TERMINADOR_DATA
+    },
+    l6019: {
+        id: 'l6019', nome: 'Lei nº 6.019/1974 - Trabalho Temporário e Terceirização', sigla: 'Lei 6.019/1974',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l6019.htm',
+        arquivo: 'lei-6019.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 25, sentinelas: ['art-1', 'art-11', 'art-20'], terminador: TERMINADOR_DATA
+    },
+    l4090: {
+        id: 'l4090', nome: 'Lei nº 4.090/1962 - Gratificação Natalina (13º Salário)', sigla: 'Lei 4.090/1962',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l4090.htm',
+        arquivo: 'lei-4090.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 3, sentinelas: ['art-1', 'art-4'], terminador: TERMINADOR_DATA
+    },
+    l605: {
+        id: 'l605', nome: 'Lei nº 605/1949 - Repouso Semanal Remunerado', sigla: 'Lei 605/1949',
+        url: 'https://www.planalto.gov.br/ccivil_03/leis/l0605.htm',
+        arquivo: 'lei-605.htm', cabecalhosH: true, descartarSuperados: true,
+        minArtigos: 19, sentinelas: ['art-1', 'art-9', 'art-16'], terminador: TERMINADOR_DATA
     }
 };
 
