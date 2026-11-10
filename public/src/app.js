@@ -1880,7 +1880,9 @@ function renderizarQuestoesInicio() {
 
     const aviso = ehSumulas
         ? 'São questões autorais no estilo FGV, feitas para treinar as súmulas — não são questões oficiais de provas.'
-        : 'Questões das provas da FCC para Analista Judiciário – Área Judiciária, lidas dos PDFs oficiais; o gabarito é o divulgado pela banca. Questões que dependem de texto-base, tabela ou figura ainda não entram aqui.';
+        : (t.id === 'provas-vunesp'
+            ? 'Questões de provas da VUNESP (por ora, Escrevente Técnico Judiciário do TJ-SP: 2018, 2021 e 2025), lidas dos PDFs oficiais; o gabarito é o divulgado pela banca. Questões que dependem de texto-base, tabela ou figura ainda não entram aqui.'
+            : 'Questões das provas da FCC para Analista Judiciário – Área Judiciária, lidas dos PDFs oficiais; o gabarito é o divulgado pela banca. Questões que dependem de texto-base, tabela ou figura ainda não entram aqui.');
 
     el.innerHTML = `
         <section class="painel-bloco">

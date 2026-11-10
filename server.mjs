@@ -43,7 +43,8 @@ const MONGO_URI = process.env.MONGO_PUBLIC_URL || "SUA_URI_LOCAL_DE_TESTE";
 // aqui e na carga de dados — a tela e as rotas já funcionam por "fonte".
 const TOPICOS_QUESTOES = [
     { id: 'sumulas-vinculantes', nome: 'Súmulas Vinculantes' },
-    { id: 'provas-fcc', nome: 'Provas anteriores — FCC' }
+    { id: 'provas-fcc', nome: 'Provas anteriores — FCC' },
+    { id: 'provas-vunesp', nome: 'Provas anteriores — VUNESP' }
 ];
 
 // Carrega (ou atualiza) as questões de Súmulas Vinculantes a partir do arquivo
@@ -61,9 +62,12 @@ function separarTribunal(orgao) {
     return { tribunalTipo: m[1], regiao: m[2].trim() || null };
 }
 
-async function carregarQuestoesProvasFcc(coll) {
+// Serve para qualquer banca: o que muda é só o id do tópico, o nome exibido e o arquivo de dados.
+// Cada banca tem seu próprio arquivo (provas_fcc.json, provas_vunesp.json...) e sua própria "fonte",
+// então regravar uma não mexe nas questões da outra.
+async function carregarQuestoesProvas(coll, fonte, nomeTopico, arquivo) {
     try {
-        const caminho = path.join(__dirname, 'ferramentas', 'dados', 'provas_fcc.json');
+        const caminho = path.join(__dirname, 'ferramentas', 'dados', arquivo);
         const bruto = await fs.promises.readFile(caminho, 'utf-8');
         // O "|v2" força regravar quando muda o formato dos documentos (não só o arquivo de dados).
         const versao = createHash('sha1').update(bruto + '|v2').digest('hex').slice(0, 12);
@@ -72,8 +76,8 @@ async function carregarQuestoesProvasFcc(coll) {
         lista.sort((a, b) => a.ano - b.ano || a.orgao.localeCompare(b.orgao, 'pt-BR') || a.numero - b.numero);
         const docs = lista.map((q, i) => ({
             chave: q.chave,
-            fonte: 'provas-fcc',
-            topico: 'Provas anteriores — FCC',
+            fonte,
+            topico: nomeTopico,
             origem: `${q.banca} · ${q.orgao} · ${q.ano}`,
             area: q.materia,
             banca: q.banca, orgao: q.orgao, ...separarTribunal(q.orgao), ano: q.ano, cargo: q.cargo,
@@ -86,16 +90,16 @@ async function carregarQuestoesProvasFcc(coll) {
             gabaritoPreliminar: !!q.gabaritoPreliminar,
             versao
         }));
-        const jaAtualizadas = await coll.countDocuments({ fonte: 'provas-fcc', versao });
+        const jaAtualizadas = await coll.countDocuments({ fonte, versao });
         if (jaAtualizadas === docs.length && docs.length > 0) return;
         await coll.bulkWrite(
             docs.map(d => ({ updateOne: { filter: { chave: d.chave }, update: { $set: d }, upsert: true } })),
             { ordered: false }
         );
-        await coll.deleteMany({ fonte: 'provas-fcc', versao: { $ne: versao } });
-        console.log(`Questões: ${docs.length} questões de provas da FCC carregadas (versão ${versao}).`);
+        await coll.deleteMany({ fonte, versao: { $ne: versao } });
+        console.log(`Questões: ${docs.length} questões de ${nomeTopico} carregadas (versão ${versao}).`);
     } catch (err) {
-        console.error('Erro ao carregar questões de provas da FCC:', err);
+        console.error(`Erro ao carregar questões de ${nomeTopico}:`, err);
     }
 }
 
@@ -511,7 +515,8 @@ async function startServer() {
         await questoesRespostasColl.createIndex({ userId: 1, chave: 1 }, { unique: true }).catch(() => {});
         await questoesRespostasColl.createIndex({ chave: 1, primeiraAcertou: 1 }).catch(() => {});
         await carregarQuestoesSumulas(questoesColl);
-        await carregarQuestoesProvasFcc(questoesColl);
+        await carregarQuestoesProvas(questoesColl, 'provas-fcc', 'Provas anteriores — FCC', 'provas_fcc.json');
+        await carregarQuestoesProvas(questoesColl, 'provas-vunesp', 'Provas anteriores — VUNESP', 'provas_vunesp.json');
         const leisTextoColl = db.collection(LEIS_TEXTO_COLLECTION);
         const leisMudancasColl = db.collection(LEIS_MUDANCAS_COLLECTION);
         const leisGrifosColl = db.collection(LEIS_GRIFOS_COLLECTION);
